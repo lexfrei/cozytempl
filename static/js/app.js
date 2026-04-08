@@ -42,7 +42,8 @@ async function copyToClipboard(text) {
 function app() {
   return {
     currentPage: 'dashboard',
-    currentTenant: '',
+    currentTenant: '',      // namespace, e.g. "tenant-root"
+    currentTenantName: '',  // display name, e.g. "root"
     currentApp: '',
     toasts: [],
     _toastId: 0,
@@ -50,7 +51,6 @@ function app() {
     init() {
       this.handleRoute();
       window.addEventListener('popstate', () => this.handleRoute());
-      this.connectSSE();
     },
 
     handleRoute() {
@@ -58,19 +58,22 @@ function app() {
       if (path.startsWith('/tenants/') && path.includes('/apps/')) {
         const parts = path.split('/');
         this.currentTenant = parts[2];
+        this.currentTenantName = parts[2];
         this.currentApp = parts[4];
         this.currentPage = 'appDetail';
       } else if (path.startsWith('/tenants/')) {
         this.currentTenant = path.split('/')[2];
+        this.currentTenantName = this.currentTenant;
         this.currentPage = 'tenant';
       } else {
         this.currentPage = 'dashboard';
       }
     },
 
-    navigate(page, tenant, appName) {
+    navigate(page, tenantNS, tenantName, appName) {
       this.currentPage = page;
-      if (tenant) this.currentTenant = tenant;
+      if (tenantNS) this.currentTenant = tenantNS;
+      if (tenantName) this.currentTenantName = tenantName;
       if (appName) this.currentApp = appName;
 
       let url = '/';
@@ -138,20 +141,14 @@ function tenantTree() {
       );
     },
 
-    getChildren(parentName) {
-      return this.tenants.filter(t => t.parent === parentName);
+    getChildren(parentNS) {
+      return this.tenants.filter(t => t.parent === parentNS);
     },
 
-    selectTenant(name) {
-      this.$root.__x_refs
-        ? this.$dispatch('navigate', { page: 'tenant', tenant: name })
-        : null;
-      // Direct call via parent scope
+    selectTenant(tenant) {
       const appStore = Alpine.closestDataStack(this.$el).find(s => s.navigate);
       if (appStore) {
-        appStore.currentTenant = name;
-        appStore.currentPage = 'tenant';
-        history.pushState({}, '', '/tenants/' + name);
+        appStore.navigate('tenant', tenant.namespace, tenant.displayName);
       }
     },
   };
@@ -167,23 +164,15 @@ function dashboard() {
         const tenants = await api('/tenants') || [];
         this.stats.tenants = tenants.length;
 
-        let totalApps = 0;
-        let ready = 0;
-        let failed = 0;
-        for (const t of tenants) {
-          totalApps += t.appCount || 0;
-        }
-
-        // Load apps from all tenants to get status counts
-        const appPromises = tenants.map(t => api('/tenants/' + t.name + '/apps').catch(() => []));
+        // Load apps from all tenants using namespace
+        const appPromises = tenants.map(t =>
+          api('/tenants/' + t.namespace + '/apps').catch(() => [])
+        );
         const allApps = (await Promise.all(appPromises)).flat();
-        ready = allApps.filter(a => a.status === 'Ready').length;
-        failed = allApps.filter(a => a.status === 'Failed').length;
-        totalApps = allApps.length;
 
-        this.stats.apps = totalApps;
-        this.stats.ready = ready;
-        this.stats.failed = failed;
+        this.stats.apps = allApps.length;
+        this.stats.ready = allApps.filter(a => a.status === 'Ready').length;
+        this.stats.failed = allApps.filter(a => a.status === 'Failed').length;
       } catch (err) {
         console.error('Failed to load dashboard stats:', err);
       }
@@ -202,7 +191,6 @@ function appList() {
     loading: true,
 
     async init() {
-      this.$watch('$store.app?.currentTenant', () => this.loadApps());
       await this.loadApps();
     },
 
@@ -236,7 +224,7 @@ function appList() {
         list = list.filter(a => a.name.toLowerCase().includes(q));
       }
 
-      list.sort((a, b) => {
+      list = [...list].sort((a, b) => {
         const key = this.sortBy;
         const va = a[key] || '';
         const vb = b[key] || '';
@@ -249,7 +237,7 @@ function appList() {
     selectApp(name) {
       const appStore = Alpine.closestDataStack(this.$el).find(s => s.navigate);
       if (appStore) {
-        appStore.navigate('appDetail', appStore.currentTenant, name);
+        appStore.navigate('appDetail', appStore.currentTenant, appStore.currentTenantName, name);
       }
     },
 
@@ -302,7 +290,7 @@ function appForm() {
 
       try {
         this.currentSchema = await api('/schemas/' + this.selectedKind);
-        this.formValues = this.currentSchema.defaults || {};
+        this.formValues = {};
         this.renderSchemaForm();
       } catch (err) {
         console.error('Failed to load schema:', err);
@@ -392,19 +380,17 @@ function appForm() {
           body: JSON.stringify({
             name: this.appName,
             kind: this.selectedKind,
-            values: this.formValues,
+            spec: this.formValues,
           }),
         });
         const toaster = Alpine.closestDataStack(this.$el).find(s => s.addToast);
         toaster?.addToast('success', this.appName + ' created');
 
-        // Reset and reload
         this.appName = '';
         this.selectedKind = '';
         this.formValues = {};
         this.$refs.schemaFields.innerHTML = '';
 
-        // Close modal and reload apps
         const listStore = Alpine.closestDataStack(this.$el).find(s => s.showCreateModal !== undefined);
         if (listStore) {
           listStore.showCreateModal = false;

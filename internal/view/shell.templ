@@ -75,8 +75,8 @@ templ Shell(username string) {
 						<template x-for="tenant in filteredRootTenants" :key="tenant.name">
 							<li class="tenant-node" x-data="{ expanded: false }">
 								<div class="sidebar-item"
-									:class="{ active: currentTenant === tenant.name }"
-									@click="selectTenant(tenant.name)">
+									:class="{ active: currentTenant === tenant.namespace }"
+									@click="selectTenant(tenant)">
 									<button class="tenant-toggle"
 										:class="{ expanded }"
 										x-show="tenant.childCount > 0"
@@ -87,11 +87,11 @@ templ Shell(username string) {
 									<span class="text-sm text-muted" x-text="tenant.appCount" style="margin-left: auto;"></span>
 								</div>
 								<ul class="tenant-tree" x-show="expanded" x-transition>
-									<template x-for="child in getChildren(tenant.name)" :key="child.name">
+									<template x-for="child in getChildren(tenant.namespace)" :key="child.name">
 										<li class="tenant-node">
 											<div class="sidebar-item"
-												:class="{ active: currentTenant === child.name }"
-												@click="selectTenant(child.name)">
+												:class="{ active: currentTenant === child.namespace }"
+												@click="selectTenant(child)">
 												<span x-text="child.displayName || child.name"></span>
 												<span class="text-sm text-muted" x-text="child.appCount" style="margin-left: auto;"></span>
 											</div>
@@ -136,10 +136,10 @@ templ Shell(username string) {
 					<div class="breadcrumb">
 						<a href="/" @click.prevent="navigate('dashboard')">Dashboard</a>
 						<span class="breadcrumb-sep"></span>
-						<span x-text="currentTenant"></span>
+						<span x-text="currentTenantName || currentTenant"></span>
 					</div>
 					<div class="page-header">
-						<h1 class="page-title" x-text="currentTenant"></h1>
+						<h1 class="page-title" x-text="currentTenantName || currentTenant"></h1>
 						<button class="btn btn-primary" @click="showCreateModal = true">
 							+ Create Application
 						</button>
@@ -246,7 +246,7 @@ templ Shell(username string) {
 					<div class="breadcrumb">
 						<a href="/" @click.prevent="navigate('dashboard')">Dashboard</a>
 						<span class="breadcrumb-sep"></span>
-						<a href="#" @click.prevent="navigate('tenant')" x-text="currentTenant"></a>
+						<a href="#" @click.prevent="navigate('tenant')" x-text="currentTenantName || currentTenant"></a>
 						<span class="breadcrumb-sep"></span>
 						<span x-text="currentApp"></span>
 					</div>
