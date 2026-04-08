@@ -2,7 +2,6 @@ package api
 
 import (
 	"embed"
-	"io/fs"
 	"log/slog"
 	"net/http"
 
@@ -98,13 +97,6 @@ func healthHandler(writer http.ResponseWriter, _ *http.Request) {
 	_, _ = writer.Write([]byte("ok"))
 }
 
-func mountStaticFiles(mux *http.ServeMux, staticFS embed.FS, log *slog.Logger) {
-	staticSub, err := fs.Sub(staticFS, "static")
-	if err != nil {
-		log.Error("failed to create static sub-fs", "error", err)
-
-		return
-	}
-
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
+func mountStaticFiles(mux *http.ServeMux, staticFS embed.FS, _ *slog.Logger) {
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 }
