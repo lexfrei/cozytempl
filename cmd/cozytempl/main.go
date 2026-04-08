@@ -54,15 +54,6 @@ func run() error {
 		return err
 	}
 
-	oidcProvider, err := auth.NewOIDCProvider(ctx,
-		cfg.OIDCIssuerURL, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCRedirectURL)
-	if err != nil {
-		return fmt.Errorf("initializing OIDC: %w", err)
-	}
-
-	sessionStore := auth.NewSessionStore(cfg.SessionSecret)
-	authHandler := auth.NewHandler(oidcProvider, sessionStore, log)
-
 	tenantSvc := k8s.NewTenantService(k8sCfg)
 	schemaSvc := k8s.NewSchemaService(k8sCfg)
 	appSvc := k8s.NewApplicationService(k8sCfg, schemaSvc)
@@ -73,32 +64,33 @@ func run() error {
 		log.Warn("failed to start watcher, SSE will be unavailable", "error", err)
 	}
 
-	tenantHandler := api.NewTenantHandler(tenantSvc, log)
-	appHandler := api.NewApplicationHandler(appSvc, log)
-	schemaHandler := api.NewSchemaHandler(schemaSvc, log)
-	sseHandler := api.NewSSEHandler(watcher, log)
-
-	shellHandler := func(writer http.ResponseWriter, req *http.Request) {
-		usr := auth.UserFromContext(req.Context())
-		username := ""
-
-		if usr != nil {
-			username = usr.Username
-		}
-
-		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-		renderErr := view.Shell(username).Render(req.Context(), writer)
-		if renderErr != nil {
-			log.Error("rendering shell", "error", renderErr)
-		}
+	routerCfg := &api.RouterConfig{
+		TenantHandler: api.NewTenantHandler(tenantSvc, log),
+		AppHandler:    api.NewApplicationHandler(appSvc, log),
+		SchemaHandler: api.NewSchemaHandler(schemaSvc, log),
+		SSEHandler:    api.NewSSEHandler(watcher, log),
+		StaticFS:      static.FS,
+		ShellHandler:  makeShellHandler(log),
+		Log:           log,
+		DevMode:       cfg.DevMode,
+		DevUsername:   "dev-admin",
 	}
 
-	router := api.Router(
-		authHandler, sessionStore,
-		tenantHandler, appHandler, schemaHandler, sseHandler,
-		static.FS, shellHandler, log,
-	)
+	if !cfg.DevMode {
+		oidcProvider, oidcErr := auth.NewOIDCProvider(ctx,
+			cfg.OIDCIssuerURL, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCRedirectURL)
+		if oidcErr != nil {
+			return fmt.Errorf("initializing OIDC: %w", oidcErr)
+		}
+
+		sessionStore := auth.NewSessionStore(cfg.SessionSecret)
+		routerCfg.AuthHandler = auth.NewHandler(oidcProvider, sessionStore, log)
+		routerCfg.SessionStore = sessionStore
+	} else {
+		log.Warn("running in dev mode — authentication disabled")
+	}
+
+	router := api.Router(routerCfg)
 
 	srv := &http.Server{
 		Addr:         cfg.ListenAddr,
@@ -123,6 +115,24 @@ func run() error {
 	defer shutdownCancel()
 
 	return srv.Shutdown(shutdownCtx) //nolint:wrapcheck // top-level, error logged by caller
+}
+
+func makeShellHandler(log *slog.Logger) http.HandlerFunc {
+	return func(writer http.ResponseWriter, req *http.Request) {
+		usr := auth.UserFromContext(req.Context())
+		username := ""
+
+		if usr != nil {
+			username = usr.Username
+		}
+
+		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		renderErr := view.Shell(username).Render(req.Context(), writer)
+		if renderErr != nil {
+			log.Error("rendering shell", "error", renderErr)
+		}
+	}
 }
 
 func loadKubeConfig() (*rest.Config, error) {
