@@ -341,7 +341,7 @@ templ Shell(username string) {
 					<!-- Values tab -->
 					<div x-show="tab === 'values'" class="card">
 						<pre class="connection-info" style="white-space: pre-wrap;"
-							x-text="JSON.stringify(detail.values, null, 2)"></pre>
+							x-text="JSON.stringify(detail.spec, null, 2)"></pre>
 					</div>
 				</div>
 			</main>
