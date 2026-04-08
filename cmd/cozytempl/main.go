@@ -64,8 +64,8 @@ func run() error {
 	authHandler := auth.NewHandler(oidcProvider, sessionStore, log)
 
 	tenantSvc := k8s.NewTenantService(k8sCfg)
-	appSvc := k8s.NewApplicationService(k8sCfg)
 	schemaSvc := k8s.NewSchemaService(k8sCfg)
+	appSvc := k8s.NewApplicationService(k8sCfg, schemaSvc)
 	watcher := k8s.NewWatcher(k8sCfg, log)
 
 	err = watcher.Start(ctx)

@@ -11,10 +11,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-const (
-	tenantNamespacePrefix = "tenant-"
-	minTenantParts        = 2
-)
+const tenantNamespacePrefix = "tenant-"
 
 // NamespaceGVR returns the GVR for core namespaces.
 func NamespaceGVR() schema.GroupVersionResource {
@@ -34,7 +31,17 @@ func HelmReleaseGVR() schema.GroupVersionResource {
 	}
 }
 
-// TenantService provides operations on Cozystack tenants.
+// TenantCRDGVR returns the GVR for the Cozystack Tenant CRD.
+func TenantCRDGVR() schema.GroupVersionResource {
+	return schema.GroupVersionResource{
+		Group:    cozyAppGroup,
+		Version:  "v1alpha1",
+		Resource: "tenants",
+	}
+}
+
+// TenantService provides operations on Cozystack tenants
+// via the apps.cozystack.io/v1alpha1 Tenant CRD.
 type TenantService struct {
 	baseCfg *rest.Config
 }
@@ -51,31 +58,23 @@ func (tsv *TenantService) List(ctx context.Context, username string, groups []st
 		return nil, err
 	}
 
-	nsGVR := NamespaceGVR()
-	hrGVR := HelmReleaseGVR()
-
-	nsList, err := client.Resource(nsGVR).List(ctx, metav1.ListOptions{})
+	tenantList, err := client.Resource(TenantCRDGVR()).Namespace("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("listing namespaces: %w", err)
+		return nil, fmt.Errorf("listing tenants: %w", err)
 	}
 
-	tenants := make([]Tenant, 0)
+	tenants := make([]Tenant, 0, len(tenantList.Items))
 
-	for idx := range nsList.Items {
-		ns := &nsList.Items[idx]
-		name := ns.GetName()
-
-		if !strings.HasPrefix(name, tenantNamespacePrefix) {
-			continue
-		}
-
-		tenant := tenantFromNamespace(name)
+	for idx := range tenantList.Items {
+		tenant := crdToTenant(&tenantList.Items[idx])
 		tenants = append(tenants, tenant)
 	}
 
-	// Count apps per tenant
+	// Count apps per tenant via HelmReleases
+	hrGVR := HelmReleaseGVR()
+
 	for idx := range tenants {
-		hrList, listErr := client.Resource(hrGVR).Namespace(tenants[idx].Name).List(ctx, metav1.ListOptions{
+		hrList, listErr := client.Resource(hrGVR).Namespace(tenants[idx].Namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "apps.cozystack.io/application.kind",
 		})
 		if listErr == nil {
@@ -83,12 +82,12 @@ func (tsv *TenantService) List(ctx context.Context, username string, groups []st
 		}
 	}
 
-	// Build hierarchy
+	// Build hierarchy: count children per tenant
 	childCounts := make(map[string]int)
 
 	for idx := range tenants {
 		if tenants[idx].Parent != "" {
-			childCounts[tenants[idx].Parent]++
+			childCounts[tenants[idx].Name]++
 		}
 	}
 
@@ -99,52 +98,62 @@ func (tsv *TenantService) List(ctx context.Context, username string, groups []st
 	return tenants, nil
 }
 
-// Get returns a single tenant with its children and apps.
+// Get returns a single tenant with details.
 func (tsv *TenantService) Get(ctx context.Context, username string, groups []string, name string) (*Tenant, error) {
 	client, err := NewImpersonatingClient(tsv.baseCfg, username, groups)
 	if err != nil {
 		return nil, err
 	}
 
-	nsGVR := NamespaceGVR()
-	hrGVR := HelmReleaseGVR()
-
-	_, err = client.Resource(nsGVR).Get(ctx, name, metav1.GetOptions{})
+	tenantList, err := client.Resource(TenantCRDGVR()).Namespace("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("getting namespace %s: %w", name, err)
+		return nil, fmt.Errorf("listing tenants: %w", err)
 	}
 
-	tenant := tenantFromNamespace(name)
-
-	// Find children
-	nsList, err := client.Resource(nsGVR).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("listing namespaces for children: %w", err)
+	obj := findTenantObj(tenantList.Items, name)
+	if obj == nil {
+		return nil, fmt.Errorf("%w: %s", ErrAppNotFound, name)
 	}
 
-	for idx := range nsList.Items {
-		childName := nsList.Items[idx].GetName()
-		if childName != name && strings.HasPrefix(childName, name+"-") {
-			tenant.Children = append(tenant.Children, childName)
-		}
-	}
-
+	tenant := crdToTenant(obj)
+	tenant.Children = findChildren(tenantList.Items, tenant.Namespace)
 	tenant.ChildCount = len(tenant.Children)
 
-	// Count apps
-	hrList, err := client.Resource(hrGVR).Namespace(name).List(ctx, metav1.ListOptions{
+	hrList, listErr := client.Resource(HelmReleaseGVR()).Namespace(tenant.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "apps.cozystack.io/application.kind",
 	})
-	if err == nil {
+	if listErr == nil {
 		tenant.AppCount = len(hrList.Items)
 	}
-
-	tenant.Status = "Active"
 
 	return &tenant, nil
 }
 
-// Create creates a new tenant by creating a HelmRelease in the parent namespace.
+func findTenantObj(items []unstructured.Unstructured, name string) *unstructured.Unstructured {
+	for idx := range items {
+		obj := &items[idx]
+		if obj.GetName() == name || obj.GetNamespace() == tenantNamespacePrefix+name {
+			return obj
+		}
+	}
+
+	return nil
+}
+
+func findChildren(items []unstructured.Unstructured, parentNS string) []string {
+	var children []string
+
+	for idx := range items {
+		childNS := nestedString(items[idx].Object, "status", "namespace")
+		if childNS != "" && strings.HasPrefix(childNS, parentNS+"-") {
+			children = append(children, items[idx].GetName())
+		}
+	}
+
+	return children
+}
+
+// Create creates a new tenant via the Tenant CRD.
 func (tsv *TenantService) Create(ctx context.Context, username string, groups []string, req CreateTenantRequest) (*Tenant, error) {
 	client, err := NewImpersonatingClient(tsv.baseCfg, username, groups)
 	if err != nil {
@@ -156,78 +165,96 @@ func (tsv *TenantService) Create(ctx context.Context, username string, groups []
 		parentNS = tenantNamespacePrefix + "root"
 	}
 
-	tenantName := tenantNamespacePrefix + req.Name
-	hrGVR := HelmReleaseGVR()
+	spec := req.Spec
+	if spec == nil {
+		spec = map[string]any{}
+	}
 
-	helmRelease := &unstructured.Unstructured{
+	obj := &unstructured.Unstructured{
 		Object: map[string]any{
-			"apiVersion": "helm.toolkit.fluxcd.io/v2",
-			"kind":       "HelmRelease",
+			"apiVersion": cozyAppGroup + "/v1alpha1",
+			"kind":       "Tenant",
 			"metadata": map[string]any{
-				"name":      tenantName,
+				"name":      req.Name,
 				"namespace": parentNS,
-				"labels": map[string]any{
-					"apps.cozystack.io/application.kind": "Tenant",
-					"apps.cozystack.io/application.name": tenantName,
-				},
 			},
-			"spec": map[string]any{
-				"chartRef": map[string]any{
-					"kind":      "ExternalArtifact",
-					"name":      "cozystack-tenant-application-default-tenant",
-					"namespace": "cozy-system",
-				},
-				"interval": "5m",
-				"timeout":  "10m",
-			},
+			"spec": spec,
 		},
 	}
 
-	_, err = client.Resource(hrGVR).Namespace(parentNS).Create(ctx, helmRelease, metav1.CreateOptions{})
+	created, err := client.Resource(TenantCRDGVR()).Namespace(parentNS).Create(ctx, obj, metav1.CreateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("creating tenant HelmRelease: %w", err)
+		return nil, fmt.Errorf("creating tenant: %w", err)
 	}
 
-	tenant := tenantFromNamespace(tenantName)
-	tenant.Status = "Reconciling"
+	tenant := crdToTenant(created)
 
 	return &tenant, nil
 }
 
-// Delete removes a tenant by deleting its HelmRelease.
+// Delete removes a tenant via the Tenant CRD.
 func (tsv *TenantService) Delete(ctx context.Context, username string, groups []string, name string) error {
 	client, err := NewImpersonatingClient(tsv.baseCfg, username, groups)
 	if err != nil {
 		return err
 	}
 
-	parent := parentNamespace(name)
-	hrGVR := HelmReleaseGVR()
-
-	err = client.Resource(hrGVR).Namespace(parent).Delete(ctx, name, metav1.DeleteOptions{})
+	// Find the tenant to get its namespace
+	tenantList, err := client.Resource(TenantCRDGVR()).Namespace("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return fmt.Errorf("deleting tenant HelmRelease: %w", err)
+		return fmt.Errorf("listing tenants for delete: %w", err)
 	}
 
-	return nil
+	for idx := range tenantList.Items {
+		obj := &tenantList.Items[idx]
+		if obj.GetName() == name {
+			delErr := client.Resource(TenantCRDGVR()).Namespace(obj.GetNamespace()).Delete(ctx, name, metav1.DeleteOptions{})
+			if delErr != nil {
+				return fmt.Errorf("deleting tenant %s: %w", name, delErr)
+			}
+
+			return nil
+		}
+	}
+
+	return fmt.Errorf("%w: %s", ErrAppNotFound, name)
 }
 
-func tenantFromNamespace(name string) Tenant {
-	displayName := strings.TrimPrefix(name, tenantNamespacePrefix)
-	parent := parentNamespace(name)
+func crdToTenant(obj *unstructured.Unstructured) Tenant {
+	name := obj.GetName()
+	namespace := obj.GetNamespace()
+
+	// status.namespace is the actual tenant namespace created by the controller
+	statusNS := nestedString(obj.Object, "status", "namespace")
+	if statusNS != "" {
+		namespace = statusNS
+	}
+
+	version := nestedString(obj.Object, "status", "version")
+
+	status := string(extractStatus(obj))
+	if status == string(AppStatusReady) {
+		status = "Active"
+	}
+
+	// Determine parent from namespace hierarchy
+	parent := parentFromNamespace(namespace)
 
 	return Tenant{
 		Name:        name,
-		DisplayName: displayName,
+		Namespace:   namespace,
+		DisplayName: name,
 		Parent:      parent,
-		Status:      "Active",
+		Status:      status,
+		Version:     version,
 	}
 }
 
-func parentNamespace(name string) string {
-	// "tenant-root-team1" has parent "tenant-root"; "tenant-root" has no parent.
-	parts := strings.Split(name, "-")
-	if len(parts) <= minTenantParts {
+const minTenantNameParts = 2
+
+func parentFromNamespace(namespace string) string {
+	parts := strings.Split(namespace, "-")
+	if len(parts) <= minTenantNameParts {
 		return ""
 	}
 

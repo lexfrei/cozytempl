@@ -2,27 +2,37 @@ package k8s
 
 import "time"
 
-// Tenant represents a Cozystack tenant (a Kubernetes namespace with tenant-* prefix).
+// Tenant represents a Cozystack tenant (apps.cozystack.io/v1alpha1 Tenant).
 type Tenant struct {
 	Name        string   `json:"name"`
+	Namespace   string   `json:"namespace"`
 	DisplayName string   `json:"displayName"`
 	Parent      string   `json:"parent,omitempty"`
 	Children    []string `json:"children,omitempty"`
 	ChildCount  int      `json:"childCount"`
 	AppCount    int      `json:"appCount"`
 	Status      string   `json:"status"`
+	Version     string   `json:"version,omitempty"`
 }
 
-// Application represents a Cozystack application (a FluxCD HelmRelease).
+// Application represents a Cozystack application (apps.cozystack.io/v1alpha1).
 type Application struct {
 	Name           string            `json:"name"`
 	Kind           string            `json:"kind"`
 	Tenant         string            `json:"tenant"`
 	Status         AppStatus         `json:"status"`
 	Conditions     []Condition       `json:"conditions,omitempty"`
-	Values         map[string]any    `json:"values,omitempty"`
+	Spec           map[string]any    `json:"spec,omitempty"`
 	ConnectionInfo map[string]string `json:"connectionInfo,omitempty"`
+	Services       []ServiceInfo     `json:"services,omitempty"`
 	CreatedAt      time.Time         `json:"createdAt"`
+}
+
+// ServiceInfo holds connection endpoint details.
+type ServiceInfo struct {
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Port int    `json:"port"`
 }
 
 // AppStatus represents the current status of an application.
@@ -45,32 +55,35 @@ type Condition struct {
 	LastTransitionTime time.Time `json:"lastTransitionTime"`
 }
 
-// AppSchema represents the JSON Schema for an application type.
+// AppSchema represents an application type from ApplicationDefinition.
 type AppSchema struct {
-	Kind        string `json:"kind"`
-	DisplayName string `json:"displayName"`
-	Description string `json:"description"`
-	Icon        string `json:"icon,omitempty"`
-	JSONSchema  any    `json:"jsonSchema"`
-	Defaults    any    `json:"defaults,omitempty"`
+	Kind        string   `json:"kind"`
+	Plural      string   `json:"plural"`
+	DisplayName string   `json:"displayName"`
+	Description string   `json:"description"`
+	Category    string   `json:"category,omitempty"`
+	Icon        string   `json:"icon,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	JSONSchema  any      `json:"jsonSchema"`
 }
 
 // CreateApplicationRequest is the payload for creating a new application.
 type CreateApplicationRequest struct {
-	Name   string         `json:"name"`
-	Kind   string         `json:"kind"`
-	Values map[string]any `json:"values,omitempty"`
+	Name string         `json:"name"`
+	Kind string         `json:"kind"`
+	Spec map[string]any `json:"spec,omitempty"`
 }
 
 // UpdateApplicationRequest is the payload for updating an application.
 type UpdateApplicationRequest struct {
-	Values map[string]any `json:"values"`
+	Spec map[string]any `json:"spec"`
 }
 
 // CreateTenantRequest is the payload for creating a new tenant.
 type CreateTenantRequest struct {
-	Name   string `json:"name"`
-	Parent string `json:"parent,omitempty"`
+	Name   string         `json:"name"`
+	Parent string         `json:"parent,omitempty"`
+	Spec   map[string]any `json:"spec,omitempty"`
 }
 
 // SSEEvent represents a server-sent event for real-time updates.
@@ -78,10 +91,4 @@ type SSEEvent struct {
 	Type string `json:"type"`
 	Name string `json:"name"`
 	Data any    `json:"data"`
-}
-
-// UserInfo holds the authenticated user's identity extracted from OIDC.
-type UserInfo struct {
-	Username string
-	Groups   []string
 }

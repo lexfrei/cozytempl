@@ -3,21 +3,34 @@ package k8s
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 )
 
-const (
-	schemaCacheTTL     = 5 * time.Minute
-	configMapsResource = "configmaps"
-)
+const schemaCacheTTL = 5 * time.Minute
 
-// SchemaService provides operations on Cozystack application schemas.
+// ErrInvalidAppDef is returned when an ApplicationDefinition cannot be parsed.
+var ErrInvalidAppDef = errors.New("invalid ApplicationDefinition")
+
+// ApplicationDefinition GVR.
+func appDefGVR() schema.GroupVersionResource {
+	return schema.GroupVersionResource{
+		Group:    "cozystack.io",
+		Version:  "v1alpha1",
+		Resource: "applicationdefinitions",
+	}
+}
+
+// SchemaService provides operations on Cozystack application schemas
+// by reading ApplicationDefinition resources.
 type SchemaService struct {
 	baseCfg *rest.Config
 	cache   map[string]schemaCacheEntry
@@ -37,36 +50,27 @@ func NewSchemaService(baseCfg *rest.Config) *SchemaService {
 	}
 }
 
-// List returns all available application schemas by discovering ConfigMaps.
+// List returns all available application schemas from ApplicationDefinitions.
 func (ssv *SchemaService) List(ctx context.Context, username string, groups []string) ([]AppSchema, error) {
 	client, err := NewImpersonatingClient(ssv.baseCfg, username, groups)
 	if err != nil {
 		return nil, err
 	}
 
-	cmGVR := NamespaceGVR()
-	cmGVR.Resource = configMapsResource
-
-	cmList, listErr := client.Resource(cmGVR).Namespace("cozy-system").List(ctx, metav1.ListOptions{
-		LabelSelector: "apps.cozystack.io/schema=true",
-	})
+	defList, listErr := client.Resource(appDefGVR()).List(ctx, metav1.ListOptions{})
 	if listErr != nil {
-		slog.Debug("failed to list schema configmaps, using defaults", "error", listErr)
+		slog.Debug("failed to list ApplicationDefinitions", "error", listErr)
 
-		return defaultSchemaList(), nil
+		return nil, fmt.Errorf("listing ApplicationDefinitions: %w", listErr)
 	}
 
-	schemas := make([]AppSchema, 0, len(cmList.Items))
+	schemas := make([]AppSchema, 0, len(defList.Items))
 
-	for idx := range cmList.Items {
-		schema := schemaFromConfigMap(&cmList.Items[idx])
-		if schema != nil {
-			schemas = append(schemas, *schema)
+	for idx := range defList.Items {
+		appSchema := appDefToSchema(&defList.Items[idx])
+		if appSchema != nil {
+			schemas = append(schemas, *appSchema)
 		}
-	}
-
-	if len(schemas) == 0 {
-		return defaultSchemaList(), nil
 	}
 
 	return schemas, nil
@@ -87,102 +91,81 @@ func (ssv *SchemaService) Get(ctx context.Context, username string, groups []str
 		return nil, err
 	}
 
-	cmGVR := NamespaceGVR()
-	cmGVR.Resource = configMapsResource
-	cmName := "schema-" + toLowerKind(kind)
+	// ApplicationDefinition name is the lowercase kind (e.g. "postgres", "kubernetes")
+	defName := toLowerKind(kind)
 
-	obj, getErr := client.Resource(cmGVR).Namespace("cozy-system").Get(ctx, cmName, metav1.GetOptions{})
+	obj, getErr := client.Resource(appDefGVR()).Get(ctx, defName, metav1.GetOptions{})
 	if getErr != nil {
-		slog.Debug("schema configmap not found, using minimal", "kind", kind, "error", getErr)
-
-		return minimalSchema(kind), nil
+		return nil, fmt.Errorf("getting ApplicationDefinition %s: %w", defName, getErr)
 	}
 
-	schema := schemaFromConfigMap(obj)
-	if schema == nil {
-		schema = minimalSchema(kind)
+	appSchema := appDefToSchema(obj)
+	if appSchema == nil {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidAppDef, defName)
 	}
 
 	ssv.mu.Lock()
-	ssv.cache[kind] = schemaCacheEntry{schema: schema, fetchedAt: time.Now()}
+	ssv.cache[kind] = schemaCacheEntry{schema: appSchema, fetchedAt: time.Now()}
 	ssv.mu.Unlock()
 
-	return schema, nil
+	return appSchema, nil
 }
 
-func schemaFromConfigMap(obj *unstructured.Unstructured) *AppSchema {
-	data, found, err := unstructured.NestedStringMap(obj.Object, "data")
-	if err != nil || !found {
+func appDefToSchema(obj *unstructured.Unstructured) *AppSchema {
+	// spec.application.kind
+	kind := nestedString(obj.Object, "spec", "application", "kind")
+	if kind == "" {
 		return nil
 	}
 
-	schemaJSON, ok := data["values.schema.json"]
-	if !ok {
-		return nil
+	plural := nestedString(obj.Object, "spec", "application", "plural")
+	displaySingular := nestedString(obj.Object, "spec", "dashboard", "plural")
+
+	if displaySingular == "" {
+		displaySingular = nestedString(obj.Object, "spec", "dashboard", "singular")
 	}
+
+	if displaySingular == "" {
+		displaySingular = kind
+	}
+
+	description := nestedString(obj.Object, "spec", "dashboard", "description")
+	category := nestedString(obj.Object, "spec", "dashboard", "category")
+	icon := nestedString(obj.Object, "spec", "dashboard", "icon")
+
+	// Parse tags
+	rawTags, _, _ := unstructured.NestedStringSlice(obj.Object, "spec", "dashboard", "tags")
+
+	// Parse openAPISchema JSON string
+	schemaStr := nestedString(obj.Object, "spec", "application", "openAPISchema")
 
 	var jsonSchema any
+	if schemaStr != "" {
+		err := json.Unmarshal([]byte(schemaStr), &jsonSchema)
+		if err != nil {
+			slog.Debug("failed to parse openAPISchema", "kind", kind, "error", err)
 
-	err = json.Unmarshal([]byte(schemaJSON), &jsonSchema)
-	if err != nil {
-		return nil
+			jsonSchema = map[string]any{"type": "object", "properties": map[string]any{}}
+		}
 	}
 
-	labels := obj.GetLabels()
-
 	return &AppSchema{
-		Kind:        labels["apps.cozystack.io/application.kind"],
-		DisplayName: labels["apps.cozystack.io/display-name"],
-		Description: data["description"],
+		Kind:        kind,
+		Plural:      plural,
+		DisplayName: displaySingular,
+		Description: description,
+		Category:    category,
+		Icon:        icon,
+		Tags:        rawTags,
 		JSONSchema:  jsonSchema,
 	}
 }
 
-func minimalSchema(kind string) *AppSchema {
-	return &AppSchema{
-		Kind:        kind,
-		DisplayName: kind,
-		Description: kind + " application",
-		JSONSchema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
-		},
-	}
-}
-
-func defaultSchemaList() []AppSchema {
-	kinds := []struct {
-		kind        string
-		displayName string
-		description string
-	}{
-		{"Postgres", "PostgreSQL", "Managed PostgreSQL database"},
-		{"MySQL", "MySQL", "Managed MySQL database"},
-		{"Redis", "Redis", "Managed Redis cache"},
-		{"Kafka", "Kafka", "Managed Kafka message broker"},
-		{"RabbitMQ", "RabbitMQ", "Managed RabbitMQ message broker"},
-		{"NATS", "NATS", "Managed NATS messaging"},
-		{"ClickHouse", "ClickHouse", "Managed ClickHouse analytics database"},
-		{"MongoDB", "MongoDB", "Managed MongoDB (via FerretDB)"},
-		{"Kubernetes", "Kubernetes", "Managed Kubernetes cluster"},
-		{"VirtualMachine", "Virtual Machine", "KubeVirt virtual machine"},
-		{"Bucket", "Object Storage", "S3-compatible storage bucket"},
-		{"Ingress", "Ingress", "HTTP ingress"},
-		{"TCPBalancer", "TCP Balancer", "TCP load balancer"},
-		{"HTTPCache", "HTTP Cache", "HTTP caching proxy"},
-		{"Monitoring", "Monitoring", "Observability stack"},
-		{"Tenant", "Tenant", "Sub-tenant namespace"},
+func nestedString(obj map[string]any, fields ...string) string {
+	val, found, err := unstructured.NestedString(obj, fields...)
+	if err != nil || !found {
+		return ""
 	}
 
-	schemas := make([]AppSchema, 0, len(kinds))
-
-	for _, kind := range kinds {
-		schemas = append(schemas, AppSchema{
-			Kind:        kind.kind,
-			DisplayName: kind.displayName,
-			Description: kind.description,
-		})
-	}
-
-	return schemas
+	return val
 }
