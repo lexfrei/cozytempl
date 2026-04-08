@@ -144,56 +144,68 @@ templ Shell(username string) {
 				<div x-show="currentPage === 'marketplace'" x-cloak x-data="marketplace()">
 					<div class="page-header">
 						<h1 class="page-title">Marketplace</h1>
+						<div class="text-sm text-muted" x-text="filteredSchemas.length + ' applications available'"></div>
 					</div>
 
-					<!-- Search and filter -->
-					<div class="flex items-center gap-3 mb-4">
-						<input class="form-input" type="text" placeholder="Search applications..."
-							x-model="search" style="max-width: 300px;"/>
-						<select class="form-select" x-model="categoryFilter" style="max-width: 200px;">
-							<option value="">All categories</option>
+					<!-- Search and filters -->
+					<div class="mp-filters">
+						<div class="mp-search">
+							<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--color-text-muted);width:16px;height:16px;">
+								<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+							</svg>
+							<input class="form-input" type="text" placeholder="Search by name, type, or description..."
+								x-model="search" style="padding-left: 36px;"/>
+						</div>
+						<div class="mp-filter-pills">
+							<button class="mp-pill" :class="{ active: !categoryFilter }"
+								@click="categoryFilter = ''">All</button>
 							<template x-for="cat in categories" :key="cat">
-								<option :value="cat" x-text="cat"></option>
+								<button class="mp-pill" :class="{ active: categoryFilter === cat }"
+									@click="categoryFilter = categoryFilter === cat ? '' : cat">
+									<span x-text="cat"></span>
+									<span class="mp-pill-count" x-text="schemasInCategory(cat)"></span>
+								</button>
 							</template>
-						</select>
-						<select class="form-select" x-model="tagFilter" style="max-width: 200px;">
-							<option value="">All tags</option>
+						</div>
+						<div class="mp-filter-pills" x-show="allTags.length > 0">
 							<template x-for="tag in allTags" :key="tag">
-								<option :value="tag" x-text="tag"></option>
+								<button class="mp-tag-pill" :class="{ active: tagFilter === tag }"
+									@click="tagFilter = tagFilter === tag ? '' : tag"
+									x-text="tag"></button>
 							</template>
-						</select>
+						</div>
 					</div>
 
 					<!-- Category groups -->
 					<template x-for="cat in filteredCategories" :key="cat">
-						<div class="mb-4">
-							<h2 class="page-title" style="font-size: 1.15rem; margin-bottom: 12px;" x-text="cat"></h2>
-							<div class="stats-grid" style="grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));">
+						<div class="mp-category">
+							<div class="mp-category-header">
+								<h2 x-text="cat"></h2>
+								<span class="text-sm text-muted" x-text="appsInCategory(cat).length + ' services'"></span>
+							</div>
+							<div class="mp-grid">
 								<template x-for="app in appsInCategory(cat)" :key="app.kind">
-									<div class="card" style="cursor: pointer; transition: border-color 150ms ease;"
-										@mouseenter="$el.style.borderColor='var(--color-primary)'"
-										@mouseleave="$el.style.borderColor='var(--color-border)'"
-										@click="selectSchema(app)">
-										<div class="flex items-center gap-3" style="margin-bottom: 8px;">
-											<div style="width: 36px; height: 36px; border-radius: 8px; background: var(--color-primary-bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+									<div class="mp-card" @click="showDetail(app)">
+										<div class="mp-card-row">
+											<div class="mp-card-icon">
 												<template x-if="app.icon">
-													<img :src="'data:image/svg+xml;base64,' + app.icon" style="width: 24px; height: 24px;"/>
+													<img :src="'data:image/svg+xml;base64,' + app.icon" width="28" height="28"/>
 												</template>
 												<template x-if="!app.icon">
-													<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2">
+													<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="1.5">
 														<path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
 													</svg>
 												</template>
 											</div>
-											<div>
-												<div style="font-weight: 600;" x-text="app.displayName || app.kind"></div>
-												<div class="text-sm text-muted" x-text="app.kind"></div>
+											<div style="flex:1;min-width:0;">
+												<div class="mp-card-title" x-text="app.displayName || app.kind"></div>
+												<div class="mp-card-desc" x-text="app.description"></div>
 											</div>
+											<span class="text-sm text-muted" style="white-space:nowrap;" x-text="schemaFieldCount(app) + ' opt'"></span>
 										</div>
-										<div class="text-sm text-muted" style="margin-bottom: 8px;" x-text="app.description"></div>
-										<div class="flex gap-2" style="flex-wrap: wrap;">
-											<template x-for="tag in (app.tags || [])" :key="tag">
-												<span style="font-size: 0.7rem; padding: 2px 8px; border-radius: 100px; background: var(--color-bg); border: 1px solid var(--color-border);" x-text="tag"></span>
+										<div class="mp-card-tags" x-show="(app.tags || []).length > 0">
+											<template x-for="tag in (app.tags || []).slice(0, 3)" :key="tag">
+												<span class="mp-tag" x-text="tag"></span>
 											</template>
 										</div>
 									</div>
@@ -203,7 +215,77 @@ templ Shell(username string) {
 					</template>
 
 					<div class="empty-state" x-show="filteredSchemas.length === 0">
+						<div class="empty-state-icon">&#128270;</div>
 						<div class="empty-state-title">No applications match your search</div>
+						<p class="text-muted mt-2">Try a different search term or clear filters.</p>
+					</div>
+
+					<!-- Detail modal -->
+					<div class="modal-backdrop" x-show="selectedApp" x-cloak
+						@click.self="selectedApp = null" x-transition.opacity>
+						<div class="modal" style="max-width: 640px;" @click.stop>
+							<div class="modal-header">
+								<div class="flex items-center gap-3">
+									<div class="mp-card-icon" style="width:48px;height:48px;">
+										<template x-if="selectedApp?.icon">
+											<img :src="'data:image/svg+xml;base64,' + selectedApp.icon" width="40" height="40"/>
+										</template>
+										<template x-if="!selectedApp?.icon">
+											<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="1.5">
+												<path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+											</svg>
+										</template>
+									</div>
+									<div>
+										<h2 class="modal-title" x-text="selectedApp?.displayName"></h2>
+										<div class="text-sm text-muted" x-text="selectedApp?.kind"></div>
+									</div>
+								</div>
+								<button class="btn-icon" @click="selectedApp = null">&times;</button>
+							</div>
+
+							<p style="margin-bottom: 16px;" x-text="selectedApp?.description"></p>
+
+							<div class="flex gap-3 mb-4" style="flex-wrap: wrap;">
+								<div class="stat-card" style="flex: 1; min-width: 120px;">
+									<div class="stat-value" style="font-size: 1.25rem;" x-text="selectedApp?.category || '—'"></div>
+									<div class="stat-label">Category</div>
+								</div>
+								<div class="stat-card" style="flex: 1; min-width: 120px;">
+									<div class="stat-value" style="font-size: 1.25rem;" x-text="schemaFieldCount(selectedApp) || 0"></div>
+									<div class="stat-label">Config options</div>
+								</div>
+							</div>
+
+							<div class="flex gap-2 mb-4" style="flex-wrap: wrap;" x-show="selectedApp?.tags?.length > 0">
+								<template x-for="tag in (selectedApp?.tags || [])" :key="tag">
+									<span class="mp-tag" x-text="tag"></span>
+								</template>
+							</div>
+
+							<!-- Schema preview -->
+							<div x-show="selectedApp?.jsonSchema?.properties" style="margin-bottom: 16px;">
+								<div class="form-label" style="margin-bottom: 8px;">Configuration parameters</div>
+								<div class="card" style="padding: 12px; max-height: 200px; overflow-y: auto;">
+									<table style="width: 100%;">
+										<template x-for="[key, prop] in schemaProperties(selectedApp)" :key="key">
+											<tr>
+												<td style="padding: 4px 8px; font-weight: 500; white-space: nowrap;" x-text="prop.title || key"></td>
+												<td class="text-sm text-muted" style="padding: 4px 8px;" x-text="prop.type || 'object'"></td>
+												<td class="text-sm text-muted" style="padding: 4px 8px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" x-text="prop.description || ''"></td>
+											</tr>
+										</template>
+									</table>
+								</div>
+							</div>
+
+							<div class="modal-footer">
+								<button class="btn" @click="selectedApp = null">Close</button>
+								<button class="btn btn-primary" @click="deployApp(selectedApp)">
+									Deploy to tenant
+								</button>
+							</div>
+						</div>
 					</div>
 				</div>
 

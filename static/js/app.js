@@ -165,6 +165,7 @@ function marketplace() {
     search: '',
     categoryFilter: '',
     tagFilter: '',
+    selectedApp: null,
     loading: true,
 
     async init() {
@@ -204,7 +205,8 @@ function marketplace() {
         list = list.filter(s =>
           s.kind.toLowerCase().includes(q) ||
           (s.displayName || '').toLowerCase().includes(q) ||
-          (s.description || '').toLowerCase().includes(q)
+          (s.description || '').toLowerCase().includes(q) ||
+          (s.tags || []).some(t => t.toLowerCase().includes(q))
         );
       }
 
@@ -216,17 +218,39 @@ function marketplace() {
       return [...cats].sort();
     },
 
+    schemasInCategory(cat) {
+      return this.schemas.filter(s => (s.category || 'Other') === cat).length;
+    },
+
     appsInCategory(cat) {
       return this.filteredSchemas
         .filter(s => (s.category || 'Other') === cat)
         .sort((a, b) => (a.displayName || a.kind).localeCompare(b.displayName || b.kind));
     },
 
-    selectSchema(schema) {
+    schemaFieldCount(app) {
+      if (!app?.jsonSchema?.properties) return 0;
+      return Object.keys(app.jsonSchema.properties).length;
+    },
+
+    schemaProperties(app) {
+      if (!app?.jsonSchema?.properties) return [];
+      return Object.entries(app.jsonSchema.properties);
+    },
+
+    showDetail(app) {
+      this.selectedApp = app;
+    },
+
+    deployApp(app) {
+      this.selectedApp = null;
       const appStore = Alpine.closestDataStack(this.$el).find(s => s.navigate);
-      if (appStore && appStore.currentTenant) {
-        appStore.currentPage = 'tenant';
-        // Could pre-select the create modal with this kind
+      if (appStore) {
+        if (appStore.currentTenant) {
+          appStore.navigate('tenant', appStore.currentTenant, appStore.currentTenantName);
+        } else {
+          appStore.navigate('dashboard');
+        }
       }
     },
   };
