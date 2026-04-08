@@ -293,15 +293,31 @@ function appList() {
     sortBy: 'name',
     showCreateModal: false,
     loading: true,
+    _lastTenant: '',
 
     async init() {
+      // Watch for tenant changes and reload
+      this.$watch('$data', () => {
+        const tenant = this.getTenant();
+        if (tenant && tenant !== this._lastTenant) {
+          this._lastTenant = tenant;
+          this.loadApps();
+        }
+      });
       await this.loadApps();
     },
 
-    async loadApps() {
+    getTenant() {
       const appStore = Alpine.closestDataStack(this.$el).find(s => s.currentTenant);
-      const tenant = appStore?.currentTenant;
+      return appStore?.currentTenant || '';
+    },
+
+    async loadApps() {
+      const tenant = this.getTenant();
       if (!tenant) return;
+
+      this._lastTenant = tenant;
+      this.loading = true;
 
       try {
         this.apps = await api('/tenants/' + tenant + '/apps') || [];
@@ -518,14 +534,20 @@ function appDetail() {
       await this.loadDetail();
     },
 
-    async loadDetail() {
+    getAppContext() {
       const appStore = Alpine.closestDataStack(this.$el).find(s => s.currentTenant);
-      const tenant = appStore?.currentTenant;
-      const appName = appStore?.currentApp;
-      if (!tenant || !appName) return;
+      return {
+        tenant: appStore?.currentTenant || '',
+        app: appStore?.currentApp || '',
+      };
+    },
+
+    async loadDetail() {
+      const ctx = this.getAppContext();
+      if (!ctx.tenant || !ctx.app) return;
 
       try {
-        this.detail = await api('/tenants/' + tenant + '/apps/' + appName) || {};
+        this.detail = await api('/tenants/' + ctx.tenant + '/apps/' + ctx.app) || {};
       } catch (err) {
         console.error('Failed to load app detail:', err);
       }
