@@ -45,6 +45,7 @@ function app() {
     currentTenant: '',      // namespace, e.g. "tenant-root"
     currentTenantName: '',  // display name, e.g. "root"
     currentApp: '',
+    sidebarOpen: false,
     toasts: [],
     _toastId: 0,
 
@@ -73,6 +74,7 @@ function app() {
     },
 
     navigate(page, tenantNS, tenantName, appName) {
+      this.sidebarOpen = false;
       this.currentPage = page;
       if (tenantNS) this.currentTenant = tenantNS;
       if (tenantName) this.currentTenantName = tenantName;
