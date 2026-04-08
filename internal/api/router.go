@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
+	"github.com/lexfrei/cozytempl/internal/handler"
 )
 
 // RouterConfig holds all dependencies for building the HTTP router.
@@ -16,8 +17,8 @@ type RouterConfig struct {
 	AppHandler    *ApplicationHandler
 	SchemaHandler *SchemaHandler
 	SSEHandler    *SSEHandler
+	PageHandler   *handler.PageHandler
 	StaticFS      embed.FS
-	ShellHandler  http.HandlerFunc
 	Log           *slog.Logger
 	DevMode       bool
 	DevUsername   string
@@ -27,42 +28,51 @@ type RouterConfig struct {
 func Router(cfg *RouterConfig) http.Handler {
 	mux := http.NewServeMux()
 
-	// Auth middleware — either OIDC session or dev passthrough
-	var protectAPI func(http.Handler) http.Handler
-
-	var protectShell func(http.Handler) http.Handler
+	var protect func(http.Handler) http.Handler
 
 	if cfg.DevMode {
-		devWrap := func(next http.Handler) http.Handler {
+		protect = func(next http.Handler) http.Handler {
 			return auth.DevAuth(cfg.DevUsername, next)
 		}
-		protectAPI = devWrap
-		protectShell = devWrap
 	} else {
 		mux.HandleFunc("GET /auth/login", cfg.AuthHandler.HandleLogin)
 		mux.HandleFunc("GET /auth/callback", cfg.AuthHandler.HandleCallback)
 		mux.HandleFunc("POST /auth/logout", cfg.AuthHandler.HandleLogout)
 
-		protectAPI = func(next http.Handler) http.Handler {
+		protect = func(next http.Handler) http.Handler {
 			return auth.RequireAuth(cfg.SessionStore, next)
 		}
-		protectShell = protectAPI
 	}
 
 	apiMux := registerAPIRoutes(cfg.TenantHandler, cfg.AppHandler, cfg.SchemaHandler, cfg.SSEHandler)
+	pageMux := registerPageRoutes(cfg.PageHandler)
 
 	mux.HandleFunc("GET /healthz", healthHandler)
 	mux.HandleFunc("GET /readyz", healthHandler)
 
-	mountStaticFiles(mux, cfg.StaticFS, cfg.Log)
+	mountStaticFiles(mux, cfg.StaticFS)
 
-	mux.Handle("GET /", protectShell(cfg.ShellHandler))
-	mux.Handle("GET /api/", protectAPI(apiMux))
-	mux.Handle("POST /api/", protectAPI(apiMux))
-	mux.Handle("PUT /api/", protectAPI(apiMux))
-	mux.Handle("DELETE /api/", protectAPI(apiMux))
+	mux.Handle("GET /api/", protect(apiMux))
+	mux.Handle("POST /api/", protect(apiMux))
+	mux.Handle("PUT /api/", protect(apiMux))
+	mux.Handle("DELETE /api/", protect(apiMux))
+
+	mux.Handle("GET /", protect(pageMux))
+	mux.Handle("POST /", protect(pageMux))
+	mux.Handle("DELETE /", protect(pageMux))
 
 	return mux
+}
+
+func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {
+	pageMux := http.NewServeMux()
+
+	pageMux.HandleFunc("GET /", pgh.Dashboard)
+	pageMux.HandleFunc("GET /marketplace", pgh.Dashboard)
+	pageMux.HandleFunc("GET /tenants/{tenant}", pgh.Dashboard)
+	pageMux.HandleFunc("GET /tenants/{tenant}/apps/{name}", pgh.Dashboard)
+
+	return pageMux
 }
 
 func registerAPIRoutes(
@@ -97,6 +107,6 @@ func healthHandler(writer http.ResponseWriter, _ *http.Request) {
 	_, _ = writer.Write([]byte("ok"))
 }
 
-func mountStaticFiles(mux *http.ServeMux, staticFS embed.FS, _ *slog.Logger) {
+func mountStaticFiles(mux *http.ServeMux, staticFS embed.FS) {
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 }

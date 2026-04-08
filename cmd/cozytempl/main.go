@@ -15,8 +15,8 @@ import (
 	"github.com/lexfrei/cozytempl/internal/api"
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/config"
+	"github.com/lexfrei/cozytempl/internal/handler"
 	"github.com/lexfrei/cozytempl/internal/k8s"
-	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/static"
 
 	"k8s.io/client-go/rest"
@@ -64,13 +64,15 @@ func run() error {
 		log.Warn("failed to start watcher, SSE will be unavailable", "error", err)
 	}
 
+	pageHandler := handler.NewPageHandler(tenantSvc, appSvc, schemaSvc, log)
+
 	routerCfg := &api.RouterConfig{
 		TenantHandler: api.NewTenantHandler(tenantSvc, log),
 		AppHandler:    api.NewApplicationHandler(appSvc, log),
 		SchemaHandler: api.NewSchemaHandler(schemaSvc, log),
 		SSEHandler:    api.NewSSEHandler(watcher, log),
+		PageHandler:   pageHandler,
 		StaticFS:      static.FS,
-		ShellHandler:  makeShellHandler(log),
 		Log:           log,
 		DevMode:       cfg.DevMode,
 		DevUsername:   "dev-admin",
@@ -115,24 +117,6 @@ func run() error {
 	defer shutdownCancel()
 
 	return srv.Shutdown(shutdownCtx) //nolint:wrapcheck // top-level, error logged by caller
-}
-
-func makeShellHandler(log *slog.Logger) http.HandlerFunc {
-	return func(writer http.ResponseWriter, req *http.Request) {
-		usr := auth.UserFromContext(req.Context())
-		username := ""
-
-		if usr != nil {
-			username = usr.Username
-		}
-
-		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-
-		renderErr := view.Shell(username).Render(req.Context(), writer)
-		if renderErr != nil {
-			log.Error("rendering shell", "error", renderErr)
-		}
-	}
 }
 
 func loadKubeConfig() (*rest.Config, error) {

@@ -1,0 +1,24 @@
+package partial
+
+type BreadcrumbItem struct {
+	Label string
+	URL   string
+}
+
+templ Breadcrumb(items []BreadcrumbItem) {
+	<div class="breadcrumb">
+		for i, item := range items {
+			if i > 0 {
+				<span class="breadcrumb-sep"></span>
+			}
+			if item.URL != "" {
+				<a href={ templ.SafeURL(item.URL) }
+					hx-get={ item.URL }
+					hx-target="#main-content"
+					hx-push-url="true">{ item.Label }</a>
+			} else {
+				<span>{ item.Label }</span>
+			}
+		}
+	</div>
+}

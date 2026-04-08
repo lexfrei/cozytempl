@@ -1,0 +1,24 @@
+package partial
+
+import "strings"
+
+templ StatusBadge(status string) {
+	<span class={ "badge", badgeClass(status) }>{ status }</span>
+}
+
+templ StatusBadgeWithID(status string, id string) {
+	<span id={ id } class={ "badge", badgeClass(status) }>{ status }</span>
+}
+
+func badgeClass(status string) string {
+	switch strings.ToLower(status) {
+	case "ready", "active":
+		return "badge-ready"
+	case "reconciling":
+		return "badge-reconciling"
+	case "failed":
+		return "badge-failed"
+	default:
+		return "badge-unknown"
+	}
+}

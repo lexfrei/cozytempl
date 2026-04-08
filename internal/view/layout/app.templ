@@ -1,0 +1,21 @@
+package layout
+
+import "github.com/lexfrei/cozytempl/internal/k8s"
+import "github.com/lexfrei/cozytempl/internal/view/partial"
+
+templ App(username string, tenants []k8s.Tenant, activePage string, activeTenant string) {
+	@Base("cozytempl") {
+		<!-- Toast container (OOB swap target) -->
+		<div id="toast-container" class="toast-container"></div>
+
+		<div class="app-layout">
+			@partial.Header(username)
+			<div class="sidebar-overlay"></div>
+			@partial.Sidebar(tenants, activePage, activeTenant)
+
+			<main id="main-content" class="main-content">
+				{ children... }
+			</main>
+		</div>
+	}
+}

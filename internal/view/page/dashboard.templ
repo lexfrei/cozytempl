@@ -1,0 +1,66 @@
+package page
+
+import (
+	"fmt"
+	"github.com/lexfrei/cozytempl/internal/k8s"
+	"github.com/lexfrei/cozytempl/internal/view"
+	"github.com/lexfrei/cozytempl/internal/view/partial"
+)
+
+templ Dashboard(data view.DashboardData) {
+	<div class="page-header">
+		<h1 class="page-title">Dashboard</h1>
+	</div>
+	<div class="stats-grid">
+		@statCard(fmt.Sprint(data.Tenants), "Tenants")
+		@statCard(fmt.Sprint(data.Apps), "Applications")
+		@statCard(fmt.Sprint(data.Ready), "Ready")
+		@statCard(fmt.Sprint(data.Failed), "Failed")
+	</div>
+
+	if len(data.RecentApps) > 0 {
+		<div class="card mt-4">
+			<div class="card-header">
+				<div class="card-title">Applications</div>
+			</div>
+			<div class="table-container">
+				<table>
+					<thead>
+						<tr>
+							<th>Name</th>
+							<th>Type</th>
+							<th>Tenant</th>
+							<th>Status</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, app := range data.RecentApps {
+							@dashboardAppRow(app)
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	}
+}
+
+templ statCard(value string, label string) {
+	<div class="stat-card">
+		<div class="stat-value">{ value }</div>
+		<div class="stat-label">{ label }</div>
+	</div>
+}
+
+templ dashboardAppRow(app k8s.Application) {
+	<tr style="cursor: pointer;"
+		hx-get={ "/tenants/" + app.Tenant + "/apps/" + app.Name }
+		hx-target="#main-content"
+		hx-push-url="true">
+		<td>{ app.Name }</td>
+		<td>{ app.Kind }</td>
+		<td class="text-sm text-muted">{ app.Tenant }</td>
+		<td>
+			@partial.StatusBadge(string(app.Status))
+		</td>
+	</tr>
+}

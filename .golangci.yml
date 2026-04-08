@@ -78,6 +78,8 @@ linters:
       - builtin$
       - examples/
       - generated\.go$
+      - _templ\.go$
+      - node_modules/
     rules:
       - linters:
           - funlen
@@ -119,6 +121,9 @@ linters:
           - nilnil
           - revive
         path: internal/testutil/
+      - linters:
+          - godoclint
+        path: internal/view/
 formatters:
   enable:
     - gofmt
@@ -131,3 +136,5 @@ formatters:
       - builtin$
       - examples/
       - generated\.go$
+      - _templ\.go$
+      - node_modules/

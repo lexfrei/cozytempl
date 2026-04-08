@@ -1,0 +1,9 @@
+package partial
+
+templ Toast(toastType string, message string) {
+	<div id="toast-container" hx-swap-oob="beforeend">
+		<div class={ "toast", "toast-" + toastType } data-auto-dismiss="">
+			{ message }
+		</div>
+	</div>
+}
