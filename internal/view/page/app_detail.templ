@@ -1,0 +1,136 @@
+package page
+
+import (
+	"encoding/json"
+	"github.com/lexfrei/cozytempl/internal/view"
+	"github.com/lexfrei/cozytempl/internal/view/partial"
+)
+
+templ AppDetail(data view.AppDetailData) {
+	@partial.Breadcrumb([]partial.BreadcrumbItem{
+		{Label: "Dashboard", URL: "/"},
+		{Label: data.Tenant, URL: "/tenants/" + data.Tenant},
+		{Label: data.App.Name},
+	})
+	<div class="page-header">
+		<h1 class="page-title">{ data.App.Name }</h1>
+		@partial.StatusBadge(string(data.App.Status))
+	</div>
+
+	<!-- Tabs -->
+	<div class="tabs">
+		@detailTab("Overview", "overview", data)
+		@detailTab("Connection", "connection", data)
+		@detailTab("Conditions", "conditions", data)
+		@detailTab("Values", "values", data)
+	</div>
+
+	<!-- Tab content -->
+	<div id="tab-content">
+		switch data.Tab {
+			case "connection":
+				@connectionTab(data)
+			case "conditions":
+				@conditionsTab(data)
+			case "values":
+				@valuesTab(data)
+			default:
+				@overviewTab(data)
+		}
+	</div>
+}
+
+templ detailTab(label string, tab string, data view.AppDetailData) {
+	<button class={ "tab", templ.KV("active", data.Tab == tab || (tab == "overview" && data.Tab == "")) }
+		hx-get={ "/tenants/" + data.Tenant + "/apps/" + data.App.Name + "?tab=" + tab }
+		hx-target="#main-content"
+		hx-push-url="false">
+		{ label }
+	</button>
+}
+
+templ overviewTab(data view.AppDetailData) {
+	<div class="card">
+		<dl class="flex flex-col gap-3">
+			<div class="flex justify-between">
+				<dt class="text-muted">Type</dt>
+				<dd>{ data.App.Kind }</dd>
+			</div>
+			<div class="flex justify-between">
+				<dt class="text-muted">Tenant</dt>
+				<dd>{ data.Tenant }</dd>
+			</div>
+			<div class="flex justify-between">
+				<dt class="text-muted">Created</dt>
+				<dd>{ formatTime(data.App.CreatedAt) }</dd>
+			</div>
+		</dl>
+	</div>
+}
+
+templ connectionTab(data view.AppDetailData) {
+	if len(data.App.ConnectionInfo) > 0 {
+		<div class="card">
+			for key, value := range data.App.ConnectionInfo {
+				<div class="form-group">
+					<label class="form-label">{ key }</label>
+					<div class="connection-info">
+						<code>{ value }</code>
+						<button class="btn-icon copy-btn" data-copy={ value }>&#128203;</button>
+					</div>
+				</div>
+			}
+		</div>
+	} else {
+		<div class="empty-state">
+			<div class="empty-state-title">No connection info available</div>
+			<p class="text-muted">Connection details appear once the application is ready.</p>
+		</div>
+	}
+}
+
+templ conditionsTab(data view.AppDetailData) {
+	<div class="card">
+		<div class="table-container">
+			<table>
+				<thead>
+					<tr>
+						<th>Type</th>
+						<th>Status</th>
+						<th>Reason</th>
+						<th>Message</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, cond := range data.App.Conditions {
+						<tr>
+							<td>{ cond.Type }</td>
+							<td>
+								@partial.StatusBadge(cond.Status)
+							</td>
+							<td class="text-mono text-sm">{ cond.Reason }</td>
+							<td class="text-sm">{ cond.Message }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
+templ valuesTab(data view.AppDetailData) {
+	<div class="card">
+		<pre class="connection-info" style="white-space: pre-wrap;">{ prettyJSON(data.App.Spec) }</pre>
+	</div>
+}
+
+func prettyJSON(v map[string]any) string {
+	if v == nil {
+		return "{}"
+	}
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}

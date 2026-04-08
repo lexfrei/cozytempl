@@ -1,0 +1,132 @@
+package page
+
+import (
+	"fmt"
+	"github.com/lexfrei/cozytempl/internal/k8s"
+	"github.com/lexfrei/cozytempl/internal/view"
+)
+
+templ Marketplace(data view.MarketplaceData) {
+	<div class="page-header">
+		<h1 class="page-title">Marketplace</h1>
+		<div class="text-sm text-muted">{ fmt.Sprint(len(data.Schemas)) } applications available</div>
+	</div>
+
+	<!-- Search -->
+	<div class="mp-filters">
+		<div class="mp-search" style="position: relative;">
+			<input class="form-input" type="text" name="q"
+				placeholder="Search by name, type, or description..."
+				value={ data.Query }
+				hx-get="/fragments/marketplace"
+				hx-trigger="keyup changed delay:300ms"
+				hx-target="#marketplace-grid"
+				hx-include="[name='category'],[name='tag']"
+				style="padding-left: 36px;"/>
+		</div>
+		<!-- Category pills -->
+		<div class="mp-filter-pills">
+			<a href="/marketplace"
+				hx-get="/fragments/marketplace"
+				hx-target="#marketplace-grid"
+				hx-include="[name='q']"
+				class={ "mp-pill", templ.KV("active", data.CategoryFilter == "") }>All</a>
+			for _, cat := range data.Categories {
+				<a href={ templ.SafeURL("/marketplace?category=" + cat.Name) }
+					hx-get={ "/fragments/marketplace?category=" + cat.Name }
+					hx-target="#marketplace-grid"
+					hx-include="[name='q'],[name='tag']"
+					class={ "mp-pill", templ.KV("active", data.CategoryFilter == cat.Name) }>
+					<span>{ cat.Name }</span>
+					<span class="mp-pill-count">{ fmt.Sprint(len(cat.Schemas)) }</span>
+				</a>
+			}
+		</div>
+		<!-- Tag pills -->
+		if len(data.AllTags) > 0 {
+			<div class="mp-filter-pills">
+				for _, tag := range data.AllTags {
+					<a hx-get={ "/fragments/marketplace?tag=" + tag }
+						hx-target="#marketplace-grid"
+						hx-include="[name='q'],[name='category']"
+						class={ "mp-tag-pill", templ.KV("active", data.TagFilter == tag) }>
+						{ tag }
+					</a>
+				}
+			</div>
+		}
+	</div>
+
+	<div id="marketplace-grid">
+		@MarketplaceGrid(data)
+	</div>
+}
+
+templ MarketplaceGrid(data view.MarketplaceData) {
+	for _, cat := range data.Categories {
+		if len(cat.Schemas) > 0 {
+			<div class="mp-category">
+				<div class="mp-category-header">
+					<h2>{ cat.Name }</h2>
+					<span class="text-sm text-muted">{ fmt.Sprint(len(cat.Schemas)) } services</span>
+				</div>
+				<div class="mp-grid">
+					for _, schema := range cat.Schemas {
+						@marketplaceCard(schema)
+					}
+				</div>
+			</div>
+		}
+	}
+	if len(data.Schemas) == 0 {
+		<div class="empty-state">
+			<div class="empty-state-title">No applications match your search</div>
+			<p class="text-muted mt-2">Try a different search term or clear filters.</p>
+		</div>
+	}
+}
+
+templ marketplaceCard(schema k8s.AppSchema) {
+	<div class="mp-card">
+		<div class="mp-card-row">
+			<div class="mp-card-icon">
+				if schema.Icon != "" {
+					<img src={ "data:image/svg+xml;base64," + schema.Icon } width="28" height="28"/>
+				} else {
+					<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="1.5">
+						<path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"></path>
+					</svg>
+				}
+			</div>
+			<div style="flex:1;min-width:0;">
+				<div class="mp-card-title">{ schema.DisplayName }</div>
+				<div class="mp-card-desc">{ schema.Description }</div>
+			</div>
+			<span class="text-sm text-muted" style="white-space:nowrap;">
+				{ fmt.Sprint(schemaFieldCount(schema)) } opt
+			</span>
+		</div>
+		if len(schema.Tags) > 0 {
+			<div class="mp-card-tags">
+				for _, tag := range schema.Tags {
+					<span class="mp-tag">{ tag }</span>
+				}
+			</div>
+		}
+	</div>
+}
+
+func schemaFieldCount(schema k8s.AppSchema) int {
+	if schema.JSONSchema == nil {
+		return 0
+	}
+	m, ok := schema.JSONSchema.(map[string]any)
+	if !ok {
+		return 0
+	}
+	props, ok := m["properties"].(map[string]any)
+	if !ok {
+		return 0
+	}
+	return len(props)
+}

@@ -132,7 +132,12 @@ func (tsv *TenantService) Get(ctx context.Context, username string, groups []str
 func findTenantObj(items []unstructured.Unstructured, name string) *unstructured.Unstructured {
 	for idx := range items {
 		obj := &items[idx]
-		if obj.GetName() == name || obj.GetNamespace() == tenantNamespacePrefix+name {
+
+		objNS := obj.GetNamespace()
+		statusNS := nestedString(obj.Object, "status", "namespace")
+
+		if obj.GetName() == name || objNS == name || statusNS == name ||
+			objNS == tenantNamespacePrefix+name || statusNS == tenantNamespacePrefix+name {
 			return obj
 		}
 	}

@@ -1,0 +1,124 @@
+package page
+
+import (
+	"github.com/lexfrei/cozytempl/internal/k8s"
+	"github.com/lexfrei/cozytempl/internal/view"
+	"github.com/lexfrei/cozytempl/internal/view/partial"
+)
+
+templ Tenant(data view.TenantPageData) {
+	@partial.Breadcrumb([]partial.BreadcrumbItem{
+		{Label: "Dashboard", URL: "/"},
+		{Label: data.Tenant.DisplayName},
+	})
+	<div class="page-header">
+		<h1 class="page-title">{ data.Tenant.DisplayName }</h1>
+		<button class="btn btn-primary" onclick="openModal('create-app-modal')">
+			+ Create Application
+		</button>
+	</div>
+
+	<!-- Filters -->
+	<div class="flex items-center gap-3 mb-4">
+		<input class="form-input" type="text" name="q" placeholder="Search applications..."
+			value={ data.Query }
+			hx-get={ "/fragments/app-table?tenant=" + data.Tenant.Namespace }
+			hx-trigger="keyup changed delay:300ms"
+			hx-target="#app-table-body"
+			hx-include="[name='kind'],[name='sort']"
+			style="max-width: 300px;"/>
+		<select class="form-select" name="kind" style="max-width: 200px;"
+			hx-get={ "/fragments/app-table?tenant=" + data.Tenant.Namespace }
+			hx-trigger="change"
+			hx-target="#app-table-body"
+			hx-include="[name='q'],[name='sort']">
+			<option value="">All types</option>
+			for _, kind := range uniqueKinds(data.Apps) {
+				<option value={ kind } selected?={ kind == data.KindFilter }>{ kind }</option>
+			}
+		</select>
+		<select class="form-select" name="sort" style="max-width: 150px;"
+			hx-get={ "/fragments/app-table?tenant=" + data.Tenant.Namespace }
+			hx-trigger="change"
+			hx-target="#app-table-body"
+			hx-include="[name='q'],[name='kind']">
+			<option value="name" selected?={ data.SortBy == "name" || data.SortBy == "" }>Name</option>
+			<option value="kind" selected?={ data.SortBy == "kind" }>Type</option>
+			<option value="status" selected?={ data.SortBy == "status" }>Status</option>
+		</select>
+	</div>
+
+	<!-- App table -->
+	<div class="card">
+		<div class="table-container">
+			<table>
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Type</th>
+						<th>Status</th>
+						<th>Created</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody id="app-table-body">
+					@AppTableRows(data.Tenant.Namespace, data.Apps)
+				</tbody>
+			</table>
+		</div>
+		if len(data.Apps) == 0 {
+			<div class="empty-state">
+				<div class="empty-state-title">No applications found</div>
+				<p class="text-muted">Create your first application to get started.</p>
+			</div>
+		}
+	</div>
+
+	<!-- Create modal -->
+	<div id="create-app-modal" class="modal-backdrop" style="display: none;">
+		<div class="modal">
+			<div class="modal-header">
+				<h2 class="modal-title">Create Application</h2>
+				<button class="btn-icon" onclick="closeModal('create-app-modal')">&times;</button>
+			</div>
+			<form hx-post={ "/tenants/" + data.Tenant.Namespace + "/apps" }
+				hx-target="#main-content"
+				hx-push-url="false">
+				<div class="form-group">
+					<label class="form-label">Type</label>
+					<select class="form-select" name="kind" required
+						hx-get="/fragments/schema-fields"
+						hx-trigger="change"
+						hx-target="#schema-fields"
+						hx-include="this">
+						<option value="">Select type...</option>
+						for _, schema := range data.Schemas {
+							<option value={ schema.Kind }>{ schema.DisplayName }</option>
+						}
+					</select>
+				</div>
+				<div class="form-group">
+					<label class="form-label">Name</label>
+					<input class="form-input" type="text" name="name" required placeholder="my-application"/>
+				</div>
+				<div id="schema-fields"></div>
+				<div class="modal-footer">
+					<button type="button" class="btn" onclick="closeModal('create-app-modal')">Cancel</button>
+					<button type="submit" class="btn btn-primary">Create</button>
+				</div>
+			</form>
+		</div>
+	</div>
+}
+
+func uniqueKinds(apps []k8s.Application) []string {
+	seen := map[string]bool{}
+	var kinds []string
+	for _, a := range apps {
+		if !seen[a.Kind] {
+			seen[a.Kind] = true
+			kinds = append(kinds, a.Kind)
+		}
+	}
+	return kinds
+}

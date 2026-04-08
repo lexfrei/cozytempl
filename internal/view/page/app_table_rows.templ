@@ -1,0 +1,40 @@
+package page
+
+import (
+	"time"
+	"github.com/lexfrei/cozytempl/internal/k8s"
+	"github.com/lexfrei/cozytempl/internal/view/partial"
+)
+
+templ AppTableRows(tenant string, apps []k8s.Application) {
+	for _, app := range apps {
+		<tr style="cursor: pointer;"
+			hx-get={ "/tenants/" + tenant + "/apps/" + app.Name }
+			hx-target="#main-content"
+			hx-push-url="true">
+			<td>{ app.Name }</td>
+			<td>{ app.Kind }</td>
+			<td>
+				@partial.StatusBadgeWithID(string(app.Status), "status-"+app.Name)
+			</td>
+			<td class="text-sm text-muted">{ formatTime(app.CreatedAt) }</td>
+			<td>
+				<button class="btn btn-sm btn-danger"
+					hx-delete={ "/tenants/" + tenant + "/apps/" + app.Name }
+					hx-confirm={ "Delete " + app.Kind + " '" + app.Name + "'? This cannot be undone." }
+					hx-target="closest tr"
+					hx-swap="outerHTML swap:500ms"
+					onclick="event.stopPropagation()">
+					Delete
+				</button>
+			</td>
+		</tr>
+	}
+}
+
+func formatTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format("Jan 2, 2006, 03:04 PM")
+}

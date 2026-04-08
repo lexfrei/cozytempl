@@ -68,9 +68,9 @@ func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {
 	pageMux := http.NewServeMux()
 
 	pageMux.HandleFunc("GET /", pgh.Dashboard)
-	pageMux.HandleFunc("GET /marketplace", pgh.Dashboard)
-	pageMux.HandleFunc("GET /tenants/{tenant}", pgh.Dashboard)
-	pageMux.HandleFunc("GET /tenants/{tenant}/apps/{name}", pgh.Dashboard)
+	pageMux.HandleFunc("GET /marketplace", pgh.MarketplacePage)
+	pageMux.HandleFunc("GET /tenants/{tenant}", pgh.TenantPage)
+	pageMux.HandleFunc("GET /tenants/{tenant}/apps/{name}", pgh.AppDetailPage)
 
 	return pageMux
 }
