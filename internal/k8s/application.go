@@ -15,7 +15,10 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-const cozyAppGroup = "apps.cozystack.io"
+const (
+	cozyAppGroup    = "apps.cozystack.io"
+	secretsResource = "secrets"
+)
 
 // ErrAppNotFound is returned when an application is not found in a tenant.
 // ErrAppNotFound is returned when an application cannot be found.
@@ -203,16 +206,21 @@ func (asv *ApplicationService) findAppKind(
 func (asv *ApplicationService) getConnectionInfo(
 	ctx context.Context, client dynamic.Interface, tenant, name, kind string,
 ) map[string]string {
-	appDef, err := asv.schemaSvc.Get(ctx, "dev-admin", []string{"system:masters"}, kind)
-	if err != nil || len(appDef.SecretTemplates) == 0 {
-		return nil
-	}
-
 	result := make(map[string]string)
 
-	for _, tmpl := range appDef.SecretTemplates {
-		secretName := strings.ReplaceAll(tmpl, "{{ .name }}", name)
-		readSecretInto(ctx, client, tenant, secretName, result)
+	// Try templates from ApplicationDefinition
+	appDef, err := asv.schemaSvc.Get(ctx, "dev-admin", []string{"system:masters"}, kind)
+	if err == nil {
+		for _, tmpl := range appDef.SecretTemplates {
+			secretName := strings.ReplaceAll(tmpl, "{{ .name }}", name)
+			readSecretInto(ctx, client, tenant, secretName, result)
+		}
+	}
+
+	// Fallback: find secrets with HelmRelease prefix
+	if len(result) == 0 {
+		prefix := toLowerKind(kind) + "-" + name + "-"
+		findSecretsByPrefix(ctx, client, tenant, prefix, result)
 	}
 
 	if len(result) == 0 {
@@ -222,9 +230,42 @@ func (asv *ApplicationService) getConnectionInfo(
 	return result
 }
 
+func findSecretsByPrefix(
+	ctx context.Context, client dynamic.Interface, tenant, prefix string, dest map[string]string,
+) {
+	secretGVR := NamespaceGVR()
+	secretGVR.Resource = secretsResource
+
+	secretList, err := client.Resource(secretGVR).Namespace(tenant).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return
+	}
+
+	for idx := range secretList.Items {
+		sec := &secretList.Items[idx]
+		secName := sec.GetName()
+
+		if !strings.HasPrefix(secName, prefix) {
+			continue
+		}
+
+		// Skip helm release secrets and TLS/CA certs
+		if strings.Contains(secName, "sh.helm.release") {
+			continue
+		}
+
+		suffix := strings.TrimPrefix(secName, prefix)
+		if suffix == "ca" || suffix == "server" || suffix == "replication" || suffix == "init-script" {
+			continue
+		}
+
+		readSecretInto(ctx, client, tenant, secName, dest)
+	}
+}
+
 func readSecretInto(ctx context.Context, client dynamic.Interface, tenant, secretName string, dest map[string]string) {
 	secretGVR := NamespaceGVR()
-	secretGVR.Resource = "secrets"
+	secretGVR.Resource = secretsResource
 
 	obj, err := client.Resource(secretGVR).Namespace(tenant).Get(ctx, secretName, metav1.GetOptions{})
 	if err != nil {
