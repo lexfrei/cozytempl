@@ -65,6 +65,8 @@ function app() {
         this.currentTenant = path.split('/')[2];
         this.currentTenantName = this.currentTenant;
         this.currentPage = 'tenant';
+      } else if (path === '/marketplace') {
+        this.currentPage = 'marketplace';
       } else {
         this.currentPage = 'dashboard';
       }
@@ -77,7 +79,9 @@ function app() {
       if (appName) this.currentApp = appName;
 
       let url = '/';
-      if (page === 'tenant' && this.currentTenant) {
+      if (page === 'marketplace') {
+        url = '/marketplace';
+      } else if (page === 'tenant' && this.currentTenant) {
         url = '/tenants/' + this.currentTenant;
       } else if (page === 'appDetail' && this.currentTenant && this.currentApp) {
         url = '/tenants/' + this.currentTenant + '/apps/' + this.currentApp;
@@ -149,6 +153,80 @@ function tenantTree() {
       const appStore = Alpine.closestDataStack(this.$el).find(s => s.navigate);
       if (appStore) {
         appStore.navigate('tenant', tenant.namespace, tenant.displayName);
+      }
+    },
+  };
+}
+
+// Marketplace component
+function marketplace() {
+  return {
+    schemas: [],
+    search: '',
+    categoryFilter: '',
+    tagFilter: '',
+    loading: true,
+
+    async init() {
+      try {
+        this.schemas = await api('/schemas') || [];
+      } catch (err) {
+        console.error('Failed to load schemas:', err);
+      }
+      this.loading = false;
+    },
+
+    get categories() {
+      return [...new Set(this.schemas.map(s => s.category || 'Other'))].sort();
+    },
+
+    get allTags() {
+      const tags = new Set();
+      for (const s of this.schemas) {
+        for (const t of (s.tags || [])) tags.add(t);
+      }
+      return [...tags].sort();
+    },
+
+    get filteredSchemas() {
+      let list = this.schemas;
+
+      if (this.categoryFilter) {
+        list = list.filter(s => (s.category || 'Other') === this.categoryFilter);
+      }
+
+      if (this.tagFilter) {
+        list = list.filter(s => (s.tags || []).includes(this.tagFilter));
+      }
+
+      if (this.search) {
+        const q = this.search.toLowerCase();
+        list = list.filter(s =>
+          s.kind.toLowerCase().includes(q) ||
+          (s.displayName || '').toLowerCase().includes(q) ||
+          (s.description || '').toLowerCase().includes(q)
+        );
+      }
+
+      return list;
+    },
+
+    get filteredCategories() {
+      const cats = new Set(this.filteredSchemas.map(s => s.category || 'Other'));
+      return [...cats].sort();
+    },
+
+    appsInCategory(cat) {
+      return this.filteredSchemas
+        .filter(s => (s.category || 'Other') === cat)
+        .sort((a, b) => (a.displayName || a.kind).localeCompare(b.displayName || b.kind));
+    },
+
+    selectSchema(schema) {
+      const appStore = Alpine.closestDataStack(this.$el).find(s => s.navigate);
+      if (appStore && appStore.currentTenant) {
+        appStore.currentPage = 'tenant';
+        // Could pre-select the create modal with this kind
       }
     },
   };

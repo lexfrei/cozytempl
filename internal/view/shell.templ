@@ -62,6 +62,15 @@ templ Shell(username string) {
 						</svg>
 						Dashboard
 					</a>
+					<a href="/marketplace" class="sidebar-item" :class="{ active: currentPage === 'marketplace' }"
+						@click.prevent="navigate('marketplace')">
+						<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<path d="M6 2L3 7v11a2 2 0 002 2h14a2 2 0 002-2V7l-3-5z"/>
+							<line x1="3" y1="7" x2="21" y2="7"/>
+							<path d="M16 11a4 4 0 01-8 0"/>
+						</svg>
+						Marketplace
+					</a>
 				</div>
 
 				<div class="sidebar-section">
@@ -128,6 +137,73 @@ templ Shell(username string) {
 							<div class="stat-value" x-text="stats.failed">-</div>
 							<div class="stat-label">Failed</div>
 						</div>
+					</div>
+				</div>
+
+				<!-- Marketplace page -->
+				<div x-show="currentPage === 'marketplace'" x-cloak x-data="marketplace()">
+					<div class="page-header">
+						<h1 class="page-title">Marketplace</h1>
+					</div>
+
+					<!-- Search and filter -->
+					<div class="flex items-center gap-3 mb-4">
+						<input class="form-input" type="text" placeholder="Search applications..."
+							x-model="search" style="max-width: 300px;"/>
+						<select class="form-select" x-model="categoryFilter" style="max-width: 200px;">
+							<option value="">All categories</option>
+							<template x-for="cat in categories" :key="cat">
+								<option :value="cat" x-text="cat"></option>
+							</template>
+						</select>
+						<select class="form-select" x-model="tagFilter" style="max-width: 200px;">
+							<option value="">All tags</option>
+							<template x-for="tag in allTags" :key="tag">
+								<option :value="tag" x-text="tag"></option>
+							</template>
+						</select>
+					</div>
+
+					<!-- Category groups -->
+					<template x-for="cat in filteredCategories" :key="cat">
+						<div class="mb-4">
+							<h2 class="page-title" style="font-size: 1.15rem; margin-bottom: 12px;" x-text="cat"></h2>
+							<div class="stats-grid" style="grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));">
+								<template x-for="app in appsInCategory(cat)" :key="app.kind">
+									<div class="card" style="cursor: pointer; transition: border-color 150ms ease;"
+										@mouseenter="$el.style.borderColor='var(--color-primary)'"
+										@mouseleave="$el.style.borderColor='var(--color-border)'"
+										@click="selectSchema(app)">
+										<div class="flex items-center gap-3" style="margin-bottom: 8px;">
+											<div style="width: 36px; height: 36px; border-radius: 8px; background: var(--color-primary-bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+												<template x-if="app.icon">
+													<img :src="'data:image/svg+xml;base64,' + app.icon" style="width: 24px; height: 24px;"/>
+												</template>
+												<template x-if="!app.icon">
+													<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2">
+														<path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/>
+													</svg>
+												</template>
+											</div>
+											<div>
+												<div style="font-weight: 600;" x-text="app.displayName || app.kind"></div>
+												<div class="text-sm text-muted" x-text="app.kind"></div>
+											</div>
+										</div>
+										<div class="text-sm text-muted" style="margin-bottom: 8px;" x-text="app.description"></div>
+										<div class="flex gap-2" style="flex-wrap: wrap;">
+											<template x-for="tag in (app.tags || [])" :key="tag">
+												<span style="font-size: 0.7rem; padding: 2px 8px; border-radius: 100px; background: var(--color-bg); border: 1px solid var(--color-border);" x-text="tag"></span>
+											</template>
+										</div>
+									</div>
+								</template>
+							</div>
+						</div>
+					</template>
+
+					<div class="empty-state" x-show="filteredSchemas.length === 0">
+						<div class="empty-state-title">No applications match your search</div>
 					</div>
 				</div>
 
