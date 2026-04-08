@@ -149,16 +149,50 @@ func appDefToSchema(obj *unstructured.Unstructured) *AppSchema {
 		}
 	}
 
+	secretTemplates := extractResourceNameTemplates(obj, "spec", "secrets", "include")
+	serviceTemplates := extractResourceNameTemplates(obj, "spec", "services", "include")
+
 	return &AppSchema{
-		Kind:        kind,
-		Plural:      plural,
-		DisplayName: displaySingular,
-		Description: description,
-		Category:    category,
-		Icon:        icon,
-		Tags:        rawTags,
-		JSONSchema:  jsonSchema,
+		Kind:             kind,
+		Plural:           plural,
+		DisplayName:      displaySingular,
+		Description:      description,
+		Category:         category,
+		Icon:             icon,
+		Tags:             rawTags,
+		JSONSchema:       jsonSchema,
+		SecretTemplates:  secretTemplates,
+		ServiceTemplates: serviceTemplates,
 	}
+}
+
+func extractResourceNameTemplates(obj *unstructured.Unstructured, fields ...string) []string {
+	includes, found, err := unstructured.NestedSlice(obj.Object, fields...)
+	if err != nil || !found {
+		return nil
+	}
+
+	var templates []string
+
+	for _, inc := range includes {
+		incMap, ok := inc.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		names, ok := incMap["resourceNames"].([]any)
+		if !ok {
+			continue
+		}
+
+		for _, name := range names {
+			if str, ok := name.(string); ok {
+				templates = append(templates, str)
+			}
+		}
+	}
+
+	return templates
 }
 
 func nestedString(obj map[string]any, fields ...string) string {

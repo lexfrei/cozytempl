@@ -57,14 +57,16 @@ type Condition struct {
 
 // AppSchema represents an application type from ApplicationDefinition.
 type AppSchema struct {
-	Kind        string   `json:"kind"`
-	Plural      string   `json:"plural"`
-	DisplayName string   `json:"displayName"`
-	Description string   `json:"description"`
-	Category    string   `json:"category,omitempty"`
-	Icon        string   `json:"icon,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	JSONSchema  any      `json:"jsonSchema"`
+	Kind             string   `json:"kind"`
+	Plural           string   `json:"plural"`
+	DisplayName      string   `json:"displayName"`
+	Description      string   `json:"description"`
+	Category         string   `json:"category,omitempty"`
+	Icon             string   `json:"icon,omitempty"`
+	Tags             []string `json:"tags,omitempty"`
+	JSONSchema       any      `json:"jsonSchema"`
+	SecretTemplates  []string `json:"secretTemplates,omitempty"`
+	ServiceTemplates []string `json:"serviceTemplates,omitempty"`
 }
 
 // CreateApplicationRequest is the payload for creating a new application.

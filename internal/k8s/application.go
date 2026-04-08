@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -202,23 +203,52 @@ func (asv *ApplicationService) findAppKind(
 func (asv *ApplicationService) getConnectionInfo(
 	ctx context.Context, client dynamic.Interface, tenant, name, kind string,
 ) map[string]string {
-	// Try secret named by convention: <kind-lower>-<name>-credentials
+	appDef, err := asv.schemaSvc.Get(ctx, "dev-admin", []string{"system:masters"}, kind)
+	if err != nil || len(appDef.SecretTemplates) == 0 {
+		return nil
+	}
+
+	result := make(map[string]string)
+
+	for _, tmpl := range appDef.SecretTemplates {
+		secretName := strings.ReplaceAll(tmpl, "{{ .name }}", name)
+		readSecretInto(ctx, client, tenant, secretName, result)
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+
+	return result
+}
+
+func readSecretInto(ctx context.Context, client dynamic.Interface, tenant, secretName string, dest map[string]string) {
 	secretGVR := NamespaceGVR()
 	secretGVR.Resource = "secrets"
 
-	secretName := toLowerKind(kind) + "-" + name + "-credentials"
-
 	obj, err := client.Resource(secretGVR).Namespace(tenant).Get(ctx, secretName, metav1.GetOptions{})
 	if err != nil {
-		return nil
+		return
 	}
 
-	data, found, _ := unstructured.NestedStringMap(obj.Object, "data")
+	data, found, _ := unstructured.NestedMap(obj.Object, "data")
 	if !found {
-		return nil
+		return
 	}
 
-	return data
+	for key, val := range data {
+		str, ok := val.(string)
+		if !ok {
+			continue
+		}
+
+		decoded, decErr := base64Decode(str)
+		if decErr == nil {
+			dest[key] = decoded
+		} else {
+			dest[key] = str
+		}
+	}
 }
 
 func helmReleaseToApplication(obj *unstructured.Unstructured, tenant string) Application {
@@ -391,4 +421,13 @@ func stringFromMap(m map[string]any, key string) string {
 
 func toLowerKind(kind string) string {
 	return strings.ToLower(kind)
+}
+
+func base64Decode(str string) (string, error) {
+	decoded, err := base64.StdEncoding.DecodeString(str)
+	if err != nil {
+		return "", err //nolint:wrapcheck // internal helper
+	}
+
+	return string(decoded), nil
 }
