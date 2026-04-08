@@ -3,7 +3,7 @@ package static
 
 import "embed"
 
-// FS contains the embedded static files (css, js, dist).
+// FS contains the embedded static files (css, dist).
 //
-//go:embed css js dist
+//go:embed css dist
 var FS embed.FS
