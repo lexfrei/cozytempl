@@ -1,0 +1,39 @@
+# Build output
+bin/
+static/dist/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# templ generated
+*_templ.go
+
+# Dependencies
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Air
+tmp/
+
+# Node (for Tailwind build)
+node_modules/

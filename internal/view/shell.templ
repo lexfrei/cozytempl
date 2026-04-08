@@ -1,0 +1,384 @@
+package view
+
+templ Shell(username string) {
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<title>cozytempl</title>
+		<link rel="stylesheet" href="/static/css/styles.css"/>
+		<link rel="preconnect" href="https://fonts.googleapis.com"/>
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"/>
+		<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+		<script src="https://unpkg.com/htmx.org@2/dist/htmx.min.js"></script>
+		<script src="https://unpkg.com/htmx-ext-sse@2/sse.js"></script>
+	</head>
+	<body
+		x-data="app()"
+		x-init="init()"
+		hx-boost="true"
+	>
+		<!-- Toast notifications -->
+		<div id="toast-container" class="toast-container" x-ref="toasts">
+			<template x-for="toast in toasts" :key="toast.id">
+				<div :class="'toast toast-' + toast.type" x-text="toast.message"
+					x-transition
+					x-init="setTimeout(() => removeToast(toast.id), 4000)">
+				</div>
+			</template>
+		</div>
+
+		<!-- App layout (shown when authenticated) -->
+		<div class="app-layout">
+			<!-- Header -->
+			<header class="header">
+				<a href="/" class="header-logo">
+					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+						<polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+						<line x1="12" y1="22.08" x2="12" y2="12"/>
+					</svg>
+					cozytempl
+				</a>
+				<div class="header-actions">
+					<span class="text-sm text-muted">{ username }</span>
+					<a href="/auth/logout" class="btn btn-sm">Logout</a>
+				</div>
+			</header>
+
+			<!-- Sidebar -->
+			<aside class="sidebar" x-data="tenantTree()">
+				<div class="sidebar-section">
+					<div class="sidebar-label">Navigation</div>
+					<a href="/" class="sidebar-item" :class="{ active: currentPage === 'dashboard' }"
+						@click.prevent="navigate('dashboard')">
+						<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<rect x="3" y="3" width="7" height="7"/>
+							<rect x="14" y="3" width="7" height="7"/>
+							<rect x="3" y="14" width="7" height="7"/>
+							<rect x="14" y="14" width="7" height="7"/>
+						</svg>
+						Dashboard
+					</a>
+				</div>
+
+				<div class="sidebar-section">
+					<div class="sidebar-label">Tenants</div>
+					<div class="search-input" style="padding: 0 0 8px;">
+						<input class="form-input" type="text" placeholder="Filter tenants..."
+							x-model="tenantFilter"
+							style="font-size: 0.85rem; padding: 6px 10px;"/>
+					</div>
+					<ul class="tenant-tree">
+						<template x-for="tenant in filteredRootTenants" :key="tenant.name">
+							<li class="tenant-node" x-data="{ expanded: false }">
+								<div class="sidebar-item"
+									:class="{ active: currentTenant === tenant.name }"
+									@click="selectTenant(tenant.name)">
+									<button class="tenant-toggle"
+										:class="{ expanded }"
+										x-show="tenant.childCount > 0"
+										@click.stop="expanded = !expanded">
+										&#9654;
+									</button>
+									<span x-text="tenant.displayName || tenant.name"></span>
+									<span class="text-sm text-muted" x-text="tenant.appCount" style="margin-left: auto;"></span>
+								</div>
+								<ul class="tenant-tree" x-show="expanded" x-transition>
+									<template x-for="child in getChildren(tenant.name)" :key="child.name">
+										<li class="tenant-node">
+											<div class="sidebar-item"
+												:class="{ active: currentTenant === child.name }"
+												@click="selectTenant(child.name)">
+												<span x-text="child.displayName || child.name"></span>
+												<span class="text-sm text-muted" x-text="child.appCount" style="margin-left: auto;"></span>
+											</div>
+										</li>
+									</template>
+								</ul>
+							</li>
+						</template>
+					</ul>
+				</div>
+			</aside>
+
+			<!-- Main content area — Alpine.js renders pages here -->
+			<main id="main-content" class="main-content">
+				<!-- Dashboard page -->
+				<div x-show="currentPage === 'dashboard'" x-cloak>
+					<div class="page-header">
+						<h1 class="page-title">Dashboard</h1>
+					</div>
+					<div class="stats-grid" x-data="dashboard()">
+						<div class="stat-card">
+							<div class="stat-value" x-text="stats.tenants">-</div>
+							<div class="stat-label">Tenants</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-value" x-text="stats.apps">-</div>
+							<div class="stat-label">Applications</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-value" x-text="stats.ready">-</div>
+							<div class="stat-label">Ready</div>
+						</div>
+						<div class="stat-card">
+							<div class="stat-value" x-text="stats.failed">-</div>
+							<div class="stat-label">Failed</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Tenant detail + app list page -->
+				<div x-show="currentPage === 'tenant'" x-cloak x-data="appList()">
+					<div class="breadcrumb">
+						<a href="/" @click.prevent="navigate('dashboard')">Dashboard</a>
+						<span class="breadcrumb-sep"></span>
+						<span x-text="currentTenant"></span>
+					</div>
+					<div class="page-header">
+						<h1 class="page-title" x-text="currentTenant"></h1>
+						<button class="btn btn-primary" @click="showCreateModal = true">
+							+ Create Application
+						</button>
+					</div>
+
+					<!-- Filter and search -->
+					<div class="flex items-center gap-3 mb-4">
+						<input class="form-input" type="text" placeholder="Search applications..."
+							x-model="appFilter" style="max-width: 300px;"/>
+						<select class="form-select" x-model="kindFilter" style="max-width: 200px;">
+							<option value="">All types</option>
+							<template x-for="kind in availableKinds" :key="kind">
+								<option :value="kind" x-text="kind"></option>
+							</template>
+						</select>
+						<select class="form-select" x-model="sortBy" style="max-width: 150px;">
+							<option value="name">Name</option>
+							<option value="kind">Type</option>
+							<option value="status">Status</option>
+							<option value="createdAt">Created</option>
+						</select>
+					</div>
+
+					<!-- App table -->
+					<div class="card">
+						<div class="table-container">
+							<table>
+								<thead>
+									<tr>
+										<th>Name</th>
+										<th>Type</th>
+										<th>Status</th>
+										<th>Created</th>
+										<th></th>
+									</tr>
+								</thead>
+								<tbody>
+									<template x-for="app in filteredApps" :key="app.name">
+										<tr @click="selectApp(app.name)" style="cursor: pointer;">
+											<td x-text="app.name"></td>
+											<td x-text="app.kind"></td>
+											<td>
+												<span :class="'badge badge-' + app.status.toLowerCase()"
+													x-text="app.status"
+													:id="'status-' + app.name">
+												</span>
+											</td>
+											<td class="text-sm text-muted" x-text="formatDate(app.createdAt)"></td>
+											<td>
+												<button class="btn btn-sm btn-danger"
+													@click.stop="confirmDelete(app)">
+													Delete
+												</button>
+											</td>
+										</tr>
+									</template>
+								</tbody>
+							</table>
+						</div>
+						<div class="empty-state" x-show="filteredApps.length === 0">
+							<div class="empty-state-title">No applications found</div>
+							<p class="text-muted">Create your first application to get started.</p>
+						</div>
+					</div>
+
+					<!-- Create modal -->
+					<div class="modal-backdrop" x-show="showCreateModal" x-cloak
+						@click.self="showCreateModal = false" x-transition.opacity>
+						<div class="modal" x-data="appForm()" @click.stop>
+							<div class="modal-header">
+								<h2 class="modal-title">Create Application</h2>
+								<button class="btn-icon" @click="showCreateModal = false">&times;</button>
+							</div>
+							<div class="form-group">
+								<label class="form-label">Type</label>
+								<select class="form-select" x-model="selectedKind"
+									@change="loadSchema()">
+									<option value="">Select type...</option>
+									<template x-for="schema in schemas" :key="schema.kind">
+										<option :value="schema.kind" x-text="schema.displayName"></option>
+									</template>
+								</select>
+							</div>
+							<div class="form-group">
+								<label class="form-label">Name</label>
+								<input class="form-input" type="text" x-model="appName"
+									placeholder="my-application"/>
+							</div>
+							<!-- Schema-driven fields render here -->
+							<div x-ref="schemaFields"></div>
+							<div class="modal-footer">
+								<button class="btn" @click="showCreateModal = false">Cancel</button>
+								<button class="btn btn-primary" @click="submitCreate()"
+									:disabled="!selectedKind || !appName">
+									Create
+								</button>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- App detail page -->
+				<div x-show="currentPage === 'appDetail'" x-cloak x-data="appDetail()">
+					<div class="breadcrumb">
+						<a href="/" @click.prevent="navigate('dashboard')">Dashboard</a>
+						<span class="breadcrumb-sep"></span>
+						<a href="#" @click.prevent="navigate('tenant')" x-text="currentTenant"></a>
+						<span class="breadcrumb-sep"></span>
+						<span x-text="currentApp"></span>
+					</div>
+					<div class="page-header">
+						<h1 class="page-title" x-text="detail.name || currentApp"></h1>
+						<span :class="'badge badge-' + (detail.status || 'unknown').toLowerCase()"
+							x-text="detail.status || 'Loading...'">
+						</span>
+					</div>
+
+					<div class="tabs">
+						<button class="tab" :class="{ active: tab === 'overview' }"
+							@click="tab = 'overview'">Overview</button>
+						<button class="tab" :class="{ active: tab === 'connection' }"
+							@click="tab = 'connection'">Connection</button>
+						<button class="tab" :class="{ active: tab === 'conditions' }"
+							@click="tab = 'conditions'">Conditions</button>
+						<button class="tab" :class="{ active: tab === 'values' }"
+							@click="tab = 'values'">Values</button>
+					</div>
+
+					<!-- Overview tab -->
+					<div x-show="tab === 'overview'" class="card">
+						<dl class="flex flex-col gap-3">
+							<div class="flex justify-between">
+								<dt class="text-muted">Type</dt>
+								<dd x-text="detail.kind"></dd>
+							</div>
+							<div class="flex justify-between">
+								<dt class="text-muted">Tenant</dt>
+								<dd x-text="detail.tenant"></dd>
+							</div>
+							<div class="flex justify-between">
+								<dt class="text-muted">Created</dt>
+								<dd x-text="formatDate(detail.createdAt)"></dd>
+							</div>
+						</dl>
+					</div>
+
+					<!-- Connection tab -->
+					<div x-show="tab === 'connection'">
+						<template x-if="detail.connectionInfo && Object.keys(detail.connectionInfo).length > 0">
+							<div class="card">
+								<template x-for="(value, key) in detail.connectionInfo" :key="key">
+									<div class="form-group">
+										<label class="form-label" x-text="key"></label>
+										<div class="connection-info">
+											<code x-text="value"></code>
+											<button class="btn-icon copy-btn" @click="copyToClipboard(value)">
+												&#128203;
+											</button>
+										</div>
+									</div>
+								</template>
+							</div>
+						</template>
+						<div class="empty-state" x-show="!detail.connectionInfo || Object.keys(detail.connectionInfo).length === 0">
+							<div class="empty-state-title">No connection info available</div>
+							<p class="text-muted">Connection details appear once the application is ready.</p>
+						</div>
+					</div>
+
+					<!-- Conditions tab -->
+					<div x-show="tab === 'conditions'" class="card">
+						<div class="table-container">
+							<table>
+								<thead>
+									<tr>
+										<th>Type</th>
+										<th>Status</th>
+										<th>Reason</th>
+										<th>Message</th>
+									</tr>
+								</thead>
+								<tbody>
+									<template x-for="cond in detail.conditions || []" :key="cond.type">
+										<tr>
+											<td x-text="cond.type"></td>
+											<td>
+												<span :class="cond.status === 'True' ? 'badge badge-ready' : 'badge badge-failed'"
+													x-text="cond.status"></span>
+											</td>
+											<td class="text-mono text-sm" x-text="cond.reason"></td>
+											<td class="text-sm" x-text="cond.message"></td>
+										</tr>
+									</template>
+								</tbody>
+							</table>
+						</div>
+					</div>
+
+					<!-- Values tab -->
+					<div x-show="tab === 'values'" class="card">
+						<pre class="connection-info" style="white-space: pre-wrap;"
+							x-text="JSON.stringify(detail.values, null, 2)"></pre>
+					</div>
+				</div>
+			</main>
+		</div>
+
+		<script src="/static/js/app.js"></script>
+	</body>
+	</html>
+}
+
+templ LoginPage() {
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<title>cozytempl — Login</title>
+		<link rel="stylesheet" href="/static/css/styles.css"/>
+		<link rel="preconnect" href="https://fonts.googleapis.com"/>
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"/>
+	</head>
+	<body>
+		<div class="login-page">
+			<div class="login-card">
+				<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 16px; color: var(--color-primary);">
+					<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+					<polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+					<line x1="12" y1="22.08" x2="12" y2="12"/>
+				</svg>
+				<h1 class="login-title">cozytempl</h1>
+				<p class="login-subtitle">Sign in to manage your Cozystack platform</p>
+				<a href="/auth/login" class="btn btn-primary" style="width: 100%; justify-content: center;">
+					Sign in with SSO
+				</a>
+			</div>
+		</div>
+	</body>
+	</html>
+}
