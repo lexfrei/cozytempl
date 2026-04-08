@@ -20,14 +20,33 @@ func TestLoad_AllRequiredSet(t *testing.T) {
 	if cfg.ListenAddr != ":8080" {
 		t.Errorf("ListenAddr = %q, want %q", cfg.ListenAddr, ":8080")
 	}
+
+	if cfg.DevMode {
+		t.Error("DevMode should be false when OIDC vars are set")
+	}
 }
 
-func TestLoad_MissingRequired(t *testing.T) {
+func TestLoad_DevMode(t *testing.T) {
 	clearEnvVars(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error in dev mode: %v", err)
+	}
+
+	if !cfg.DevMode {
+		t.Error("DevMode should be true when OIDC vars are not set")
+	}
+}
+
+func TestLoad_PartialOIDC_MissingClientID(t *testing.T) {
+	clearEnvVars(t)
+	t.Setenv("OIDC_ISSUER_URL", "https://keycloak.example.com/realms/test")
+	// OIDC_CLIENT_ID not set — should error because issuer is set but client ID is missing
 
 	_, err := Load()
 	if err == nil {
-		t.Fatal("expected error for missing required vars, got nil")
+		t.Fatal("expected error when OIDC_ISSUER_URL is set but OIDC_CLIENT_ID is missing")
 	}
 }
 
