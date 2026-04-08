@@ -261,14 +261,13 @@ function marketplace() {
 // Dashboard component
 function dashboard() {
   return {
-    stats: { tenants: '-', apps: '-', ready: '-', failed: '-' },
+    stats: { tenants: '-', apps: '-', ready: '-', failed: '-', recentApps: [] },
 
     async init() {
       try {
         const tenants = await api('/tenants') || [];
         this.stats.tenants = tenants.length;
 
-        // Load apps from all tenants using namespace
         const appPromises = tenants.map(t =>
           api('/tenants/' + t.namespace + '/apps').catch(() => [])
         );
@@ -277,6 +276,8 @@ function dashboard() {
         this.stats.apps = allApps.length;
         this.stats.ready = allApps.filter(a => a.status === 'Ready').length;
         this.stats.failed = allApps.filter(a => a.status === 'Failed').length;
+        this.stats.recentApps = allApps
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       } catch (err) {
         console.error('Failed to load dashboard stats:', err);
       }

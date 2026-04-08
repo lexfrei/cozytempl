@@ -149,6 +149,40 @@ templ Shell(username string) {
 							<div class="stat-value" x-text="stats.failed">-</div>
 							<div class="stat-label">Failed</div>
 						</div>
+
+						<!-- Recent apps table -->
+						<div class="card mt-4" style="grid-column: 1 / -1;" x-show="stats.recentApps.length > 0">
+							<div class="card-header">
+								<div class="card-title">Applications</div>
+							</div>
+							<div class="table-container">
+								<table>
+									<thead>
+										<tr>
+											<th>Name</th>
+											<th>Type</th>
+											<th>Tenant</th>
+											<th>Status</th>
+										</tr>
+									</thead>
+									<tbody>
+										<template x-for="app in stats.recentApps" :key="app.tenant + '/' + app.name">
+											<tr style="cursor: pointer;" @click="
+										let s = Alpine.closestDataStack($el).find(x => x.navigate);
+										if (s) s.navigate('appDetail', app.tenant, app.tenant, app.name);
+									">
+												<td x-text="app.name"></td>
+												<td x-text="app.kind"></td>
+												<td class="text-sm text-muted" x-text="app.tenant"></td>
+												<td>
+													<span :class="'badge badge-' + app.status.toLowerCase()" x-text="app.status"></span>
+												</td>
+											</tr>
+										</template>
+									</tbody>
+								</table>
+							</div>
+						</div>
 					</div>
 				</div>
 

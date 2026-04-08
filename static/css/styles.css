@@ -933,6 +933,27 @@ tbody tr:last-child td {
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+
+  .flex.items-center.gap-3.mb-4 {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .flex.items-center.gap-3.mb-4 input,
+  .flex.items-center.gap-3.mb-4 select {
+    max-width: 100% !important;
+  }
+
+  /* Hide Created column on mobile */
+  table thead th:nth-child(4),
+  table tbody td:nth-child(4) {
+    display: none;
+  }
+
+  .btn-sm {
+    padding: 3px 8px;
+    font-size: 0.75rem;
+  }
 }
 
 /* Login page */
