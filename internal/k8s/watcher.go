@@ -2,9 +2,9 @@ package k8s
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"sync"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -13,12 +13,26 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-const eventChannelBuffer = 100
+const (
+	eventChannelBuffer  = 100
+	watchReconnectDelay = 2 * time.Second
+	watchLabelSelector  = "apps.cozystack.io/application.kind"
+)
 
-// WatchEvent is sent to SSE subscribers.
+// WatchEventType matches a subset of watch.EventType useful for SSE fan-out.
+type WatchEventType string
+
+// WatchEventType values.
+const (
+	WatchEventAdded    WatchEventType = "added"
+	WatchEventModified WatchEventType = "modified"
+	WatchEventDeleted  WatchEventType = "deleted"
+)
+
+// WatchEvent carries an application change to SSE subscribers.
 type WatchEvent struct {
-	Type string
-	Data string
+	Type WatchEventType
+	App  Application
 }
 
 // Watcher watches HelmRelease changes and fans out to SSE subscribers.
@@ -39,20 +53,14 @@ func NewWatcher(baseCfg *rest.Config, log *slog.Logger) *Watcher {
 }
 
 // Start begins watching HelmReleases across all tenant namespaces.
+// The watch loop automatically reconnects on channel close or errors.
 func (wat *Watcher) Start(ctx context.Context) error {
 	client, err := dynamic.NewForConfig(wat.baseCfg)
 	if err != nil {
 		return err //nolint:wrapcheck // startup error, caller handles
 	}
 
-	watcher, err := client.Resource(HelmReleaseGVR()).Namespace("").Watch(ctx, metav1.ListOptions{
-		LabelSelector: "apps.cozystack.io/application.kind",
-	})
-	if err != nil {
-		return err //nolint:wrapcheck // startup error, caller handles
-	}
-
-	go wat.processEvents(ctx, watcher)
+	go wat.watchLoop(ctx, client)
 
 	return nil
 }
@@ -92,6 +100,47 @@ func (wat *Watcher) Unsubscribe(eventChan chan WatchEvent) {
 	}
 }
 
+func (wat *Watcher) watchLoop(ctx context.Context, client dynamic.Interface) {
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		watcher, err := client.Resource(HelmReleaseGVR()).Namespace("").Watch(ctx, metav1.ListOptions{
+			LabelSelector: watchLabelSelector,
+		})
+		if err != nil {
+			wat.log.Warn("failed to open watch, retrying", "error", err)
+
+			if !sleepCtx(ctx, watchReconnectDelay) {
+				return
+			}
+
+			continue
+		}
+
+		wat.log.Info("watch opened", "resource", "helmreleases")
+		wat.processEvents(ctx, watcher)
+		wat.log.Info("watch closed, reconnecting")
+
+		if !sleepCtx(ctx, watchReconnectDelay) {
+			return
+		}
+	}
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
 func (wat *Watcher) processEvents(ctx context.Context, watcher watch.Interface) {
 	defer watcher.Stop()
 
@@ -111,33 +160,21 @@ func (wat *Watcher) processEvents(ctx context.Context, watcher watch.Interface) 
 				continue
 			}
 
-			wat.handleEvent(obj)
+			wat.handleEvent(event.Type, obj)
 		}
 	}
 }
 
-func (wat *Watcher) handleEvent(obj *unstructured.Unstructured) {
-	namespace := obj.GetNamespace()
-	name := obj.GetName()
-	status := extractStatus(obj)
-
-	eventData := SSEEvent{
-		Type: "status:" + name,
-		Name: name,
-		Data: string(status),
-	}
-
-	jsonData, err := json.Marshal(eventData)
-	if err != nil {
-		wat.log.Error("marshaling SSE event", "error", err)
-
+func (wat *Watcher) handleEvent(kind watch.EventType, obj *unstructured.Unstructured) {
+	eventType, ok := mapEventType(kind)
+	if !ok {
 		return
 	}
 
-	watchEvt := WatchEvent{
-		Type: "status:" + name,
-		Data: string(jsonData),
-	}
+	namespace := obj.GetNamespace()
+	app := helmReleaseToApplication(obj, namespace)
+
+	watchEvt := WatchEvent{Type: eventType, App: app}
 
 	wat.mu.RLock()
 	subs, exists := wat.subscribers[namespace]
@@ -153,5 +190,20 @@ func (wat *Watcher) handleEvent(obj *unstructured.Unstructured) {
 		default:
 			wat.log.Debug("dropping event for slow subscriber", "namespace", namespace)
 		}
+	}
+}
+
+func mapEventType(kind watch.EventType) (WatchEventType, bool) {
+	switch kind {
+	case watch.Added:
+		return WatchEventAdded, true
+	case watch.Modified:
+		return WatchEventModified, true
+	case watch.Deleted:
+		return WatchEventDeleted, true
+	case watch.Bookmark, watch.Error:
+		return "", false
+	default:
+		return "", false
 	}
 }

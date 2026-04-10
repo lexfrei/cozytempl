@@ -115,5 +115,15 @@ func healthHandler(writer http.ResponseWriter, _ *http.Request) {
 }
 
 func mountStaticFiles(mux *http.ServeMux, staticFS embed.FS) {
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	fileServer := http.StripPrefix("/static/", http.FileServer(http.FS(staticFS)))
+
+	// Add no-cache headers so Cloudflare and browsers don't serve stale bundles.
+	// For production we should use versioned filenames + long cache, but while
+	// iterating locally this is the simpler and safer default.
+	mux.Handle("GET /static/", http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		writer.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		writer.Header().Set("Pragma", "no-cache")
+		writer.Header().Set("Expires", "0")
+		fileServer.ServeHTTP(writer, req)
+	}))
 }

@@ -299,6 +299,22 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 
+/* New row flash animation (SSE added events) */
+@keyframes row-flash {
+  0% {
+    background: var(--color-primary-bg);
+    box-shadow: inset 3px 0 0 var(--color-primary);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+
+tr.row-flash td {
+  animation: row-flash 1.5s ease-out;
+}
+
 /* Status badges */
 .badge {
   display: inline-flex;

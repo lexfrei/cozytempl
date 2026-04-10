@@ -1,12 +1,12 @@
-// SSE subscription for real-time app status badge updates.
+// SSE subscription for real-time app status badge updates, row inserts, and removals.
 // Parses tenant namespace from URL (/tenants/:ns/...) and subscribes to
-// /api/events?tenant=:ns. Server pushes {name, data} events; we update the
-// matching #status-{name} badge in place.
+// /api/events?tenant=:ns. Server pushes JSON messages with type=added|status|removed.
 
-interface StatusEventPayload {
-  type: string;
+interface SSEMessage {
+  type: "added" | "status" | "removed";
   name: string;
-  data: string;
+  status?: string;
+  html?: string;
 }
 
 const RECONNECT_DELAY_MS = 5000;
@@ -35,6 +35,68 @@ function applyStatus(name: string, status: string): void {
   el.textContent = status;
 }
 
+function appendRow(name: string, html: string): void {
+  if (!html) return;
+  // If a row for this app already exists, don't duplicate it.
+  if (document.getElementById(`status-${name}`)) return;
+
+  const tbody = document.getElementById("app-table-body");
+  if (!tbody) return;
+
+  const template = document.createElement("template");
+  template.innerHTML = html.trim();
+  const fragment = template.content;
+  if (fragment.childNodes.length === 0) return;
+
+  tbody.appendChild(fragment);
+
+  // Flash the newly inserted row once.
+  const inserted = document.getElementById(`status-${name}`)?.closest("tr");
+  if (inserted) {
+    inserted.classList.add("row-flash");
+    window.setTimeout(() => inserted.classList.remove("row-flash"), 1600);
+  }
+}
+
+function removeRow(name: string): void {
+  const badge = document.getElementById(`status-${name}`);
+  if (!badge) return;
+  const row = badge.closest("tr");
+  if (row) row.remove();
+}
+
+function handleMessage(raw: string): void {
+  let msg: SSEMessage;
+  try {
+    msg = JSON.parse(raw) as SSEMessage;
+  } catch {
+    return;
+  }
+
+  if (!msg.name) return;
+
+  switch (msg.type) {
+    case "added":
+      if (msg.html) {
+        appendRow(msg.name, msg.html);
+      }
+      if (msg.status) {
+        applyStatus(msg.name, msg.status);
+      }
+      return;
+    case "status":
+      if (msg.status) {
+        applyStatus(msg.name, msg.status);
+      }
+      return;
+    case "removed":
+      removeRow(msg.name);
+      return;
+    default:
+      return;
+  }
+}
+
 function disconnect(): void {
   if (currentSource) {
     currentSource.close();
@@ -57,18 +119,10 @@ function connect(tenant: string): void {
   const source = new EventSource(`/api/events?tenant=${encodeURIComponent(tenant)}`);
 
   source.onmessage = (event: MessageEvent<string>): void => {
-    try {
-      const payload = JSON.parse(event.data) as StatusEventPayload;
-      if (payload.name && typeof payload.data === "string") {
-        applyStatus(payload.name, payload.data);
-      }
-    } catch {
-      // Ignore malformed events
-    }
+    handleMessage(event.data);
   };
 
   source.onerror = (): void => {
-    // Browser auto-reconnect is aggressive; fall back to manual delay on hard failure.
     if (source.readyState === EventSource.CLOSED) {
       disconnect();
       reconnectTimer = window.setTimeout(() => {
@@ -90,7 +144,6 @@ function syncFromLocation(): void {
 export function initSSE(): void {
   syncFromLocation();
 
-  // Reconnect on htmx SPA navigation (hx-push-url updates history).
   document.addEventListener("htmx:afterSwap", (e) => {
     const detail = (e as CustomEvent).detail;
     if (detail.target?.id === "main-content") {
@@ -98,7 +151,6 @@ export function initSSE(): void {
     }
   });
 
-  // Reconnect on browser back/forward.
   window.addEventListener("popstate", () => {
     syncFromLocation();
   });

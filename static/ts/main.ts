@@ -8,10 +8,12 @@ declare global {
   interface Window {
     openModal: (id: string) => void;
     closeModal: (id: string) => void;
+    __cozytemplInitialized: boolean;
   }
 }
 window.openModal = openModal;
 window.closeModal = closeModal;
+window.__cozytemplInitialized = false;
 
 // Burger menu toggle
 function initBurger(): void {
@@ -44,11 +46,18 @@ function initBurger(): void {
   });
 }
 
-// Init all modules
-document.addEventListener("DOMContentLoaded", () => {
+function initAll(): void {
   initBurger();
   initToasts();
   initModals();
   initClipboard();
   initSSE();
-});
+  window.__cozytemplInitialized = true;
+}
+
+// `defer` scripts run after parsing but can still race DCL; handle both cases.
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initAll);
+} else {
+  initAll();
+}
