@@ -143,6 +143,10 @@ func (pgh *PageHandler) DeleteApp(writer http.ResponseWriter, req *http.Request)
 }
 
 func (pgh *PageHandler) renderToast(writer http.ResponseWriter, req *http.Request, toastType, msg string) {
+	// HX-Reswap: none prevents htmx from swapping the (empty) main response body
+	// into the original target. OOB swaps inside the body still apply, so the toast
+	// is delivered without blanking the page or removing table rows.
+	writer.Header().Set("Hx-Reswap", "none")
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	renderErr := partial.Toast(toastType, msg).Render(req.Context(), writer)

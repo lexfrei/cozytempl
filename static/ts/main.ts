@@ -1,6 +1,7 @@
 import { initToasts } from "./toast";
 import { initModals, openModal, closeModal } from "./modal";
 import { initClipboard } from "./clipboard";
+import { initSSE } from "./sse";
 
 // Expose modal functions globally for onclick handlers in templ
 declare global {
@@ -49,4 +50,5 @@ document.addEventListener("DOMContentLoaded", () => {
   initToasts();
   initModals();
   initClipboard();
+  initSSE();
 });
