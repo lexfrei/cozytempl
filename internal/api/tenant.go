@@ -100,10 +100,11 @@ func (tnh *TenantHandler) Delete(writer http.ResponseWriter, req *http.Request) 
 	}
 
 	name := req.PathValue("name")
+	namespace := req.URL.Query().Get("namespace")
 
-	err := tnh.svc.Delete(req.Context(), usr.Username, usr.Groups, name)
+	err := tnh.svc.Delete(req.Context(), usr.Username, usr.Groups, namespace, name)
 	if err != nil {
-		tnh.log.Error("deleting tenant", "name", name, "error", err)
+		tnh.log.Error("deleting tenant", "namespace", namespace, "name", name, "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to delete tenant")
 
 		return

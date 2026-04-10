@@ -206,11 +206,23 @@ func IsRootTenant(nameOrNamespace string) bool {
 	return nameOrNamespace == "root" || nameOrNamespace == tenantNamespacePrefix+"root"
 }
 
+// ErrNamespaceRequired is returned when a delete call is missing the parent namespace.
+var ErrNamespaceRequired = errors.New("namespace required")
+
 // Delete removes a tenant via the Tenant CRD.
-// The root tenant is protected and cannot be deleted.
-func (tsv *TenantService) Delete(ctx context.Context, username string, groups []string, name string) error {
+// The root tenant is protected and cannot be deleted. Both the parent
+// namespace (where the Tenant CR lives) and the leaf name are required,
+// because Tenant CRs are namespaced — two different tenants can share
+// the same leaf name under different parents.
+func (tsv *TenantService) Delete(
+	ctx context.Context, username string, groups []string, namespace, name string,
+) error {
 	if IsRootTenant(name) {
 		return fmt.Errorf("%w: %s", ErrProtectedTenant, name)
+	}
+
+	if namespace == "" {
+		return ErrNamespaceRequired
 	}
 
 	client, err := NewImpersonatingClient(tsv.baseCfg, username, groups)
@@ -218,34 +230,23 @@ func (tsv *TenantService) Delete(ctx context.Context, username string, groups []
 		return err
 	}
 
-	// Find the tenant to get its namespace
-	tenantList, err := client.Resource(TenantCRDGVR()).Namespace("").List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("listing tenants for delete: %w", err)
+	delErr := client.Resource(TenantCRDGVR()).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	if delErr != nil {
+		return fmt.Errorf("deleting tenant %s/%s: %w", namespace, name, delErr)
 	}
 
-	for idx := range tenantList.Items {
-		obj := &tenantList.Items[idx]
-		if obj.GetName() != name {
-			continue
-		}
-
-		delErr := client.Resource(TenantCRDGVR()).Namespace(obj.GetNamespace()).Delete(ctx, name, metav1.DeleteOptions{})
-		if delErr != nil {
-			return fmt.Errorf("deleting tenant %s: %w", name, delErr)
-		}
-
-		return nil
-	}
-
-	return fmt.Errorf("%w: %s", ErrAppNotFound, name)
+	return nil
 }
 
 func crdToTenant(obj *unstructured.Unstructured) Tenant {
 	name := obj.GetName()
-	namespace := obj.GetNamespace()
 
-	// status.namespace is the actual tenant namespace created by the controller
+	// metadata.namespace is where the CR lives (parent's namespace).
+	// For root, it equals the tenant's own namespace.
+	parentNamespace := obj.GetNamespace()
+	namespace := parentNamespace
+
+	// status.namespace is the actual workload namespace created by the controller.
 	statusNS := nestedString(obj.Object, "status", "namespace")
 	if statusNS != "" {
 		namespace = statusNS
@@ -258,16 +259,17 @@ func crdToTenant(obj *unstructured.Unstructured) Tenant {
 		status = "Active"
 	}
 
-	// Determine parent from namespace hierarchy
+	// Determine logical parent from namespace hierarchy
 	parent := parentFromNamespace(namespace)
 
 	return Tenant{
-		Name:        name,
-		Namespace:   namespace,
-		DisplayName: name,
-		Parent:      parent,
-		Status:      status,
-		Version:     version,
+		Name:            name,
+		Namespace:       namespace,
+		ParentNamespace: parentNamespace,
+		DisplayName:     name,
+		Parent:          parent,
+		Status:          status,
+		Version:         version,
 	}
 }
 

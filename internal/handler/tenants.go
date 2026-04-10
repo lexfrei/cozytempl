@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"regexp"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/k8s"
@@ -10,7 +11,25 @@ import (
 	"github.com/lexfrei/cozytempl/internal/view/page"
 )
 
-const tenantSchemaKind = "Tenant"
+const (
+	tenantSchemaKind = "Tenant"
+
+	// maxDNS1123LabelLength matches the Kubernetes limit for object names.
+	maxDNS1123LabelLength = 63
+)
+
+// dns1123LabelRegex matches RFC 1123 labels: lowercase alphanumerics and
+// hyphens, starting and ending with alphanumeric, up to 63 chars.
+var dns1123LabelRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+
+// validTenantName reports whether s is a valid Kubernetes DNS-1123 label.
+func validTenantName(s string) bool {
+	if s == "" || len(s) > maxDNS1123LabelLength {
+		return false
+	}
+
+	return dns1123LabelRegex.MatchString(s)
+}
 
 // TenantsPage renders the tenant management page: list + create form.
 func (pgh *PageHandler) TenantsPage(writer http.ResponseWriter, req *http.Request) {
@@ -79,6 +98,12 @@ func (pgh *PageHandler) CreateTenant(writer http.ResponseWriter, req *http.Reque
 		return
 	}
 
+	if !validTenantName(form.Name) {
+		pgh.renderErrorToast(writer, req, "Invalid name: must be lowercase DNS label (letters, digits, hyphens)")
+
+		return
+	}
+
 	if k8s.IsRootTenant(form.Name) {
 		pgh.renderErrorToast(writer, req, "Cannot create tenant named 'root' — reserved")
 
@@ -142,7 +167,8 @@ func (pgh *PageHandler) tenantSpec(req *http.Request, usr *auth.UserContext) map
 	return extractTenantSpec(req, fieldTypes)
 }
 
-// DeleteTenant handles DELETE /tenants/{name}.
+// DeleteTenant handles DELETE /tenants/{name}?ns=... to remove a tenant.
+// Namespace disambiguates same-named tenants under different parents.
 func (pgh *PageHandler) DeleteTenant(writer http.ResponseWriter, req *http.Request) {
 	usr := auth.UserFromContext(req.Context())
 	if usr == nil {
@@ -152,13 +178,15 @@ func (pgh *PageHandler) DeleteTenant(writer http.ResponseWriter, req *http.Reque
 	}
 
 	name := req.PathValue("name")
-	if name == "" {
-		http.Error(writer, "name required", http.StatusBadRequest)
+	namespace := req.URL.Query().Get("ns")
+
+	if name == "" || namespace == "" {
+		http.Error(writer, "name and ns required", http.StatusBadRequest)
 
 		return
 	}
 
-	err := pgh.tenantSvc.Delete(req.Context(), usr.Username, usr.Groups, name)
+	err := pgh.tenantSvc.Delete(req.Context(), usr.Username, usr.Groups, namespace, name)
 	if err != nil {
 		if errors.Is(err, k8s.ErrProtectedTenant) {
 			pgh.renderErrorToast(writer, req, "Root tenant is protected and cannot be deleted")
@@ -166,13 +194,13 @@ func (pgh *PageHandler) DeleteTenant(writer http.ResponseWriter, req *http.Reque
 			return
 		}
 
-		pgh.log.Error("deleting tenant", "name", name, "error", err)
+		pgh.log.Error("deleting tenant", "ns", namespace, "name", name, "error", err)
 		pgh.renderErrorToast(writer, req, "Failed to delete tenant: "+err.Error())
 
 		return
 	}
 
-	pgh.log.Info("tenant deleted", "name", name)
+	pgh.log.Info("tenant deleted", "ns", namespace, "name", name)
 	writer.WriteHeader(http.StatusOK)
 }
 

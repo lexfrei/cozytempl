@@ -116,8 +116,8 @@ templ tenantRow(item view.TenantWithUsage, metrics bool) {
 				<button class="btn btn-sm" disabled title="Root tenant cannot be deleted">Delete</button>
 			} else {
 				<button class="btn btn-sm btn-danger"
-					hx-delete={ "/tenants/" + item.Tenant.Name }
-					hx-confirm={ "Delete tenant '" + item.Tenant.DisplayName + "'? This will remove all its applications." }
+					hx-delete={ "/tenants/" + item.Tenant.Name + "?ns=" + item.Tenant.ParentNamespace }
+					hx-confirm={ "Delete tenant '" + item.Tenant.DisplayName + "' (" + item.Tenant.ParentNamespace + "/" + item.Tenant.Name + ")? This will remove all its applications." }
 					hx-target="closest tr"
 					hx-swap="outerHTML swap:500ms">
 					Delete

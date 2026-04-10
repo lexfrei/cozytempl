@@ -4,15 +4,16 @@ import "time"
 
 // Tenant represents a Cozystack tenant (apps.cozystack.io/v1alpha1 Tenant).
 type Tenant struct {
-	Name        string   `json:"name"`
-	Namespace   string   `json:"namespace"`
-	DisplayName string   `json:"displayName"`
-	Parent      string   `json:"parent,omitempty"`
-	Children    []string `json:"children,omitempty"`
-	ChildCount  int      `json:"childCount"`
-	AppCount    int      `json:"appCount"`
-	Status      string   `json:"status"`
-	Version     string   `json:"version,omitempty"`
+	Name            string   `json:"name"`
+	Namespace       string   `json:"namespace"`       // Child namespace (status.namespace, where workloads run)
+	ParentNamespace string   `json:"parentNamespace"` // Metadata namespace — where the CR lives (for delete/update)
+	DisplayName     string   `json:"displayName"`
+	Parent          string   `json:"parent,omitempty"` // Parent namespace, derived from status.namespace hierarchy
+	Children        []string `json:"children,omitempty"`
+	ChildCount      int      `json:"childCount"`
+	AppCount        int      `json:"appCount"`
+	Status          string   `json:"status"`
+	Version         string   `json:"version,omitempty"`
 }
 
 // Application represents a Cozystack application (apps.cozystack.io/v1alpha1).

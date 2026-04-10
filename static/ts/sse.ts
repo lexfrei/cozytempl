@@ -35,6 +35,39 @@ function applyStatus(name: string, status: string): void {
   el.textContent = status;
 }
 
+function getFilterValue(selector: string): string {
+  const el = document.querySelector<HTMLInputElement | HTMLSelectElement>(selector);
+  return el?.value ?? "";
+}
+
+// hasActiveAppFilter reports whether any filter/sort input on the tenant page
+// has a non-default value. When true, naive append would show rows that should
+// be hidden, so we must refetch the fragment with the current params instead.
+function hasActiveAppFilter(): boolean {
+  const query = getFilterValue('input[name="q"]');
+  const kind = getFilterValue('select[name="kind"]');
+  const sort = getFilterValue('select[name="sort"]');
+  return query !== "" || kind !== "" || (sort !== "" && sort !== "name");
+}
+
+// refreshAppTable re-fetches the app-table fragment with current filter params
+// and swaps it via htmx. Keeps the visible list consistent with server state.
+function refreshAppTable(tenant: string): void {
+  if (!tenant) return;
+
+  const params = new URLSearchParams({
+    tenant,
+    q: getFilterValue('input[name="q"]'),
+    kind: getFilterValue('select[name="kind"]'),
+    sort: getFilterValue('select[name="sort"]'),
+  });
+
+  const htmxGlobal = (window as unknown as { htmx?: { ajax: (method: string, url: string, target: string) => void } }).htmx;
+  if (htmxGlobal) {
+    htmxGlobal.ajax("GET", `/fragments/app-table?${params.toString()}`, "#app-table-body");
+  }
+}
+
 function appendRow(name: string, html: string): void {
   if (!html) return;
   // If a row for this app already exists, don't duplicate it.
@@ -42,6 +75,14 @@ function appendRow(name: string, html: string): void {
 
   const tbody = document.getElementById("app-table-body");
   if (!tbody) return;
+
+  // If filters/sort are active, the naive append would put rows in the wrong
+  // position or show rows that should be hidden. Refetch instead.
+  if (hasActiveAppFilter()) {
+    refreshAppTable(currentTenant);
+
+    return;
+  }
 
   const template = document.createElement("template");
   template.innerHTML = html.trim();
