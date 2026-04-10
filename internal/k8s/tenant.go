@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -197,8 +198,21 @@ func (tsv *TenantService) Create(ctx context.Context, username string, groups []
 	return &tenant, nil
 }
 
+// ErrProtectedTenant is returned when someone tries to delete the root tenant.
+var ErrProtectedTenant = errors.New("tenant is protected")
+
+// IsRootTenant reports whether the given name or namespace refers to root.
+func IsRootTenant(nameOrNamespace string) bool {
+	return nameOrNamespace == "root" || nameOrNamespace == tenantNamespacePrefix+"root"
+}
+
 // Delete removes a tenant via the Tenant CRD.
+// The root tenant is protected and cannot be deleted.
 func (tsv *TenantService) Delete(ctx context.Context, username string, groups []string, name string) error {
+	if IsRootTenant(name) {
+		return fmt.Errorf("%w: %s", ErrProtectedTenant, name)
+	}
+
 	client, err := NewImpersonatingClient(tsv.baseCfg, username, groups)
 	if err != nil {
 		return err
@@ -212,14 +226,16 @@ func (tsv *TenantService) Delete(ctx context.Context, username string, groups []
 
 	for idx := range tenantList.Items {
 		obj := &tenantList.Items[idx]
-		if obj.GetName() == name {
-			delErr := client.Resource(TenantCRDGVR()).Namespace(obj.GetNamespace()).Delete(ctx, name, metav1.DeleteOptions{})
-			if delErr != nil {
-				return fmt.Errorf("deleting tenant %s: %w", name, delErr)
-			}
-
-			return nil
+		if obj.GetName() != name {
+			continue
 		}
+
+		delErr := client.Resource(TenantCRDGVR()).Namespace(obj.GetNamespace()).Delete(ctx, name, metav1.DeleteOptions{})
+		if delErr != nil {
+			return fmt.Errorf("deleting tenant %s: %w", name, delErr)
+		}
+
+		return nil
 	}
 
 	return fmt.Errorf("%w: %s", ErrAppNotFound, name)

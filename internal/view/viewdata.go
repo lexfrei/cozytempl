@@ -12,6 +12,19 @@ type DashboardData struct {
 	RecentApps []k8s.Application
 }
 
+// TenantsPageData holds data for the tenants management page.
+type TenantsPageData struct {
+	Tenants        []TenantWithUsage
+	TenantSchema   *k8s.AppSchema
+	MetricsEnabled bool
+}
+
+// TenantWithUsage combines tenant metadata and resource usage.
+type TenantWithUsage struct {
+	Tenant k8s.Tenant
+	Usage  k8s.TenantUsage
+}
+
 // TenantPageData holds data for the tenant detail page.
 type TenantPageData struct {
 	Tenant     k8s.Tenant

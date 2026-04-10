@@ -59,7 +59,7 @@ func (pgh *PageHandler) doCreateApp(
 	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, appKind)
 	if schemaErr != nil {
 		pgh.log.Error("fetching schema for create", "kind", appKind, "error", schemaErr)
-		pgh.renderToast(writer, req, "error", "Failed to load schema for "+appKind)
+		pgh.renderErrorToast(writer, req, "Failed to load schema for "+appKind)
 
 		return
 	}
@@ -75,7 +75,7 @@ func (pgh *PageHandler) doCreateApp(
 	_, err := pgh.appSvc.Create(req.Context(), usr.Username, usr.Groups, tenantNS, createReq)
 	if err != nil {
 		pgh.log.Error("creating app", "tenant", tenantNS, "name", appName, "error", err)
-		pgh.renderToast(writer, req, "error", "Failed to create "+appName+": "+err.Error())
+		pgh.renderErrorToast(writer, req, "Failed to create "+appName+": "+err.Error())
 
 		return
 	}
@@ -132,7 +132,7 @@ func (pgh *PageHandler) DeleteApp(writer http.ResponseWriter, req *http.Request)
 	err := pgh.appSvc.Delete(req.Context(), usr.Username, usr.Groups, tenantNS, appName)
 	if err != nil {
 		pgh.log.Error("deleting app", "tenant", tenantNS, "name", appName, "error", err)
-		pgh.renderToast(writer, req, "error", "Failed to delete "+appName)
+		pgh.renderErrorToast(writer, req, "Failed to delete "+appName)
 
 		return
 	}
@@ -142,14 +142,14 @@ func (pgh *PageHandler) DeleteApp(writer http.ResponseWriter, req *http.Request)
 	writer.WriteHeader(http.StatusOK)
 }
 
-func (pgh *PageHandler) renderToast(writer http.ResponseWriter, req *http.Request, toastType, msg string) {
-	// HX-Reswap: none prevents htmx from swapping the (empty) main response body
-	// into the original target. OOB swaps inside the body still apply, so the toast
-	// is delivered without blanking the page or removing table rows.
+// renderErrorToast writes an OOB error toast without touching the htmx target.
+// HX-Reswap: none keeps the original target (main-content, tr, etc.) intact so
+// a failed mutation doesn't blank the page or remove a live row.
+func (pgh *PageHandler) renderErrorToast(writer http.ResponseWriter, req *http.Request, msg string) {
 	writer.Header().Set("Hx-Reswap", "none")
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	renderErr := partial.Toast(toastType, msg).Render(req.Context(), writer)
+	renderErr := partial.Toast("error", msg).Render(req.Context(), writer)
 	if renderErr != nil {
 		pgh.log.Error("rendering toast", "error", renderErr)
 	}

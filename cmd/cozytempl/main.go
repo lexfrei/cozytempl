@@ -57,6 +57,7 @@ func run() error {
 	tenantSvc := k8s.NewTenantService(k8sCfg)
 	schemaSvc := k8s.NewSchemaService(k8sCfg)
 	appSvc := k8s.NewApplicationService(k8sCfg, schemaSvc)
+	usageSvc := k8s.NewUsageService(k8sCfg)
 	watcher := k8s.NewWatcher(k8sCfg, log)
 
 	err = watcher.Start(ctx)
@@ -64,7 +65,7 @@ func run() error {
 		log.Warn("failed to start watcher, SSE will be unavailable", "error", err)
 	}
 
-	pageHandler := handler.NewPageHandler(tenantSvc, appSvc, schemaSvc, log)
+	pageHandler := handler.NewPageHandler(tenantSvc, appSvc, schemaSvc, usageSvc, log)
 
 	routerCfg := &api.RouterConfig{
 		TenantHandler: api.NewTenantHandler(tenantSvc, log),

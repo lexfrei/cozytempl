@@ -47,6 +47,19 @@ templ sidebarInner(tenants []k8s.Tenant, activePage string, activeTenant string)
 			</svg>
 			Marketplace
 		</a>
+		<a href="/tenants"
+			hx-get="/tenants"
+			hx-target="#main-content"
+			hx-push-url="true"
+			class={ "sidebar-item", templ.KV("active", activePage == "tenants") }>
+			<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+				<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+				<circle cx="9" cy="7" r="4"></circle>
+				<path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+				<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+			</svg>
+			Manage Tenants
+		</a>
 	</div>
 	<div class="sidebar-section">
 		<div class="sidebar-label">Tenants</div>

@@ -1,0 +1,146 @@
+package page
+
+import (
+	"fmt"
+	"github.com/lexfrei/cozytempl/internal/k8s"
+	"github.com/lexfrei/cozytempl/internal/view"
+	"github.com/lexfrei/cozytempl/internal/view/fragment"
+)
+
+templ Tenants(data view.TenantsPageData) {
+	<div class="page-header">
+		<h1 class="page-title">Tenants</h1>
+		<button class="btn btn-primary" onclick="openModal('create-tenant-modal')">
+			+ Create Tenant
+		</button>
+	</div>
+
+	<!-- Tenants table -->
+	<div class="card">
+		<div class="table-container">
+			<table>
+				<thead>
+					<tr>
+						<th>Name</th>
+						<th>Apps</th>
+						<th>Pods</th>
+						<th>CPU</th>
+						<th>Memory</th>
+						<th>Storage</th>
+						<th>Status</th>
+						<th></th>
+					</tr>
+				</thead>
+				<tbody id="tenants-table-body">
+					for _, item := range data.Tenants {
+						@tenantRow(item, data.MetricsEnabled)
+					}
+				</tbody>
+			</table>
+		</div>
+		if len(data.Tenants) == 0 {
+			<div class="empty-state">
+				<div class="empty-state-title">No tenants</div>
+			</div>
+		}
+	</div>
+
+	<!-- Create modal -->
+	<div id="create-tenant-modal" class="modal-backdrop" style="display: none;">
+		<div class="modal">
+			<div class="modal-header">
+				<h2 class="modal-title">Create Tenant</h2>
+				<button class="btn-icon" onclick="closeModal('create-tenant-modal')">&times;</button>
+			</div>
+			<form hx-post="/tenants"
+				hx-target="#main-content"
+				hx-push-url="false">
+				<div class="form-group">
+					<label class="form-label">Name</label>
+					<input class="form-input" type="text" name="name" required placeholder="my-tenant" pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"/>
+					<div class="form-hint">Lowercase letters, numbers and hyphens. Prefix <code>tenant-</code> is added automatically.</div>
+				</div>
+				<div class="form-group">
+					<label class="form-label">Parent</label>
+					<select class="form-select" name="parent">
+						for _, item := range data.Tenants {
+							<option value={ item.Tenant.Namespace }>{ item.Tenant.DisplayName }</option>
+						}
+					</select>
+					<div class="form-hint">Parent tenant namespace. New tenant is nested under it.</div>
+				</div>
+				if data.TenantSchema != nil {
+					@fragment.SchemaFields(*data.TenantSchema)
+				}
+				<div class="modal-footer">
+					<button type="button" class="btn" onclick="closeModal('create-tenant-modal')">Cancel</button>
+					<button type="submit" class="btn btn-primary">Create</button>
+				</div>
+			</form>
+		</div>
+	</div>
+}
+
+templ tenantRow(item view.TenantWithUsage, metrics bool) {
+	<tr>
+		<td>
+			<a href={ templ.SafeURL("/tenants/" + item.Tenant.Namespace) }
+				hx-get={ "/tenants/" + item.Tenant.Namespace }
+				hx-target="#main-content"
+				hx-push-url="true"
+				style="color: inherit; text-decoration: none;">
+				{ item.Tenant.DisplayName }
+			</a>
+			if item.Tenant.Namespace != "tenant-root" && item.Tenant.Parent != "" {
+				<div class="text-sm text-muted">parent: { item.Tenant.Parent }</div>
+			}
+		</td>
+		<td>{ fmt.Sprint(item.Tenant.AppCount) }</td>
+		<td>{ fmt.Sprint(item.Usage.PodCount) }</td>
+		<td class="text-sm">
+			@cpuCell(item.Usage, metrics)
+		</td>
+		<td class="text-sm">
+			@memCell(item.Usage, metrics)
+		</td>
+		<td class="text-sm text-muted">{ k8s.FormatStorage(item.Usage.StorageGi) }</td>
+		<td>
+			if k8s.IsRootTenant(item.Tenant.Name) {
+				<span class="badge badge-unknown" title="Protected">&#128274; protected</span>
+			} else {
+				<span class="text-sm text-muted">{ item.Tenant.Status }</span>
+			}
+		</td>
+		<td>
+			if k8s.IsRootTenant(item.Tenant.Name) {
+				<button class="btn btn-sm" disabled title="Root tenant cannot be deleted">Delete</button>
+			} else {
+				<button class="btn btn-sm btn-danger"
+					hx-delete={ "/tenants/" + item.Tenant.Name }
+					hx-confirm={ "Delete tenant '" + item.Tenant.DisplayName + "'? This will remove all its applications." }
+					hx-target="closest tr"
+					hx-swap="outerHTML swap:500ms">
+					Delete
+				</button>
+			}
+		</td>
+	</tr>
+}
+
+templ cpuCell(usage k8s.TenantUsage, metrics bool) {
+	<div>{ k8s.FormatCPU(usage.CPURequestsMi) }</div>
+	if metrics {
+		<div class="text-sm text-muted">
+			usage: { k8s.FormatCPU(usage.CPUUsageMi) }
+		</div>
+	}
+}
+
+templ memCell(usage k8s.TenantUsage, metrics bool) {
+	<div>{ k8s.FormatMem(usage.MemRequestsMi) }</div>
+	if metrics {
+		<div class="text-sm text-muted">
+			usage: { k8s.FormatMem(usage.MemUsageMi) }
+		</div>
+	}
+}

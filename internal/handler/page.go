@@ -22,6 +22,7 @@ type PageHandler struct {
 	tenantSvc *k8s.TenantService
 	appSvc    *k8s.ApplicationService
 	schemaSvc *k8s.SchemaService
+	usageSvc  *k8s.UsageService
 	log       *slog.Logger
 }
 
@@ -30,12 +31,14 @@ func NewPageHandler(
 	tenantSvc *k8s.TenantService,
 	appSvc *k8s.ApplicationService,
 	schemaSvc *k8s.SchemaService,
+	usageSvc *k8s.UsageService,
 	log *slog.Logger,
 ) *PageHandler {
 	return &PageHandler{
 		tenantSvc: tenantSvc,
 		appSvc:    appSvc,
 		schemaSvc: schemaSvc,
+		usageSvc:  usageSvc,
 		log:       log,
 	}
 }
