@@ -11,7 +11,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-const dashPlaceholder = "—"
+const naPlaceholder = "n/a"
 
 // TenantUsage captures resource consumption for a single tenant namespace.
 type TenantUsage struct {
@@ -207,23 +207,23 @@ func parseMemToMi(val string) int64 {
 	return bytes / (1024 * 1024) //nolint:mnd // Mi
 }
 
-// FormatCPU formats millicores as "123m" or "1.2".
+// FormatCPU formats millicores as "123m" or "1.2 cores".
 func FormatCPU(milli int64) string {
 	if milli == 0 {
-		return dashPlaceholder
+		return naPlaceholder
 	}
 
 	if milli < 1000 { //nolint:mnd // display threshold
 		return fmt.Sprintf("%dm", milli)
 	}
 
-	return fmt.Sprintf("%.1f", float64(milli)/1000) //nolint:mnd // display
+	return fmt.Sprintf("%.1f cores", float64(milli)/1000) //nolint:mnd // display
 }
 
 // FormatMem formats mebibytes as "512 Mi" or "1.5 Gi".
 func FormatMem(mebi int64) string {
 	if mebi == 0 {
-		return dashPlaceholder
+		return naPlaceholder
 	}
 
 	if mebi < 1024 { //nolint:mnd // display threshold
@@ -236,7 +236,7 @@ func FormatMem(mebi int64) string {
 // FormatStorage formats gibibytes as "10 Gi" or "1.5 Ti".
 func FormatStorage(gibi int64) string {
 	if gibi == 0 {
-		return dashPlaceholder
+		return naPlaceholder
 	}
 
 	if gibi < 1024 { //nolint:mnd // display threshold

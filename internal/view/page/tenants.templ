@@ -24,9 +24,9 @@ templ Tenants(data view.TenantsPageData) {
 						<th>Name</th>
 						<th>Apps</th>
 						<th>Pods</th>
-						<th>CPU</th>
-						<th>Memory</th>
-						<th>Storage</th>
+						<th title="Sum of spec.resources.requests.cpu across pods. Second line shows actual usage from metrics-server when available.">CPU requested</th>
+						<th title="Sum of spec.resources.requests.memory across pods. Second line shows actual usage from metrics-server when available.">Memory requested</th>
+						<th title="Sum of PVC requested storage">Storage</th>
 						<th>Status</th>
 						<th></th>
 					</tr>
@@ -129,18 +129,18 @@ templ tenantRow(item view.TenantWithUsage, metrics bool) {
 
 templ cpuCell(usage k8s.TenantUsage, metrics bool) {
 	<div>{ k8s.FormatCPU(usage.CPURequestsMi) }</div>
-	if metrics {
+	if metrics && usage.CPUUsageMi > 0 {
 		<div class="text-sm text-muted">
-			usage: { k8s.FormatCPU(usage.CPUUsageMi) }
+			real: { k8s.FormatCPU(usage.CPUUsageMi) }
 		</div>
 	}
 }
 
 templ memCell(usage k8s.TenantUsage, metrics bool) {
 	<div>{ k8s.FormatMem(usage.MemRequestsMi) }</div>
-	if metrics {
+	if metrics && usage.MemUsageMi > 0 {
 		<div class="text-sm text-muted">
-			usage: { k8s.FormatMem(usage.MemUsageMi) }
+			real: { k8s.FormatMem(usage.MemUsageMi) }
 		</div>
 	}
 }
