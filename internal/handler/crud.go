@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/k8s"
@@ -54,10 +55,21 @@ func (pgh *PageHandler) doCreateApp(
 	usr *auth.UserContext,
 	tenantNS, appName, appKind string,
 ) {
+	// Fetch schema to know field types for correct JSON encoding
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, appKind)
+	if schemaErr != nil {
+		pgh.log.Error("fetching schema for create", "kind", appKind, "error", schemaErr)
+		pgh.renderToast(writer, req, "error", "Failed to load schema for "+appKind)
+
+		return
+	}
+
+	fieldTypes := extractFieldTypes(schema)
+
 	createReq := k8s.CreateApplicationRequest{
 		Name: appName,
 		Kind: appKind,
-		Spec: extractSpecFromForm(req),
+		Spec: extractSpecFromForm(req, fieldTypes),
 	}
 
 	_, err := pgh.appSvc.Create(req.Context(), usr.Username, usr.Groups, tenantNS, createReq)
@@ -72,6 +84,37 @@ func (pgh *PageHandler) doCreateApp(
 
 	writer.Header().Set("Hx-Redirect", "/tenants/"+tenantNS)
 	writer.WriteHeader(http.StatusCreated)
+}
+
+func extractFieldTypes(schema *k8s.AppSchema) map[string]string {
+	types := map[string]string{}
+
+	if schema == nil || schema.JSONSchema == nil {
+		return types
+	}
+
+	obj, ok := schema.JSONSchema.(map[string]any)
+	if !ok {
+		return types
+	}
+
+	props, ok := obj["properties"].(map[string]any)
+	if !ok {
+		return types
+	}
+
+	for key, raw := range props {
+		prop, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if t, ok := prop["type"].(string); ok {
+			types[key] = t
+		}
+	}
+
+	return types
 }
 
 // DeleteApp handles DELETE to remove an application.
@@ -108,7 +151,7 @@ func (pgh *PageHandler) renderToast(writer http.ResponseWriter, req *http.Reques
 	}
 }
 
-func extractSpecFromForm(req *http.Request) map[string]any {
+func extractSpecFromForm(req *http.Request, fieldTypes map[string]string) map[string]any {
 	spec := map[string]any{}
 
 	for key, values := range req.Form {
@@ -116,9 +159,11 @@ func extractSpecFromForm(req *http.Request) map[string]any {
 			continue
 		}
 
-		if len(values) > 0 && values[0] != "" {
-			spec[key] = values[0]
+		if len(values) == 0 || values[0] == "" {
+			continue
 		}
+
+		spec[key] = convertValue(values[0], fieldTypes[key])
 	}
 
 	if len(spec) == 0 {
@@ -126,4 +171,27 @@ func extractSpecFromForm(req *http.Request) map[string]any {
 	}
 
 	return spec
+}
+
+func convertValue(raw, fieldType string) any {
+	switch fieldType {
+	case "boolean":
+		return raw == "true"
+	case "integer":
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return raw
+		}
+
+		return n
+	case "number":
+		f, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return raw
+		}
+
+		return f
+	default:
+		return raw
+	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/internal/view/layout"
 	"github.com/lexfrei/cozytempl/internal/view/page"
+	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
 
 // PageHandler renders full HTML pages via templ.
@@ -314,7 +315,11 @@ func (pgh *PageHandler) render(
 	var renderErr error
 
 	if req.Header.Get("Hx-Request") != "" {
+		// Render page content + OOB sidebar swap to update active state
 		renderErr = content.Render(req.Context(), writer)
+		if renderErr == nil {
+			renderErr = partial.SidebarOOB(tenants, activePage, activeTenant).Render(req.Context(), writer)
+		}
 	} else {
 		wrapped := layout.App(username, tenants, activePage, activeTenant)
 		renderErr = wrapped.Render(templ.WithChildren(req.Context(), content), writer)

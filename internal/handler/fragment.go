@@ -7,6 +7,7 @@ import (
 
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/k8s"
+	"github.com/lexfrei/cozytempl/internal/view/fragment"
 	"github.com/lexfrei/cozytempl/internal/view/page"
 )
 
@@ -40,6 +41,39 @@ func (pgh *PageHandler) AppTableFragment(writer http.ResponseWriter, req *http.R
 	renderErr := page.AppTableRows(tenant, apps).Render(req.Context(), writer)
 	if renderErr != nil {
 		pgh.log.Error("rendering app table fragment", "error", renderErr)
+	}
+}
+
+// SchemaFieldsFragment renders schema-driven form fields for the create app modal.
+func (pgh *PageHandler) SchemaFieldsFragment(writer http.ResponseWriter, req *http.Request) {
+	usr := auth.UserFromContext(req.Context())
+	if usr == nil {
+		http.Error(writer, "unauthorized", http.StatusUnauthorized)
+
+		return
+	}
+
+	kind := req.URL.Query().Get("kind")
+	if kind == "" {
+		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = writer.Write([]byte(""))
+
+		return
+	}
+
+	schema, err := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, kind)
+	if err != nil {
+		pgh.log.Error("fetching schema", "kind", kind, "error", err)
+		http.Error(writer, "schema not found", http.StatusNotFound)
+
+		return
+	}
+
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	renderErr := fragment.SchemaFields(*schema).Render(req.Context(), writer)
+	if renderErr != nil {
+		pgh.log.Error("rendering schema fields fragment", "error", renderErr)
 	}
 }
 

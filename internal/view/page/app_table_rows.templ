@@ -8,11 +8,16 @@ import (
 
 templ AppTableRows(tenant string, apps []k8s.Application) {
 	for _, app := range apps {
-		<tr style="cursor: pointer;"
-			hx-get={ "/tenants/" + tenant + "/apps/" + app.Name }
-			hx-target="#main-content"
-			hx-push-url="true">
-			<td>{ app.Name }</td>
+		<tr>
+			<td>
+				<a href={ templ.SafeURL("/tenants/" + tenant + "/apps/" + app.Name) }
+					hx-get={ "/tenants/" + tenant + "/apps/" + app.Name }
+					hx-target="#main-content"
+					hx-push-url="true"
+					style="color: inherit; text-decoration: none; display: block;">
+					{ app.Name }
+				</a>
+			</td>
 			<td>{ app.Kind }</td>
 			<td>
 				@partial.StatusBadgeWithID(string(app.Status), "status-"+app.Name)
@@ -23,8 +28,7 @@ templ AppTableRows(tenant string, apps []k8s.Application) {
 					hx-delete={ "/tenants/" + tenant + "/apps/" + app.Name }
 					hx-confirm={ "Delete " + app.Kind + " '" + app.Name + "'? This cannot be undone." }
 					hx-target="closest tr"
-					hx-swap="outerHTML swap:500ms"
-					onclick="event.stopPropagation()">
+					hx-swap="outerHTML swap:500ms">
 					Delete
 				</button>
 			</td>

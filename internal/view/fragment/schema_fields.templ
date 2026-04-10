@@ -1,0 +1,129 @@
+package fragment
+
+import (
+	"fmt"
+	"github.com/lexfrei/cozytempl/internal/k8s"
+)
+
+// SchemaFields renders form fields dynamically from a JSON Schema.
+templ SchemaFields(schema k8s.AppSchema) {
+	if props := extractProperties(schema); len(props) > 0 {
+		for _, field := range props {
+			<div class="form-group">
+				<label class="form-label">
+					{ field.Title }
+					if field.Required {
+						<span style="color: var(--color-danger);">*</span>
+					}
+				</label>
+				@renderField(field)
+				if field.Description != "" {
+					<div class="form-hint">{ field.Description }</div>
+				}
+			</div>
+		}
+	}
+}
+
+templ renderField(field SchemaField) {
+	switch {
+		case len(field.Enum) > 0:
+			<select class="form-select" name={ field.Key }>
+				for _, val := range field.Enum {
+					<option value={ val } selected?={ val == field.Default }>{ val }</option>
+				}
+			</select>
+		case field.Type == "boolean":
+			<select class="form-select" name={ field.Key }>
+				<option value="false" selected?={ field.Default != "true" }>false</option>
+				<option value="true" selected?={ field.Default == "true" }>true</option>
+			</select>
+		case field.Type == "integer" || field.Type == "number":
+			<input class="form-input" type="number" name={ field.Key } value={ field.Default }/>
+		default:
+			<input class="form-input" type="text" name={ field.Key } value={ field.Default }/>
+	}
+}
+
+// SchemaField is a flattened form field descriptor.
+type SchemaField struct {
+	Key         string
+	Title       string
+	Type        string
+	Description string
+	Default     string
+	Enum        []string
+	Required    bool
+}
+
+// extractProperties flattens the top-level JSON Schema properties into form fields.
+// Skips nested object types (backup, postgresql, quorum, etc.) — too complex for a simple form.
+func extractProperties(schema k8s.AppSchema) []SchemaField {
+	if schema.JSONSchema == nil {
+		return nil
+	}
+
+	obj, ok := schema.JSONSchema.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	rawProps, ok := obj["properties"].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	rawRequired, _ := obj["required"].([]any)
+	requiredSet := make(map[string]bool, len(rawRequired))
+
+	for _, r := range rawRequired {
+		if s, ok := r.(string); ok {
+			requiredSet[s] = true
+		}
+	}
+
+	fields := make([]SchemaField, 0, len(rawProps))
+
+	for key, raw := range rawProps {
+		prop, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		fieldType, _ := prop["type"].(string)
+		if fieldType == "object" || fieldType == "array" {
+			continue
+		}
+
+		field := SchemaField{
+			Key:      key,
+			Title:    key,
+			Type:     fieldType,
+			Required: requiredSet[key],
+		}
+
+		if title, ok := prop["title"].(string); ok && title != "" {
+			field.Title = title
+		}
+
+		if desc, ok := prop["description"].(string); ok {
+			field.Description = desc
+		}
+
+		if def, exists := prop["default"]; exists {
+			field.Default = fmt.Sprint(def)
+		}
+
+		if rawEnum, ok := prop["enum"].([]any); ok {
+			for _, e := range rawEnum {
+				if s, ok := e.(string); ok {
+					field.Enum = append(field.Enum, s)
+				}
+			}
+		}
+
+		fields = append(fields, field)
+	}
+
+	return fields
+}
