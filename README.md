@@ -2,7 +2,7 @@
 
 Web UI for [Cozystack](https://cozystack.io/) platform management.
 
-Go + [templ](https://templ.guide/) + [htmx](https://htmx.org/) + ~22 KB of bundled TypeScript. No SPA framework — every page is server-rendered, htmx handles navigation and mutations, TypeScript only covers genuine client-only concerns (modals, clipboard, progress bar, SSE reducer, click-to-reveal timer).
+Go + [templ](https://templ.guide/) + [htmx](https://htmx.org/) + ~25 KB of bundled TypeScript. No SPA framework — every page is server-rendered, htmx handles navigation and mutations, TypeScript only covers genuine client-only concerns (modals, clipboard, progress bar, SSE reducer, click-to-reveal timer, Cmd/Ctrl-K command palette).
 
 ## Quick start
 
@@ -139,11 +139,11 @@ Kubernetes API (dynamic client, user impersonation on every call)
 
 ## Prerequisites
 
-- Go 1.24+
+- Go 1.26+ (matches `go.mod`; the `golang:1.26-alpine` builder image ships what the Containerfile needs)
 - [templ](https://templ.guide/quick-start/installation/) CLI
 - `esbuild` (via npm — `make install-tools`)
 - Access to a Cozystack cluster (via `KUBECONFIG` or in-cluster)
-- OIDC provider for production (Keycloak, Dex, etc.)
+- OIDC provider for `passthrough` / `impersonation-legacy` modes (Keycloak, Dex, etc.). Not required for `byok` or `dev`.
 
 ## Configuration
 
