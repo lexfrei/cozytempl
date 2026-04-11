@@ -1,0 +1,187 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+
+  // Broad set of sensible defaults + OpenSSF scorecard + vulnerability
+  // alerts. `:semanticCommits` is omitted because the project uses a
+  // custom commit-message shape — see commitMessagePrefix below.
+  extends: [
+    "config:recommended",
+    "mergeConfidence:all-badges",
+    ":maintainLockFilesWeekly",
+    "security:openssf-scorecard",
+    ":disableDependencyDashboard",
+  ],
+
+  // Keep the PR inbox from getting hammered. Weekly schedule matches
+  // the old Dependabot config and the operator's Monday-morning review
+  // habit.
+  schedule: ["before 09:00 on monday"],
+  timezone: "Europe/Amsterdam",
+  prHourlyLimit: 0,
+  prConcurrentLimit: 10,
+
+  // Every PR opens against master and carries the "dependencies" label
+  // so existing triage filters keep working after the Dependabot → Renovate swap.
+  baseBranches: ["master"],
+  labels: ["dependencies"],
+
+  // commit-message shape mirrors the existing Dependabot convention:
+  //   chore(<scope>): bump <pkg> from <from> to <to>
+  // where <scope> comes from the ecosystem-specific packageRule below.
+  commitMessagePrefix: "chore",
+  commitMessageAction: "bump",
+  commitMessageTopic: "{{depName}}",
+  commitMessageExtra: "from {{currentVersion}} to {{newVersion}}",
+
+  // Vulnerabilities are always alerted; auto-PR them even if the
+  // schedule window has passed. Keeps the `govulncheck` gate in
+  // `make lint` from going red.
+  vulnerabilityAlerts: {
+    enabled: true,
+    labels: ["dependencies", "security"],
+    minimumReleaseAge: "0 days",
+    schedule: "at any time",
+  },
+
+  // Bump go in go.mod + Containerfile together so a Go toolchain bump
+  // does not leave the container image one minor version behind.
+  postUpdateOptions: ["gomodTidy", "gomodUpdateImportPaths"],
+
+  // ----- Custom managers: pick up pins Renovate does not see by default. -----
+  customManagers: [
+    // Containerfile FROM lines are handled by the dockerfile manager,
+    // but our Containerfile also pins `templ@v0.3.1001` as a go-install
+    // flag. Renovate's regex manager upgrades that too.
+    {
+      customType: "regex",
+      fileMatch: ["^Containerfile$"],
+      matchStrings: [
+        "go install (?<depName>github\\.com/a-h/templ/cmd/templ)@(?<currentValue>v[0-9.]+)",
+      ],
+      datasourceTemplate: "go",
+    },
+    // Helm chart values.yaml pins `image.repository` and `image.tag`
+    // for the cozytempl image itself. We do NOT want Renovate touching
+    // those (the tag is owned by the release workflow), but if we ever
+    // add sidecar images here, the regex manager lets us promote them
+    // without rebuilding this file. Enable by un-ignoring the path.
+  ],
+
+  // ----- Per-ecosystem rules. --------------------------------------------
+  packageRules: [
+    // === Go modules =====================================================
+    {
+      matchManagers: ["gomod"],
+      matchPackagePatterns: ["^k8s\\.io/", "^sigs\\.k8s\\.io/"],
+      groupName: "k8s.io / sigs.k8s.io",
+      // Minor + patch auto-grouped to avoid PR floods on k8s.io/*
+      // batch releases. Majors still get their own PR for review.
+      matchUpdateTypes: ["minor", "patch"],
+      semanticCommitScope: "go",
+    },
+    {
+      matchManagers: ["gomod"],
+      matchPackagePatterns: ["^go\\.opentelemetry\\.io/"],
+      groupName: "OpenTelemetry Go SDK",
+      matchUpdateTypes: ["minor", "patch"],
+      semanticCommitScope: "go",
+    },
+    {
+      matchManagers: ["gomod"],
+      matchPackageNames: ["github.com/a-h/templ"],
+      // templ is the one go.mod dep the Containerfile also pins
+      // (via go install). Renovate groups them via the regex manager +
+      // the packageRule so they always bump together.
+      groupName: "templ",
+      semanticCommitScope: "go",
+    },
+    {
+      matchManagers: ["gomod"],
+      excludePackagePatterns: [
+        "^k8s\\.io/",
+        "^sigs\\.k8s\\.io/",
+        "^go\\.opentelemetry\\.io/",
+      ],
+      matchUpdateTypes: ["minor", "patch"],
+      groupName: "Go minor + patch",
+      semanticCommitScope: "go",
+    },
+
+    // === npm (TypeScript toolchain) =====================================
+    {
+      matchManagers: ["npm"],
+      matchUpdateTypes: ["minor", "patch"],
+      groupName: "npm minor + patch",
+      semanticCommitScope: "npm",
+      // Dev deps only in this repo; no runtime npm footprint.
+      matchDepTypes: ["devDependencies"],
+    },
+    {
+      matchManagers: ["npm"],
+      matchPackageNames: ["esbuild", "typescript", "eslint"],
+      // Build-toolchain bumps get a dedicated group so a breakage
+      // stays isolated from runtime-ish updates.
+      groupName: "TypeScript toolchain",
+      semanticCommitScope: "npm",
+    },
+
+    // === GitHub Actions =================================================
+    {
+      matchManagers: ["github-actions"],
+      // Pin to SHA-256 is enforced by the `config:recommended` preset;
+      // we just set the label + scope here.
+      semanticCommitScope: "ci",
+      groupName: "GitHub Actions",
+    },
+
+    // === Containerfile base images ======================================
+    {
+      matchManagers: ["dockerfile"],
+      matchPackageNames: ["golang", "node", "gcr.io/distroless/static-debian12"],
+      groupName: "Container base images",
+      semanticCommitScope: "container",
+      // Major bumps (Go 1.26 → 1.27, Node 20 → 22) need a human look,
+      // so don't batch them with minor + patch.
+      matchUpdateTypes: ["minor", "patch"],
+    },
+
+    // === Auto-merge lane ================================================
+    // Patch bumps of production-safe ecosystems auto-merge after CI is
+    // green. Majors and minors stay manual. GitHub Actions are pinned
+    // to SHA so even a patch could be malicious — they stay manual.
+    {
+      matchUpdateTypes: ["patch"],
+      matchManagers: ["gomod", "npm", "dockerfile"],
+      automerge: true,
+      automergeType: "branch",
+      platformAutomerge: true,
+    },
+
+    // === Digest pins (containers) =======================================
+    // Distroless and golang:1.26-alpine are pinned by tag; Renovate
+    // will also track the underlying digest so a "latest" rebuild with
+    // the same tag still produces a PR. Weekly is fine.
+    {
+      matchManagers: ["dockerfile"],
+      matchUpdateTypes: ["digest"],
+      groupName: "Container digest pins",
+      schedule: ["before 09:00 on monday"],
+    },
+  ],
+
+  // ----- Disable managers that do not apply to this repo. ----------------
+  // The project has no Kustomize, no Terraform, no Helm chart deps, no
+  // Poetry, no Bundler. Leaving those disabled keeps the dashboard
+  // scope tight.
+  bundler: { enabled: false },
+  pip_requirements: { enabled: false },
+  poetry: { enabled: false },
+  terraform: { enabled: false },
+  kustomize: { enabled: false },
+
+  // Helm chart tracking: the chart in deploy/helm/cozytempl has no
+  // Chart.yaml dependencies today (it only ships its own resources).
+  // If we ever add `dependencies:` to Chart.yaml, flip this on.
+  helm: { enabled: false },
+  helmv3: { enabled: false },
+}

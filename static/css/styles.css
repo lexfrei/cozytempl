@@ -1802,3 +1802,73 @@ tr[hx-get]:hover {
 body.command-palette-open {
   overflow: hidden;
 }
+
+/* ------------------------------------------------------------------
+ * Marketplace card, rendered as an <a> so keyboard focus,
+ * middle-click-to-open, and right-click-context-menu all work out
+ * of the box. The underlying .mp-card rule already carries the
+ * card chrome (background, border, cursor:pointer, hover). The
+ * link variant only needs to strip the default anchor decoration
+ * so the card keeps its original visual look.
+ * ------------------------------------------------------------------ */
+.mp-card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.mp-card-link:hover,
+.mp-card-link:focus-visible {
+  color: inherit;
+  text-decoration: none;
+}
+
+.mp-card-link:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------
+ * Generic inline banner for status / hint messages at the top of
+ * a page. .banner is the base (padding, radius, border). Variants
+ * tint the left border + background. .banner-info for neutral
+ * informational hints like the "pick a tenant to create <kind>"
+ * message on the tenants page after a marketplace card click.
+ * ------------------------------------------------------------------ */
+.banner {
+  padding: 12px 16px;
+  border-left: 3px solid var(--color-border);
+  background: var(--color-bg-surface);
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.banner-info {
+  border-left-color: var(--color-primary);
+  background: var(--color-primary-bg);
+}
+
+/* ------------------------------------------------------------------
+ * Inline "Learn more →" link used on profile, byok upload and
+ * logs-tab error messages. Styled as a subtle secondary link —
+ * visible but not loud, focus-ring for keyboard users.
+ * ------------------------------------------------------------------ */
+.doc-link {
+  color: var(--color-primary);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--color-primary);
+  padding-bottom: 1px;
+  transition: color var(--transition), border-color var(--transition);
+}
+
+.doc-link:hover {
+  color: var(--color-primary-hover, var(--color-primary));
+  border-bottom-color: transparent;
+}
+
+.doc-link:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
