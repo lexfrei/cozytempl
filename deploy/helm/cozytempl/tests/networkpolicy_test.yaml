@@ -1,0 +1,99 @@
+suite: NetworkPolicy
+templates:
+  - networkpolicy.yaml
+release:
+  name: cozytempl
+  namespace: cozy-system
+tests:
+  - it: disabled by default — zero documents
+    set:
+      config.authMode: dev
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: enabled renders Ingress + Egress policy
+    set:
+      config.authMode: dev
+      networkPolicy.enabled: true
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - equal:
+          path: metadata.name
+          value: cozytempl
+      - contains:
+          path: spec.policyTypes
+          content: Ingress
+      - contains:
+          path: spec.policyTypes
+          content: Egress
+
+  - it: default ingress allows the service port from any cluster namespace
+    set:
+      config.authMode: dev
+      networkPolicy.enabled: true
+    asserts:
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 8080
+      - equal:
+          path: spec.ingress[0].ports[0].protocol
+          value: TCP
+
+  - it: default egress includes DNS and HTTPS
+    set:
+      config.authMode: dev
+      networkPolicy.enabled: true
+    asserts:
+      - equal:
+          path: spec.egress[0].ports[0].port
+          value: 53
+      - equal:
+          path: spec.egress[0].ports[0].protocol
+          value: UDP
+      - equal:
+          path: spec.egress[0].ports[1].port
+          value: 53
+      - equal:
+          path: spec.egress[0].ports[1].protocol
+          value: TCP
+      - equal:
+          path: spec.egress[1].ports[0].port
+          value: 443
+
+  - it: custom ingress rules append to the defaults
+    set:
+      config.authMode: dev
+      networkPolicy.enabled: true
+      networkPolicy.ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  role: prometheus
+          ports:
+            - protocol: TCP
+              port: 8080
+    asserts:
+      - equal:
+          path: spec.ingress[1].from[0].podSelector.matchLabels.role
+          value: prometheus
+
+  - it: custom egress rules append to the defaults
+    set:
+      config.authMode: dev
+      networkPolicy.enabled: true
+      networkPolicy.egress:
+        - to:
+            - ipBlock:
+                cidr: 10.0.0.0/8
+          ports:
+            - protocol: TCP
+              port: 6443
+    asserts:
+      - equal:
+          path: spec.egress[2].to[0].ipBlock.cidr
+          value: 10.0.0.0/8
+      - equal:
+          path: spec.egress[2].ports[0].port
+          value: 6443

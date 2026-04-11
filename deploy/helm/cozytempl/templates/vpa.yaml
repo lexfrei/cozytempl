@@ -1,0 +1,37 @@
+{{- /*
+  Optional autoscaling.k8s.io/v1 VerticalPodAutoscaler. Disabled
+  by default. Enable when the cluster runs the VPA operator and
+  the operator wants cozytempl's requests/limits to be right-
+  sized automatically based on observed usage.
+
+  updateMode controls how VPA applies recommendations:
+    Off        — only emit recommendations, never touch the pod
+    Initial    — set requests at pod create time, leave running
+                 pods alone
+    Auto       — evict and recreate pods to apply new requests
+  Default is Auto (matches lexfrei/charts me-site).
+
+  Note: Auto mode conflicts with HPA on the SAME metric. If
+  autoscaling.enabled and vpa.enabled are both true, make sure
+  the VPA resource policy excludes whatever metric the HPA
+  scales on (typically CPU) — otherwise they will fight.
+*/ -}}
+{{- if .Values.vpa.enabled -}}
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{ include "cozytempl.fullname" . }}
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "cozytempl.fullname" . }}
+  updatePolicy:
+    updateMode: {{ .Values.vpa.updateMode | default "Auto" | quote }}
+  {{- with .Values.vpa.resourcePolicy }}
+  resourcePolicy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

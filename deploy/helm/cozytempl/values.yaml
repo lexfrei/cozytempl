@@ -242,3 +242,82 @@ commonAnnotations: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+# Optional networking.k8s.io/v1 NetworkPolicy. Disabled by
+# default — every cluster has a different egress story so
+# flipping a restrictive policy on without explicit buy-in
+# would break perfectly fine installs. Shape follows
+# lexfrei/charts convention.
+networkPolicy:
+  enabled: false
+  # Extra ingress rules layered on top of the default "allow
+  # cluster pods to hit the HTTP port".
+  ingress: []
+  # Extra egress rules layered on top of the default "allow DNS
+  # and HTTPS everywhere". Use for non-standard apiserver ports
+  # or OTLP collectors on a non-default port.
+  egress: []
+
+# Optional policy/v1 PodDisruptionBudget. Only rendered when
+# BOTH enabled=true AND replicaCount>1 — a PDB on a single
+# replica is both useless and actively breaks node drains.
+# Set exactly one of minAvailable / maxUnavailable.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  maxUnavailable: ""
+
+# Optional autoscaling/v2 HorizontalPodAutoscaler. cozytempl
+# is stateless (cookie-stored sessions) so HPA is trivially
+# safe. Disabled by default because most installs don't need
+# it — flip on for multi-tenant MSP scenarios with bursty
+# traffic patterns.
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 75
+  # Leave targetMemoryUtilizationPercentage empty to scale on
+  # CPU only. Set to a percentage to enable the memory metric.
+  targetMemoryUtilizationPercentage: ""
+  # customMetrics is a free-form list of autoscaling/v2
+  # MetricSpec entries. Use for external / object metrics
+  # (e.g. request-rate from a service mesh).
+  customMetrics: []
+  # behavior maps directly to autoscaling/v2 HPAScalingRules.
+  # Leave empty for the upstream defaults (gentle scale-up,
+  # slow scale-down).
+  behavior: {}
+
+# Optional monitoring.coreos.com/v1 ServiceMonitor for the
+# Prometheus Operator. Cozytempl serves /metrics on the HTTP
+# port, so enable this if you want the scrape config to live
+# as a CR alongside the release instead of a hand-rolled
+# Prometheus scrape_config.
+serviceMonitor:
+  enabled: false
+  # Scrape interval. Empty = operator default (usually 30s).
+  interval: ""
+  scrapeTimeout: ""
+  # Target path on the HTTP port. Defaults to /metrics.
+  path: /metrics
+  # Extra labels on the ServiceMonitor resource itself (the
+  # Prometheus instance selector typically matches on one).
+  labels: {}
+  jobLabel: ""
+  honorLabels: false
+  metricRelabelings: []
+  relabelings: []
+
+# Optional autoscaling.k8s.io/v1 VerticalPodAutoscaler.
+# updateMode is one of Off / Initial / Recreate / Auto. Auto
+# is the useful default — VPA evicts pods to apply new
+# requests. Do NOT enable alongside autoscaling.enabled
+# without a resourcePolicy that excludes the metric the HPA
+# scales on — otherwise they fight.
+vpa:
+  enabled: false
+  updateMode: Auto
+  # Freeform resourcePolicy passed verbatim. Use to exclude
+  # containers or cap min/max bounds.
+  resourcePolicy: {}

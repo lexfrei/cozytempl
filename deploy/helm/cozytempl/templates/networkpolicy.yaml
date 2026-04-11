@@ -1,0 +1,69 @@
+{{- /*
+  Optional networking.k8s.io/v1 NetworkPolicy. Disabled by
+  default because every cluster has a different egress story —
+  flipping on a restrictive policy without the operator's
+  explicit buy-in would break perfectly fine installs.
+  Shape follows the lexfrei/charts me-site / cloudflare-tunnel
+  convention.
+
+  Defaults when enabled:
+    Ingress — allow from any pod in any namespace (a looser
+              default than bitnami's, because cozytempl is
+              fronted by an external ingress or HTTPRoute and
+              the pod network is the natural trust zone).
+    Egress  — allow DNS and HTTPS (443) everywhere. cozytempl
+              needs DNS for the k8s API hostname resolve and
+              HTTPS/443 for the API server itself. Operators
+              with a non-standard apiserver port should extend
+              via networkPolicy.egress.
+*/ -}}
+{{- if .Values.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "cozytempl.fullname" . }}
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "cozytempl.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic to the HTTP port from anywhere in the cluster.
+    # The fronting ingress / HTTPRoute lives in its own namespace
+    # so a namespaceSelector match is the cheapest + most portable
+    # default. Tighten via networkPolicy.ingress on prod clusters
+    # with a formal trust story.
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.port }}
+    {{- with .Values.networkPolicy.ingress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  egress:
+    # DNS — mandatory, otherwise the k8s client never resolves
+    # the apiserver hostname.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # HTTPS — for the Kubernetes API server, OIDC discovery, JWKS
+    # fetches, and OTLP export to a collector. Covers every
+    # default cozystack setup.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- with .Values.networkPolicy.egress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

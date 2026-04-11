@@ -310,6 +310,98 @@
     },
     "affinity": {
       "type": "object"
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "description": "Optional networking.k8s.io/v1 NetworkPolicy. Disabled by default.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "ingress": { "type": "array" },
+        "egress": { "type": "array" }
+      }
+    },
+    "podDisruptionBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "description": "Optional policy/v1 PodDisruptionBudget. Only rendered when enabled=true AND replicaCount>1.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minAvailable": {
+          "type": ["integer", "string"],
+          "description": "Integer pod count or percentage string (e.g. '50%'). Mutually exclusive with maxUnavailable."
+        },
+        "maxUnavailable": {
+          "type": ["integer", "string"],
+          "description": "Integer pod count or percentage string. Mutually exclusive with minAvailable."
+        }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "description": "Optional autoscaling/v2 HorizontalPodAutoscaler. Disabled by default.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "minReplicas": { "type": "integer", "minimum": 1 },
+        "maxReplicas": { "type": "integer", "minimum": 1 },
+        "targetCPUUtilizationPercentage": {
+          "type": ["integer", "string"],
+          "description": "Integer percentage (0-100). Empty string disables the CPU metric."
+        },
+        "targetMemoryUtilizationPercentage": {
+          "type": ["integer", "string"],
+          "description": "Integer percentage (0-100). Empty string disables the memory metric."
+        },
+        "customMetrics": {
+          "type": "array",
+          "description": "Free-form list of autoscaling/v2 MetricSpec entries."
+        },
+        "behavior": {
+          "type": "object",
+          "description": "autoscaling/v2 HPAScalingRules passed through verbatim."
+        }
+      }
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "description": "Optional monitoring.coreos.com/v1 ServiceMonitor for Prometheus Operator.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "interval": { "type": "string" },
+        "scrapeTimeout": { "type": "string" },
+        "path": { "type": "string" },
+        "labels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "jobLabel": { "type": "string" },
+        "honorLabels": { "type": "boolean" },
+        "metricRelabelings": { "type": "array" },
+        "relabelings": { "type": "array" }
+      }
+    },
+    "vpa": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "description": "Optional autoscaling.k8s.io/v1 VerticalPodAutoscaler. Disabled by default.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "updateMode": {
+          "type": "string",
+          "enum": ["Off", "Initial", "Recreate", "Auto"]
+        },
+        "resourcePolicy": {
+          "type": "object",
+          "description": "VPA ResourcePolicy passed through verbatim. Use to exclude containers or cap min/max bounds."
+        }
+      }
     }
   },
   "$defs": {

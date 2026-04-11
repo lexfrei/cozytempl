@@ -1,0 +1,51 @@
+{{- /*
+  Optional autoscaling/v2 HorizontalPodAutoscaler. Disabled by
+  default. cozytempl is stateless (session lives in a cookie,
+  no sticky-session requirement) so horizontal scaling is
+  trivially safe.
+
+  Shape mirrors lexfrei/charts cloudflare-tunnel: CPU + memory
+  targets are first-class, plus an optional customMetrics
+  list for any external-metrics / object-metrics rules the
+  operator wants to layer on, and a free-form behavior block
+  for stabilisation windows and scale-up/down policies.
+*/ -}}
+{{- if .Values.autoscaling.enabled -}}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "cozytempl.fullname" . }}
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "cozytempl.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    {{- with .Values.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ . }}
+    {{- end }}
+    {{- with .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ . }}
+    {{- end }}
+    {{- with .Values.autoscaling.customMetrics }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.autoscaling.behavior }}
+  behavior:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

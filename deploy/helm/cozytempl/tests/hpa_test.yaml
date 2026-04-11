@@ -1,0 +1,103 @@
+suite: HorizontalPodAutoscaler
+templates:
+  - hpa.yaml
+release:
+  name: cozytempl
+  namespace: cozy-system
+tests:
+  - it: disabled by default — zero documents
+    set:
+      config.authMode: dev
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: enabled renders an HPA targeting the Deployment
+    set:
+      config.authMode: dev
+      autoscaling.enabled: true
+    asserts:
+      - isKind:
+          of: HorizontalPodAutoscaler
+      - equal:
+          path: apiVersion
+          value: autoscaling/v2
+      - equal:
+          path: spec.scaleTargetRef.kind
+          value: Deployment
+      - equal:
+          path: spec.scaleTargetRef.name
+          value: cozytempl
+      - equal:
+          path: spec.minReplicas
+          value: 1
+      - equal:
+          path: spec.maxReplicas
+          value: 5
+
+  - it: default renders CPU metric only
+    set:
+      config.authMode: dev
+      autoscaling.enabled: true
+    asserts:
+      - equal:
+          path: spec.metrics[0].type
+          value: Resource
+      - equal:
+          path: spec.metrics[0].resource.name
+          value: cpu
+      - equal:
+          path: spec.metrics[0].resource.target.averageUtilization
+          value: 75
+
+  - it: memory metric is rendered when set
+    set:
+      config.authMode: dev
+      autoscaling.enabled: true
+      autoscaling.targetMemoryUtilizationPercentage: 80
+    asserts:
+      - equal:
+          path: spec.metrics[1].resource.name
+          value: memory
+      - equal:
+          path: spec.metrics[1].resource.target.averageUtilization
+          value: 80
+
+  - it: customMetrics list is appended
+    set:
+      config.authMode: dev
+      autoscaling.enabled: true
+      autoscaling.customMetrics:
+        - type: External
+          external:
+            metric:
+              name: cozytempl_http_requests_per_second
+            target:
+              type: AverageValue
+              averageValue: "100"
+    asserts:
+      - equal:
+          path: spec.metrics[1].type
+          value: External
+      - equal:
+          path: spec.metrics[1].external.metric.name
+          value: cozytempl_http_requests_per_second
+
+  - it: behavior block passes through
+    set:
+      config.authMode: dev
+      autoscaling.enabled: true
+      autoscaling.behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 10
+              periodSeconds: 60
+    asserts:
+      - equal:
+          path: spec.behavior.scaleDown.stabilizationWindowSeconds
+          value: 300
+      - equal:
+          path: spec.behavior.scaleDown.policies[0].type
+          value: Percent

@@ -1,0 +1,80 @@
+suite: ServiceMonitor
+templates:
+  - servicemonitor.yaml
+release:
+  name: cozytempl
+  namespace: cozy-system
+tests:
+  - it: disabled by default — zero documents
+    set:
+      config.authMode: dev
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: enabled renders a ServiceMonitor on the http port + /metrics path
+    set:
+      config.authMode: dev
+      serviceMonitor.enabled: true
+    asserts:
+      - isKind:
+          of: ServiceMonitor
+      - equal:
+          path: apiVersion
+          value: monitoring.coreos.com/v1
+      - equal:
+          path: metadata.name
+          value: cozytempl
+      - equal:
+          path: spec.endpoints[0].port
+          value: http
+      - equal:
+          path: spec.endpoints[0].path
+          value: /metrics
+
+  - it: namespaceSelector scopes to the release namespace
+    set:
+      config.authMode: dev
+      serviceMonitor.enabled: true
+    asserts:
+      - contains:
+          path: spec.namespaceSelector.matchNames
+          content: cozy-system
+
+  - it: interval and scrapeTimeout pass through
+    set:
+      config.authMode: dev
+      serviceMonitor.enabled: true
+      serviceMonitor.interval: 15s
+      serviceMonitor.scrapeTimeout: 10s
+    asserts:
+      - equal:
+          path: spec.endpoints[0].interval
+          value: 15s
+      - equal:
+          path: spec.endpoints[0].scrapeTimeout
+          value: 10s
+
+  - it: extra labels land on the ServiceMonitor metadata
+    set:
+      config.authMode: dev
+      serviceMonitor.enabled: true
+      serviceMonitor.labels:
+        release: kube-prometheus
+    asserts:
+      - equal:
+          path: metadata.labels.release
+          value: kube-prometheus
+
+  - it: metricRelabelings pass through
+    set:
+      config.authMode: dev
+      serviceMonitor.enabled: true
+      serviceMonitor.metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: go_.*
+          action: drop
+    asserts:
+      - equal:
+          path: spec.endpoints[0].metricRelabelings[0].action
+          value: drop

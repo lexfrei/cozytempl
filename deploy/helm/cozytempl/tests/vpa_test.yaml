@@ -1,0 +1,75 @@
+suite: VerticalPodAutoscaler
+templates:
+  - vpa.yaml
+release:
+  name: cozytempl
+  namespace: cozy-system
+tests:
+  - it: disabled by default — zero documents
+    set:
+      config.authMode: dev
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: enabled renders a VPA with Auto updateMode by default
+    set:
+      config.authMode: dev
+      vpa.enabled: true
+    asserts:
+      - isKind:
+          of: VerticalPodAutoscaler
+      - equal:
+          path: apiVersion
+          value: autoscaling.k8s.io/v1
+      - equal:
+          path: metadata.name
+          value: cozytempl
+      - equal:
+          path: spec.targetRef.kind
+          value: Deployment
+      - equal:
+          path: spec.targetRef.name
+          value: cozytempl
+      - equal:
+          path: spec.updatePolicy.updateMode
+          value: Auto
+
+  - it: updateMode=Off passes through
+    set:
+      config.authMode: dev
+      vpa.enabled: true
+      vpa.updateMode: Off
+    asserts:
+      - equal:
+          path: spec.updatePolicy.updateMode
+          value: Off
+
+  - it: resourcePolicy passes through verbatim
+    set:
+      config.authMode: dev
+      vpa.enabled: true
+      vpa.resourcePolicy:
+        containerPolicies:
+          - containerName: cozytempl
+            minAllowed:
+              cpu: 50m
+              memory: 64Mi
+            maxAllowed:
+              cpu: 2
+              memory: 512Mi
+            controlledResources:
+              - memory
+    asserts:
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].containerName
+          value: cozytempl
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].minAllowed.cpu
+          value: 50m
+      - equal:
+          path: spec.resourcePolicy.containerPolicies[0].maxAllowed.memory
+          value: 512Mi
+      - contains:
+          path: spec.resourcePolicy.containerPolicies[0].controlledResources
+          content: memory

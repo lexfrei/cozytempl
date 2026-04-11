@@ -1,0 +1,55 @@
+{{- /*
+  Optional monitoring.coreos.com/v1 ServiceMonitor. Disabled by
+  default. Enable when the cluster runs the Prometheus Operator
+  and discovers scrape targets through ServiceMonitor CRs.
+
+  Unlike cloudflare-tunnel's chart, cozytempl serves /metrics on
+  the same HTTP port as the UI (port: http, path: /metrics). We
+  therefore reference the existing http port instead of adding a
+  dedicated metrics port to the Service.
+
+  cozytempl's /metrics endpoint is unauthenticated by design —
+  the README documents this. Operators who need auth gate it at
+  the network layer (NetworkPolicy, service mesh, scrape sidecar).
+*/ -}}
+{{- if .Values.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "cozytempl.fullname" . }}
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with .Values.serviceMonitor.jobLabel }}
+  jobLabel: {{ . | quote }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "cozytempl.selectorLabels" . | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  endpoints:
+    - port: http
+      path: {{ .Values.serviceMonitor.path | default "/metrics" | quote }}
+      {{- with .Values.serviceMonitor.interval }}
+      interval: {{ . }}
+      {{- end }}
+      {{- with .Values.serviceMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+      {{- with .Values.serviceMonitor.honorLabels }}
+      honorLabels: {{ . }}
+      {{- end }}
+      {{- with .Values.serviceMonitor.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.serviceMonitor.relabelings }}
+      relabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

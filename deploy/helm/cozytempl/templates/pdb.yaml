@@ -1,0 +1,29 @@
+{{- /*
+  Optional policy/v1 PodDisruptionBudget. Rendered only when
+  podDisruptionBudget.enabled=true AND replicaCount > 1 — a PDB
+  on a single-replica Deployment is both useless and actively
+  harmful (node drains get stuck forever). Same guard as
+  cloudflare-tunnel's chart.
+
+  minAvailable and maxUnavailable are mutually exclusive; set
+  exactly one in values. An integer counts pods, a percentage
+  counts a fraction of the replicaCount.
+*/ -}}
+{{- if and .Values.podDisruptionBudget.enabled (gt (int .Values.replicaCount) 1) -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "cozytempl.fullname" . }}
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+spec:
+  {{- with .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ . }}
+  {{- end }}
+  {{- with .Values.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ . }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "cozytempl.selectorLabels" . | nindent 6 }}
+{{- end }}
