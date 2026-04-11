@@ -109,11 +109,13 @@ templ Tenants(data view.TenantsPageData) {
 	</div>
 
 	<!-- Create modal -->
-	<div id="create-tenant-modal" class="modal-backdrop" style="display: none;">
+	<div id="create-tenant-modal" class="modal-backdrop" style="display: none;"
+		role="dialog" aria-modal="true" aria-labelledby="create-tenant-title">
 		<div class="modal">
 			<div class="modal-header">
-				<h2 class="modal-title">Create Tenant</h2>
+				<h2 id="create-tenant-title" class="modal-title">Create Tenant</h2>
 				<button class="btn-icon" type="button"
+					aria-label="Close create tenant dialog"
 					data-action="modal-close" data-modal="create-tenant-modal">&times;</button>
 			</div>
 			<form hx-post="/tenants"

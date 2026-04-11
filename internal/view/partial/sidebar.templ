@@ -8,26 +8,29 @@ import (
 // SidebarOOB renders the sidebar wrapped in an OOB swap wrapper for htmx.
 // Used on partial requests to update sidebar active state alongside #main-content.
 templ SidebarOOB(tenants []k8s.Tenant, activePage string, activeTenant string) {
-	<aside class="sidebar" hx-swap-oob="true" id="sidebar">
+	<aside class="sidebar" hx-swap-oob="true" id="sidebar" aria-label="Primary navigation">
 		@sidebarInner(tenants, activePage, activeTenant)
 	</aside>
 }
 
 templ Sidebar(tenants []k8s.Tenant, activePage string, activeTenant string) {
-	<aside class="sidebar" id="sidebar">
+	<aside class="sidebar" id="sidebar" aria-label="Primary navigation">
 		@sidebarInner(tenants, activePage, activeTenant)
 	</aside>
 }
 
 templ sidebarInner(tenants []k8s.Tenant, activePage string, activeTenant string) {
-	<div class="sidebar-section">
-		<div class="sidebar-label">Navigation</div>
+	<nav class="sidebar-section" aria-labelledby="nav-section-heading">
+		<div id="nav-section-heading" class="sidebar-label">Navigation</div>
 		<a href="/"
 			hx-get="/"
 			hx-target="#main-content"
 			hx-push-url="true"
-			class={ "sidebar-item", templ.KV("active", activePage == "dashboard") }>
-			<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+			class={ "sidebar-item", templ.KV("active", activePage == "dashboard") }
+			if activePage == "dashboard" {
+				aria-current="page"
+			}>
+			<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
 				<rect x="3" y="3" width="7" height="7"></rect>
 				<rect x="14" y="3" width="7" height="7"></rect>
 				<rect x="3" y="14" width="7" height="7"></rect>
@@ -39,8 +42,11 @@ templ sidebarInner(tenants []k8s.Tenant, activePage string, activeTenant string)
 			hx-get="/marketplace"
 			hx-target="#main-content"
 			hx-push-url="true"
-			class={ "sidebar-item", templ.KV("active", activePage == "marketplace") }>
-			<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+			class={ "sidebar-item", templ.KV("active", activePage == "marketplace") }
+			if activePage == "marketplace" {
+				aria-current="page"
+			}>
+			<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
 				<path d="M6 2L3 7v11a2 2 0 002 2h14a2 2 0 002-2V7l-3-5z"></path>
 				<line x1="3" y1="7" x2="21" y2="7"></line>
 				<path d="M16 11a4 4 0 01-8 0"></path>
@@ -51,8 +57,11 @@ templ sidebarInner(tenants []k8s.Tenant, activePage string, activeTenant string)
 			hx-get="/tenants"
 			hx-target="#main-content"
 			hx-push-url="true"
-			class={ "sidebar-item", templ.KV("active", activePage == "tenants") }>
-			<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+			class={ "sidebar-item", templ.KV("active", activePage == "tenants") }
+			if activePage == "tenants" {
+				aria-current="page"
+			}>
+			<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
 				<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
 				<circle cx="9" cy="7" r="4"></circle>
 				<path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
@@ -60,15 +69,15 @@ templ sidebarInner(tenants []k8s.Tenant, activePage string, activeTenant string)
 			</svg>
 			Manage Tenants
 		</a>
-	</div>
-	<div class="sidebar-section">
-		<div class="sidebar-label">Tenants</div>
+	</nav>
+	<nav class="sidebar-section" aria-labelledby="tenants-section-heading">
+		<div id="tenants-section-heading" class="sidebar-label">Tenants</div>
 		<ul class="tenant-tree">
 			for _, tenant := range rootTenants(tenants) {
 				@tenantNode(tenant, tenants, activeTenant)
 			}
 		</ul>
-	</div>
+	</nav>
 }
 
 // tenantNode renders a single tenant and recurses into its descendants.
@@ -82,9 +91,13 @@ templ tenantNode(tenant k8s.Tenant, all []k8s.Tenant, activeTenant string) {
 			hx-get={ "/tenants/" + tenant.Namespace }
 			hx-target="#main-content"
 			hx-push-url="true"
-			class={ "sidebar-item", templ.KV("active", activeTenant == tenant.Namespace) }>
+			class={ "sidebar-item", templ.KV("active", activeTenant == tenant.Namespace) }
+			aria-label={ tenant.DisplayName + ", " + fmt.Sprint(tenant.AppCount) + " applications" }
+			if activeTenant == tenant.Namespace {
+				aria-current="page"
+			}>
 			<span>{ tenant.DisplayName }</span>
-			<span class="text-sm text-muted" style="margin-left: auto;">
+			<span class="text-sm text-muted" style="margin-left: auto;" aria-hidden="true">
 				{ fmt.Sprint(tenant.AppCount) }
 			</span>
 		</a>

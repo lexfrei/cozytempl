@@ -117,7 +117,9 @@ templ connectionTab(data view.AppDetailData) {
 					} else {
 						<div class="connection-info">
 							<code>{ value }</code>
-							<button class="btn-icon copy-btn" data-copy={ value }>&#128203;</button>
+							<button class="btn-icon copy-btn" type="button"
+								data-copy={ value }
+								aria-label={ "Copy " + key + " to clipboard" }>&#128203;</button>
 						</div>
 					}
 				</div>
@@ -138,9 +140,10 @@ templ connectionTab(data view.AppDetailData) {
 // credential's window of exposure in the DOM stays bounded.
 templ connectionSecretRow(tenant, appName, field string) {
 	<div class="connection-info connection-secret" data-reveal-timeout="30000">
-		<code data-reveal-target>••••••••</code>
-		<button class="btn-icon"
+		<code data-reveal-target aria-label={ field + " value, currently hidden" }>••••••••</code>
+		<button class="btn-icon" type="button"
 			title="Reveal for 30 seconds"
+			aria-label={ "Reveal " + field + " for 30 seconds" }
 			hx-get={ "/fragments/secrets/reveal?tenant=" + tenant + "&app=" + appName + "&field=" + field }
 			hx-target="previous [data-reveal-target]"
 			hx-swap="innerHTML">

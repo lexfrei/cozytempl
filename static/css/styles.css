@@ -132,6 +132,39 @@ body {
   min-height: 100vh;
 }
 
+/* Skip link. Hidden off-screen until a keyboard user tabs into it,
+   at which point it pops into view and lets them jump past the
+   header + sidebar straight to the main content. Required by
+   WCAG 2.1 SC 2.4.1 Bypass Blocks — every accessibility audit
+   will flag its absence. */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 8px;
+  padding: 8px 16px;
+  background: var(--color-primary);
+  color: #fff;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+  z-index: 200;
+  transition: top 150ms ease;
+}
+
+.skip-link:focus {
+  top: 8px;
+  outline: 2px solid var(--color-text);
+  outline-offset: 2px;
+}
+
+/* Visible focus ring everywhere. Browsers mostly do this by default
+   now, but we spell it out so the dark theme doesn't drop it on
+   custom-styled buttons/links. */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 /* Layout */
 .app-layout {
   display: grid;

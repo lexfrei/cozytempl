@@ -1,10 +1,10 @@
 package partial
 
 templ Header(username string) {
-	<header class="header">
+	<header class="header" role="banner">
 		<div class="flex items-center gap-3">
-			<button class="burger" aria-label="Toggle menu">
-				<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+			<button class="burger" type="button" aria-label="Toggle navigation menu" aria-controls="sidebar">
+				<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false">
 					<line x1="3" y1="6" x2="21" y2="6"></line>
 					<line x1="3" y1="12" x2="21" y2="12"></line>
 					<line x1="3" y1="18" x2="21" y2="18"></line>
@@ -14,8 +14,9 @@ templ Header(username string) {
 				hx-get="/"
 				hx-target="#main-content"
 				hx-push-url="true"
-				class="header-logo">
-				<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				class="header-logo"
+				aria-label="cozytempl home">
+				<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
 					<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
 					<polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
 					<line x1="12" y1="22.08" x2="12" y2="12"></line>
@@ -30,7 +31,8 @@ templ Header(username string) {
 				hx-push-url="true"
 				class="text-sm text-muted"
 				style="text-decoration: none;"
-				title="View profile and group membership">{ username }</a>
+				title="View profile and group membership"
+				aria-label={ "Signed in as " + username + ". Open profile." }>{ username }</a>
 			<a href="/auth/logout" class="btn btn-sm">Logout</a>
 		</div>
 	</header>

@@ -18,8 +18,11 @@ type AppProps struct {
 
 templ App(props AppProps) {
 	@Base("cozytempl") {
-		<!-- Toast container (OOB swap target) -->
-		<div id="toast-container" class="toast-container"></div>
+		<!-- Toast container. aria-live=polite announces toasts to
+		     assistive tech without interrupting; role=status is the
+		     matching AT-friendly role. OOB swap target id stays
+		     the same so the existing partial.Toast works. -->
+		<div id="toast-container" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
 		if props.DevMode {
 			@devModeBanner()
@@ -30,7 +33,7 @@ templ App(props AppProps) {
 			<div class="sidebar-overlay"></div>
 			@partial.Sidebar(props.Tenants, props.ActivePage, props.ActiveTenant)
 
-			<main id="main-content" class="main-content">
+			<main id="main-content" class="main-content" tabindex="-1">
 				{ children... }
 			</main>
 		</div>

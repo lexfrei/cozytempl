@@ -19,6 +19,7 @@ templ TenantEditModal(tenant k8s.Tenant, schema *k8s.AppSchema, spec map[string]
 			<div class="modal-header">
 				<h2 class="modal-title">Edit { tenant.DisplayName }</h2>
 				<button class="btn-icon" type="button"
+					aria-label="Close edit tenant dialog"
 					data-action="modal-dismiss" data-modal="tenant-edit-modal">&times;</button>
 			</div>
 			<form hx-put={ "/tenants/" + tenant.Name + "?ns=" + tenant.ParentNamespace }

@@ -219,11 +219,13 @@ templ Tenant(data view.TenantPageData) {
 	</div>
 
 	<!-- Create modal -->
-	<div id="create-app-modal" class="modal-backdrop" style="display: none;">
+	<div id="create-app-modal" class="modal-backdrop" style="display: none;"
+		role="dialog" aria-modal="true" aria-labelledby="create-app-title">
 		<div class="modal">
 			<div class="modal-header">
-				<h2 class="modal-title">Create Application</h2>
+				<h2 id="create-app-title" class="modal-title">Create Application</h2>
 				<button class="btn-icon" type="button"
+					aria-label="Close create application dialog"
 					data-action="modal-close" data-modal="create-app-modal">&times;</button>
 			</div>
 			<form hx-post={ "/tenants/" + data.Tenant.Namespace + "/apps" }
