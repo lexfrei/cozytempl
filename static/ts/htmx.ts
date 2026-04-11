@@ -1,19 +1,18 @@
-// Global htmx request feedback: top progress bar + body cursor.
+// Global htmx request feedback: top progress bar.
 //
-// A single DOM element (#htmx-progress-bar) is driven by htmx's request
-// lifecycle events. On beforeRequest we add .loading, which triggers a long
-// CSS transition toward 85%; on afterRequest (or error) we switch to .done,
-// which snaps to 100% and fades out. Concurrent requests reuse the same bar,
-// the counter prevents finishing early if one request completes while
-// another is still in flight.
+// A single DOM element (#htmx-progress-bar) is toggled via a `.loading`
+// class that CSS maps to an indeterminate sliding-highlight animation.
+// Concurrent requests reuse the same bar — the bar is only removed when
+// the last in-flight request finishes. No fade-out animation: the bar
+// collapses from height 3 to height 0 instantly, which keeps behavior
+// robust across fast successive requests (no CSS transition state
+// to unwind).
 //
-// The triggering element also gets htmx's built-in .htmx-request class, which
-// is styled in styles.css (spinner overlay on buttons, ring on inputs).
-
-const PROGRESS_DONE_RESET_MS = 420;
+// The triggering element also gets htmx's built-in .htmx-request class,
+// which is styled in styles.css (spinner overlay on buttons, ring on
+// inputs).
 
 let inflight = 0;
-let resetTimer: number | null = null;
 
 function bar(): HTMLElement | null {
   return document.getElementById("htmx-progress-bar");
@@ -24,17 +23,9 @@ function beginProgress(): void {
   if (!el) return;
 
   inflight += 1;
-
-  // One-shot transition from 0 to loading. Reset first if a previous "done"
-  // state is still on the element.
-  if (resetTimer !== null) {
-    window.clearTimeout(resetTimer);
-    resetTimer = null;
+  if (inflight === 1) {
+    el.classList.add("loading");
   }
-  el.classList.remove("done");
-  // Force reflow so the next class addition re-triggers the transition.
-  void el.offsetWidth;
-  el.classList.add("loading");
 }
 
 function endProgress(): void {
@@ -42,20 +33,9 @@ function endProgress(): void {
   if (!el) return;
 
   inflight = Math.max(0, inflight - 1);
-  if (inflight > 0) return;
-
-  el.classList.remove("loading");
-  el.classList.add("done");
-
-  resetTimer = window.setTimeout(() => {
-    el.classList.remove("done");
-    el.style.transform = "scaleX(0)";
-    // Clear inline style on next tick so CSS takes over again.
-    window.setTimeout(() => {
-      el.style.removeProperty("transform");
-    }, 0);
-    resetTimer = null;
-  }, PROGRESS_DONE_RESET_MS);
+  if (inflight === 0) {
+    el.classList.remove("loading");
+  }
 }
 
 // htmx fires requests for every hx-* interaction; ignore SSE traffic.
