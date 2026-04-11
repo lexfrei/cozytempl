@@ -16,6 +16,29 @@ window.openModal = openModal;
 window.closeModal = closeModal;
 window.__cozytemplInitialized = false;
 
+// Forms inside a modal should reset after a successful submission so that
+// reopening the modal presents a blank form instead of stale values. The
+// server signals success via HX-Redirect, which htmx handles BEFORE the
+// form is reset — we listen on htmx:afterRequest for any 2xx response on
+// a form that lives under .modal-backdrop and clear it. Error responses
+// are left alone so the user can fix the input and retry.
+function initFormReset(): void {
+  document.body.addEventListener("htmx:afterRequest", (evt) => {
+    const detail = (evt as CustomEvent).detail ?? {};
+    const xhr = detail.xhr as XMLHttpRequest | undefined;
+    if (!xhr || xhr.status < 200 || xhr.status >= 300) return;
+
+    const elt = detail.elt as HTMLElement | undefined;
+    if (!elt) return;
+
+    const form = elt.closest?.("form");
+    if (!form) return;
+    if (!form.closest?.(".modal-backdrop")) return;
+
+    form.reset();
+  });
+}
+
 // Burger menu toggle
 function initBurger(): void {
   document.addEventListener("click", (e) => {
@@ -49,6 +72,7 @@ function initBurger(): void {
 
 function initAll(): void {
   initHtmxFeedback();
+  initFormReset();
   initBurger();
   initToasts();
   initModals();

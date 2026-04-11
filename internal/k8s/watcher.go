@@ -188,7 +188,14 @@ func (wat *Watcher) handleEvent(kind watch.EventType, obj *unstructured.Unstruct
 		select {
 		case sub <- watchEvt:
 		default:
-			wat.log.Debug("dropping event for slow subscriber", "namespace", namespace)
+			// Warn, not debug: a dropped event means the UI will be
+			// momentarily out of sync with cluster state. The fragment
+			// refetch on filter/sort still fixes this, but operators
+			// should see that a subscriber is behind.
+			wat.log.Warn("dropping event for slow subscriber",
+				"namespace", namespace,
+				"resource", obj.GetName(),
+				"event", eventType)
 		}
 	}
 }

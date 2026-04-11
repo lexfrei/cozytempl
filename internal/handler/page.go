@@ -149,6 +149,14 @@ func (pgh *PageHandler) AppDetailPage(writer http.ResponseWriter, req *http.Requ
 		return
 	}
 
+	// The connection tab embeds database passwords and API tokens pulled
+	// from tenant secrets. Keep the rendered page off every intermediate
+	// cache (Cloudflare, browsers, corporate proxies) so a shared tab
+	// cannot replay cached credentials later.
+	writer.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	writer.Header().Set("Pragma", "no-cache")
+	writer.Header().Set("Expires", "0")
+
 	tenantNS := req.PathValue("tenant")
 	appName := req.PathValue("name")
 	tab := req.URL.Query().Get("tab")

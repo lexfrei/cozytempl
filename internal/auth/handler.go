@@ -126,7 +126,10 @@ func (hnd *Handler) HandleLogout(writer http.ResponseWriter, req *http.Request) 
 	http.Redirect(writer, req, "/auth/login", http.StatusFound)
 }
 
-const stateBytes = 16
+// stateBytes sized to 32 (256 bits) per OWASP modern-best-practice for
+// OAuth state tokens. Previously 16 bytes, which is still cryptographically
+// sufficient but below the recommended floor.
+const stateBytes = 32
 
 func generateState() (string, error) {
 	buf := make([]byte, stateBytes)
