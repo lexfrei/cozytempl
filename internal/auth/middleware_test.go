@@ -2,10 +2,17 @@ package auth
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/lexfrei/cozytempl/internal/config"
 )
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.DiscardHandler)
+}
 
 func TestRequireAuth_Authenticated(t *testing.T) {
 	store := NewSessionStore(testSessionKey)
@@ -19,7 +26,11 @@ func TestRequireAuth_Authenticated(t *testing.T) {
 		t.Fatalf("get session: %v", err)
 	}
 
-	SetUser(session, testUsername, []string{"tenant-root-admin"}, "token")
+	SetUser(session, &UserSession{
+		Username: testUsername,
+		Groups:   []string{"tenant-root-admin"},
+		IDToken:  "token",
+	})
 
 	err = store.Save(req, recorder, session)
 	if err != nil {
@@ -41,7 +52,7 @@ func TestRequireAuth_Authenticated(t *testing.T) {
 	})
 
 	rec2 := httptest.NewRecorder()
-	RequireAuth(store, inner).ServeHTTP(rec2, req2)
+	RequireAuth(store, nil, testLogger(), config.AuthModeImpersonationLegacy, inner).ServeHTTP(rec2, req2)
 
 	if rec2.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rec2.Code, http.StatusOK)
@@ -68,7 +79,7 @@ func TestRequireAuth_Unauthenticated(t *testing.T) {
 		called = true
 	})
 
-	RequireAuth(store, inner).ServeHTTP(recorder, req)
+	RequireAuth(store, nil, testLogger(), config.AuthModeImpersonationLegacy, inner).ServeHTTP(recorder, req)
 
 	if recorder.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)

@@ -18,7 +18,12 @@ func TestSessionStore_RoundTrip(t *testing.T) {
 		t.Fatalf("get session: %v", err)
 	}
 
-	SetUser(session, testUsername, []string{"tenant-root-admin"}, "fake-id-token")
+	SetUser(session, &UserSession{
+		Username:     testUsername,
+		Groups:       []string{"tenant-root-admin"},
+		IDToken:      "fake-id-token",
+		RefreshToken: "fake-refresh-token",
+	})
 
 	err = store.Save(req, recorder, session)
 	if err != nil {
@@ -40,18 +45,22 @@ func TestSessionStore_RoundTrip(t *testing.T) {
 		t.Fatalf("get session from cookie: %v", err)
 	}
 
-	username, groups, idToken := GetUser(session2)
+	info := GetUser(session2)
 
-	if username != testUsername {
-		t.Errorf("username = %q, want %q", username, testUsername)
+	if info.Username != testUsername {
+		t.Errorf("username = %q, want %q", info.Username, testUsername)
 	}
 
-	if len(groups) != 1 || groups[0] != "tenant-root-admin" {
-		t.Errorf("groups = %v, want [tenant-root-admin]", groups)
+	if len(info.Groups) != 1 || info.Groups[0] != "tenant-root-admin" {
+		t.Errorf("groups = %v, want [tenant-root-admin]", info.Groups)
 	}
 
-	if idToken != "fake-id-token" {
-		t.Errorf("idToken = %q, want %q", idToken, "fake-id-token")
+	if info.IDToken != "fake-id-token" {
+		t.Errorf("idToken = %q, want %q", info.IDToken, "fake-id-token")
+	}
+
+	if info.RefreshToken != "fake-refresh-token" {
+		t.Errorf("refreshToken = %q, want %q", info.RefreshToken, "fake-refresh-token")
 	}
 }
 
@@ -66,21 +75,25 @@ func TestSessionStore_Clear(t *testing.T) {
 		t.Fatalf("get session: %v", err)
 	}
 
-	SetUser(session, testUsername, []string{"group1"}, "token")
+	SetUser(session, &UserSession{
+		Username: testUsername,
+		Groups:   []string{"group1"},
+		IDToken:  "token",
+	})
 	Clear(session)
 
-	username, groups, idToken := GetUser(session)
+	info := GetUser(session)
 
-	if username != "" {
-		t.Errorf("username after clear = %q, want empty", username)
+	if info.Username != "" {
+		t.Errorf("username after clear = %q, want empty", info.Username)
 	}
 
-	if groups != nil {
-		t.Errorf("groups after clear = %v, want nil", groups)
+	if info.Groups != nil {
+		t.Errorf("groups after clear = %v, want nil", info.Groups)
 	}
 
-	if idToken != "" {
-		t.Errorf("idToken after clear = %q, want empty", idToken)
+	if info.IDToken != "" {
+		t.Errorf("idToken after clear = %q, want empty", info.IDToken)
 	}
 
 	err = store.Save(req, recorder, session)
@@ -99,17 +112,17 @@ func TestGetUser_EmptySession(t *testing.T) {
 		t.Fatalf("get session: %v", err)
 	}
 
-	username, groups, idToken := GetUser(session)
+	info := GetUser(session)
 
-	if username != "" {
-		t.Errorf("username = %q, want empty", username)
+	if info.Username != "" {
+		t.Errorf("username = %q, want empty", info.Username)
 	}
 
-	if groups != nil {
-		t.Errorf("groups = %v, want nil", groups)
+	if info.Groups != nil {
+		t.Errorf("groups = %v, want nil", info.Groups)
 	}
 
-	if idToken != "" {
-		t.Errorf("idToken = %q, want empty", idToken)
+	if info.IDToken != "" {
+		t.Errorf("idToken = %q, want empty", info.IDToken)
 	}
 }

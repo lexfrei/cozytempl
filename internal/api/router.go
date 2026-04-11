@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
+	"github.com/lexfrei/cozytempl/internal/config"
 	"github.com/lexfrei/cozytempl/internal/handler"
 	"github.com/lexfrei/cozytempl/internal/i18n"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -24,6 +25,7 @@ const requestTimeout = 15 * time.Second
 type RouterConfig struct {
 	AuthHandler   *auth.Handler
 	SessionStore  *auth.SessionStore
+	OIDCProvider  *auth.OIDCProvider
 	TenantHandler *TenantHandler
 	AppHandler    *ApplicationHandler
 	SchemaHandler *SchemaHandler
@@ -32,6 +34,7 @@ type RouterConfig struct {
 	I18n          *i18n.Bundle
 	StaticFS      embed.FS
 	Log           *slog.Logger
+	AuthMode      config.AuthMode
 	DevMode       bool
 	DevUsername   string
 }
@@ -100,6 +103,49 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 }
 
 // Router creates the HTTP route mux with all API and static routes.
+// buildAuthMiddleware registers the mode-appropriate auth routes on mux
+// and returns a wrapper function the router uses to protect every
+// user-facing handler. Broken out of Router so the top-level function
+// stays within the project funlen budget.
+func buildAuthMiddleware(
+	cfg *RouterConfig,
+	mux *http.ServeMux,
+	rateStore *rateLimitStore,
+) func(http.Handler) http.Handler {
+	if cfg.AuthMode == config.AuthModeDev {
+		return func(next http.Handler) http.Handler {
+			// Rate limit runs after auth so it sees the impersonated
+			// user identity. In dev mode every request is "dev-admin"
+			// so the limit is effectively global — fine for local
+			// development but not for multi-user prod.
+			return auth.DevAuth(cfg.DevUsername, withRateLimit(rateStore, next))
+		}
+	}
+
+	// OIDC endpoints are only meaningful when an OIDC provider is
+	// actually configured. BYOK mode skips them and relies on the
+	// kubeconfig upload flow instead.
+	if cfg.AuthMode != config.AuthModeBYOK {
+		mux.HandleFunc("GET /auth/login", cfg.AuthHandler.HandleLogin)
+		mux.HandleFunc("GET /auth/callback", cfg.AuthHandler.HandleCallback)
+	}
+
+	if cfg.AuthHandler != nil {
+		mux.HandleFunc("POST /auth/logout", cfg.AuthHandler.HandleLogout)
+	}
+
+	return func(next http.Handler) http.Handler {
+		return auth.RequireAuth(
+			cfg.SessionStore,
+			cfg.OIDCProvider,
+			cfg.Log,
+			cfg.AuthMode,
+			withRateLimit(rateStore, next),
+		)
+	}
+}
+
+// Router creates the HTTP route mux with all API and static routes.
 func Router(cfg *RouterConfig) http.Handler {
 	mux := http.NewServeMux()
 
@@ -109,26 +155,7 @@ func Router(cfg *RouterConfig) http.Handler {
 	// goroutine exits when the process does.
 	rateStore := newRateLimitStore()
 
-	var protect func(http.Handler) http.Handler
-
-	if cfg.DevMode {
-		protect = func(next http.Handler) http.Handler {
-			// Rate limit runs after auth so it sees the impersonated
-			// user identity. In dev mode every request is "dev-admin"
-			// so the limit is effectively global — fine for local
-			// development but not for multi-user prod (prod goes
-			// through RequireAuth below).
-			return auth.DevAuth(cfg.DevUsername, withRateLimit(rateStore, next))
-		}
-	} else {
-		mux.HandleFunc("GET /auth/login", cfg.AuthHandler.HandleLogin)
-		mux.HandleFunc("GET /auth/callback", cfg.AuthHandler.HandleCallback)
-		mux.HandleFunc("POST /auth/logout", cfg.AuthHandler.HandleLogout)
-
-		protect = func(next http.Handler) http.Handler {
-			return auth.RequireAuth(cfg.SessionStore, withRateLimit(rateStore, next))
-		}
-	}
+	protect := buildAuthMiddleware(cfg, mux, rateStore)
 
 	apiMux := registerAPIRoutes(cfg.TenantHandler, cfg.AppHandler, cfg.SchemaHandler, cfg.SSEHandler)
 	pageMux := registerPageRoutes(cfg.PageHandler)

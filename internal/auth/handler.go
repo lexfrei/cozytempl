@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"net/http"
+
+	"github.com/gorilla/sessions"
 )
 
 const stateKeyName = "oauth_state"
@@ -58,24 +60,10 @@ func (hnd *Handler) HandleLogin(writer http.ResponseWriter, req *http.Request) {
 
 // HandleCallback processes the OIDC callback after authentication.
 func (hnd *Handler) HandleCallback(writer http.ResponseWriter, req *http.Request) {
-	session, err := hnd.store.Get(req)
-	if err != nil {
-		hnd.log.Error("getting session for callback", "error", err)
-		http.Error(writer, `{"error":"session error"}`, http.StatusInternalServerError)
-
+	session, ok := hnd.validateCallbackState(writer, req)
+	if !ok {
 		return
 	}
-
-	expectedState, _ := session.Values[stateKeyName].(string)
-	actualState := req.URL.Query().Get("state")
-
-	if expectedState == "" || actualState != expectedState {
-		http.Error(writer, `{"error":"invalid oauth state"}`, http.StatusBadRequest)
-
-		return
-	}
-
-	delete(session.Values, stateKeyName)
 
 	code := req.URL.Query().Get("code")
 	if code == "" {
@@ -84,7 +72,7 @@ func (hnd *Handler) HandleCallback(writer http.ResponseWriter, req *http.Request
 		return
 	}
 
-	claims, rawToken, err := hnd.oidc.Exchange(req.Context(), code)
+	result, err := hnd.oidc.Exchange(req.Context(), code)
 	if err != nil {
 		hnd.log.Error("exchanging auth code", "error", err)
 		http.Error(writer, `{"error":"authentication failed"}`, http.StatusInternalServerError)
@@ -92,7 +80,18 @@ func (hnd *Handler) HandleCallback(writer http.ResponseWriter, req *http.Request
 		return
 	}
 
-	SetUser(session, claims.Username, claims.Groups, rawToken)
+	expiry, expErr := IDTokenExpiry(result.IDToken)
+	if expErr != nil {
+		hnd.log.Warn("parsing id token expiry at callback", "error", expErr)
+	}
+
+	SetUser(session, &UserSession{
+		Username:      result.Claims.Username,
+		Groups:        result.Claims.Groups,
+		IDToken:       result.IDToken,
+		RefreshToken:  result.RefreshToken,
+		IDTokenExpiry: expiry.Unix(),
+	})
 
 	err = hnd.store.Save(req, writer, session)
 	if err != nil {
@@ -102,7 +101,7 @@ func (hnd *Handler) HandleCallback(writer http.ResponseWriter, req *http.Request
 		return
 	}
 
-	hnd.log.Info("user authenticated", "username", claims.Username)
+	hnd.log.Info("user authenticated", "username", result.Claims.Username)
 	http.Redirect(writer, req, "/", http.StatusFound)
 }
 
@@ -124,6 +123,33 @@ func (hnd *Handler) HandleLogout(writer http.ResponseWriter, req *http.Request) 
 	}
 
 	http.Redirect(writer, req, "/auth/login", http.StatusFound)
+}
+
+// validateCallbackState verifies the OAuth state nonce and returns the
+// session on success. A false second return means a response has
+// already been written and the caller must bail out. Pulled out so
+// HandleCallback stays under the funlen budget.
+func (hnd *Handler) validateCallbackState(writer http.ResponseWriter, req *http.Request) (*sessions.Session, bool) {
+	session, err := hnd.store.Get(req)
+	if err != nil {
+		hnd.log.Error("getting session for callback", "error", err)
+		http.Error(writer, `{"error":"session error"}`, http.StatusInternalServerError)
+
+		return nil, false
+	}
+
+	expectedState, _ := session.Values[stateKeyName].(string)
+	actualState := req.URL.Query().Get("state")
+
+	if expectedState == "" || actualState != expectedState {
+		http.Error(writer, `{"error":"invalid oauth state"}`, http.StatusBadRequest)
+
+		return nil, false
+	}
+
+	delete(session.Values, stateKeyName)
+
+	return session, true
 }
 
 // stateBytes sized to 32 (256 bits) per OWASP modern-best-practice for

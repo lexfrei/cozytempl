@@ -131,13 +131,26 @@ func run() error {
 		I18n:          i18nBundle,
 		StaticFS:      static.FS,
 		Log:           log,
+		AuthMode:      cfg.AuthMode,
 		DevMode:       cfg.DevMode,
 		DevUsername:   "dev-admin",
 	}
 
-	if !cfg.DevMode {
+	switch cfg.AuthMode {
+	case config.AuthModeDev:
+		log.Warn("running in dev mode — authentication disabled")
+
+	case config.AuthModeBYOK:
+		// BYOK mode skips OIDC entirely; the upload flow is the
+		// only authentication surface. Session cookie encrypts the
+		// uploaded kubeconfig.
+		routerCfg.SessionStore = auth.NewSessionStore(cfg.SessionSecret)
+
+	case config.AuthModePassthrough, config.AuthModeImpersonationLegacy:
+		issuerForBackend := cfg.InternalIssuerURL()
+
 		oidcProvider, oidcErr := auth.NewOIDCProvider(ctx,
-			cfg.OIDCIssuerURL, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCRedirectURL)
+			issuerForBackend, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCRedirectURL)
 		if oidcErr != nil {
 			return fmt.Errorf("initializing OIDC: %w", oidcErr)
 		}
@@ -145,8 +158,11 @@ func run() error {
 		sessionStore := auth.NewSessionStore(cfg.SessionSecret)
 		routerCfg.AuthHandler = auth.NewHandler(oidcProvider, sessionStore, log)
 		routerCfg.SessionStore = sessionStore
-	} else {
-		log.Warn("running in dev mode — authentication disabled")
+		routerCfg.OIDCProvider = oidcProvider
+
+		if cfg.AuthMode == config.AuthModeImpersonationLegacy {
+			log.Warn("impersonation-legacy auth mode is deprecated; migrate to passthrough")
+		}
 	}
 
 	router := api.Router(routerCfg)

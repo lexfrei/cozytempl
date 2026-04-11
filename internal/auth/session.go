@@ -11,10 +11,13 @@ import (
 )
 
 const (
-	sessionName      = "cozytempl"
-	sessionKeyToken  = "id_token"
-	sessionKeyUser   = "username"
-	sessionKeyGroups = "groups"
+	sessionName             = "cozytempl"
+	sessionKeyToken         = "id_token"
+	sessionKeyRefreshToken  = "refresh_token"
+	sessionKeyUser          = "username"
+	sessionKeyGroups        = "groups"
+	sessionKeyKubeconfig    = "kubeconfig"
+	sessionKeyIDTokenExpiry = "id_token_expiry" //nolint:gosec // session map key, not a credential
 
 	aes256KeySize     = 32
 	sessionMaxAgeSecs = 86400
@@ -92,37 +95,74 @@ func (sst *SessionStore) Save(
 	return nil
 }
 
-// SetUser stores the user info in the session.
-func SetUser(session *sessions.Session, username string, groups []string, idToken string) {
-	session.Values[sessionKeyUser] = username
-	session.Values[sessionKeyGroups] = groups
-	session.Values[sessionKeyToken] = idToken
+// UserSession bundles everything the middleware needs to reconstruct a
+// UserContext from a cookie. It is *not* stored as a single gob blob —
+// each field has its own session key so the cookie format stays
+// backwards-compatible with existing sessions and any individual field
+// can be refreshed without touching the others.
+type UserSession struct {
+	Username      string
+	Groups        []string
+	IDToken       string
+	RefreshToken  string
+	IDTokenExpiry int64 // Unix seconds; 0 means unknown / not applicable
 }
 
-// GetUser retrieves the user info from the session.
-// Returns empty strings/nil if not authenticated.
-//
-//nolint:gocritic // unnamedResult conflicts with nonamedreturns linter
-func GetUser(session *sessions.Session) (string, []string, string) {
-	var (
-		username string
-		groups   []string
-		idToken  string
-	)
+// SetUser stores the user info in the session. Pass empty strings / zero
+// values for fields that do not apply to the current auth mode (e.g.
+// dev mode sets everything blank; passthrough fills all five).
+func SetUser(session *sessions.Session, info *UserSession) {
+	session.Values[sessionKeyUser] = info.Username
+	session.Values[sessionKeyGroups] = info.Groups
+	session.Values[sessionKeyToken] = info.IDToken
+	session.Values[sessionKeyRefreshToken] = info.RefreshToken
+	session.Values[sessionKeyIDTokenExpiry] = info.IDTokenExpiry
+}
+
+// GetUser retrieves the user info from the session. Missing fields come
+// back as their zero value so callers can treat the result as a
+// best-effort snapshot and check Username for the is-authenticated signal.
+func GetUser(session *sessions.Session) UserSession {
+	var info UserSession
 
 	if val, ok := session.Values[sessionKeyUser].(string); ok {
-		username = val
+		info.Username = val
 	}
 
 	if val, ok := session.Values[sessionKeyGroups].([]string); ok {
-		groups = val
+		info.Groups = val
 	}
 
 	if val, ok := session.Values[sessionKeyToken].(string); ok {
-		idToken = val
+		info.IDToken = val
 	}
 
-	return username, groups, idToken
+	if val, ok := session.Values[sessionKeyRefreshToken].(string); ok {
+		info.RefreshToken = val
+	}
+
+	if val, ok := session.Values[sessionKeyIDTokenExpiry].(int64); ok {
+		info.IDTokenExpiry = val
+	}
+
+	return info
+}
+
+// SetKubeconfig stores the user's uploaded kubeconfig bytes in the
+// session. Used only in byok mode.
+func SetKubeconfig(session *sessions.Session, kubeconfig []byte) {
+	session.Values[sessionKeyKubeconfig] = kubeconfig
+}
+
+// GetKubeconfig retrieves the stored kubeconfig bytes from the session.
+// The second return is false when nothing is stored or the slice is empty.
+func GetKubeconfig(session *sessions.Session) ([]byte, bool) {
+	val, ok := session.Values[sessionKeyKubeconfig].([]byte)
+	if !ok || len(val) == 0 {
+		return nil, false
+	}
+
+	return val, true
 }
 
 // Clear removes all user data from the session.
@@ -130,5 +170,8 @@ func Clear(session *sessions.Session) {
 	delete(session.Values, sessionKeyUser)
 	delete(session.Values, sessionKeyGroups)
 	delete(session.Values, sessionKeyToken)
+	delete(session.Values, sessionKeyRefreshToken)
+	delete(session.Values, sessionKeyIDTokenExpiry)
+	delete(session.Values, sessionKeyKubeconfig)
 	session.Options.MaxAge = -1
 }
