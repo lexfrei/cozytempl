@@ -73,7 +73,7 @@ templ Tenants(data view.TenantsPageData) {
 	<div id="tenant-edit-slot"></div>
 	<div class="page-header">
 		<h1 class="page-title">Tenants</h1>
-		<button class="btn btn-primary" onclick="openModal('create-tenant-modal')">
+		<button class="btn btn-primary" data-action="modal-open" data-modal="create-tenant-modal">
 			+ Create Tenant
 		</button>
 	</div>
@@ -113,7 +113,8 @@ templ Tenants(data view.TenantsPageData) {
 		<div class="modal">
 			<div class="modal-header">
 				<h2 class="modal-title">Create Tenant</h2>
-				<button class="btn-icon" onclick="closeModal('create-tenant-modal')">&times;</button>
+				<button class="btn-icon" type="button"
+					data-action="modal-close" data-modal="create-tenant-modal">&times;</button>
 			</div>
 			<form hx-post="/tenants"
 				hx-target="#main-content"
@@ -123,7 +124,7 @@ templ Tenants(data view.TenantsPageData) {
 					<input class="form-input" type="text" name="name" required
 						placeholder="my-tenant"
 						pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"
-						oninput="document.getElementById('tenant-ns-preview').textContent = this.value ? 'tenant-' + this.value : 'tenant-...'"/>
+						data-ns-preview="tenant-ns-preview"/>
 					<div class="form-hint">
 						Lowercase letters, numbers and hyphens. Workload namespace will be
 						<code id="tenant-ns-preview">tenant-...</code>
@@ -145,7 +146,8 @@ templ Tenants(data view.TenantsPageData) {
 					@fragment.SchemaFields(*data.TenantSchema)
 				}
 				<div class="modal-footer">
-					<button type="button" class="btn" onclick="closeModal('create-tenant-modal')">Cancel</button>
+					<button type="button" class="btn"
+						data-action="modal-close" data-modal="create-tenant-modal">Cancel</button>
 					<button type="submit" class="btn btn-primary">Create</button>
 				</div>
 			</form>

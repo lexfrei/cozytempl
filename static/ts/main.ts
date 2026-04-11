@@ -4,23 +4,71 @@ import { initClipboard } from "./clipboard";
 import { initSSE } from "./sse";
 import { initHtmxFeedback } from "./htmx";
 
-// Expose modal functions globally for onclick handlers in templ
 declare global {
   interface Window {
-    openModal: (id: string) => void;
-    closeModal: (id: string) => void;
-    clearAppFilters: () => void;
     __cozytemplInitialized: boolean;
   }
 }
-window.openModal = openModal;
-window.closeModal = closeModal;
-window.clearAppFilters = clearAppFilters;
 window.__cozytemplInitialized = false;
 
-// clearAppFilters resets the q/kind/sort inputs on the tenant detail
-// page and re-issues the fragment fetch via htmx. Called by the Clear
-// button inlined in tenant.templ — server-side conditional visibility
+// initActionDelegation wires a single document-level click listener
+// that routes every data-action button to the right handler. Switching
+// from inline onclick attributes to delegation is required because
+// the CSP applied in api/router.go does NOT include 'unsafe-inline'
+// in script-src, which means inline event-handler attributes are
+// rejected by the browser. Delegation is also tidier: one place to
+// add a new action, no window globals.
+function initActionDelegation(): void {
+  document.addEventListener("click", (evt) => {
+    const target = (evt.target as HTMLElement | null)?.closest<HTMLElement>("[data-action]");
+    if (!target) return;
+
+    const action = target.dataset.action;
+    const modalId = target.dataset.modal;
+
+    switch (action) {
+      case "modal-open":
+        if (modalId) openModal(modalId);
+        return;
+      case "modal-close":
+        if (modalId) closeModal(modalId);
+        return;
+      case "modal-dismiss":
+        // Dismiss = remove the modal element entirely. Used by the
+        // dynamically-inserted edit modals (tenant-edit, app-edit)
+        // whose slot containers are reused — removing the node
+        // guarantees a fresh fetch next time.
+        if (modalId) document.getElementById(modalId)?.remove();
+        return;
+      case "clear-filters":
+        clearAppFilters();
+        return;
+      default:
+        return;
+    }
+  });
+}
+
+// initNamespacePreview wires the create-tenant form's namespace hint.
+// The input carries data-ns-preview="<targetId>" and the listener
+// updates targetId's textContent with "tenant-<value>" as the user
+// types. Single handler bound at document level so dynamically
+// re-rendered forms don't need re-binding.
+function initNamespacePreview(): void {
+  document.addEventListener("input", (evt) => {
+    const input = evt.target as HTMLInputElement | null;
+    if (!input || !input.dataset.nsPreview) return;
+
+    const target = document.getElementById(input.dataset.nsPreview);
+    if (!target) return;
+
+    target.textContent = input.value ? "tenant-" + input.value : "tenant-...";
+  });
+}
+
+// clearAppFilters resets q/kind/sort on the tenant detail page and
+// re-issues the fragment fetch via htmx. Called by the Clear button
+// through the action delegator. Server-side conditional visibility
 // is not an option because filter changes go through fragment swaps
 // and don't re-render the button.
 function clearAppFilters(): void {
@@ -32,10 +80,6 @@ function clearAppFilters(): void {
   if (kind) kind.value = "";
   if (sort) sort.value = "name";
 
-  // Trigger the htmx refetch by firing the same event the inputs
-  // would fire themselves. Use keyup on q so the "keyup changed"
-  // trigger fires (with its 300ms delay smoothed out by empty value
-  // == previous value no-op).
   q?.dispatchEvent(new Event("keyup", { bubbles: true }));
   kind?.dispatchEvent(new Event("change", { bubbles: true }));
 }
@@ -96,6 +140,8 @@ function initBurger(): void {
 
 function initAll(): void {
   initHtmxFeedback();
+  initActionDelegation();
+  initNamespacePreview();
   initFormReset();
   initBurger();
   initToasts();

@@ -46,7 +46,7 @@ templ Tenant(data view.TenantPageData) {
 					&uarr; Parent
 				</a>
 			}
-			<button class="btn btn-primary" onclick="openModal('create-app-modal')">
+			<button class="btn btn-primary" data-action="modal-open" data-modal="create-app-modal">
 				+ Create Application
 			</button>
 		</div>
@@ -122,7 +122,7 @@ templ Tenant(data view.TenantPageData) {
 		<!-- Clear filters: always visible so the user has a stable
 		     affordance. clearAppFilters() lives in main.ts and resets
 		     the q/kind/sort inputs then asks htmx to refetch. -->
-		<button type="button" class="btn btn-sm" onclick="clearAppFilters()">Clear</button>
+		<button type="button" class="btn btn-sm" data-action="clear-filters">Clear</button>
 	</div>
 
 	<!-- App table -->
@@ -205,7 +205,8 @@ templ Tenant(data view.TenantPageData) {
 		<div class="modal">
 			<div class="modal-header">
 				<h2 class="modal-title">Create Application</h2>
-				<button class="btn-icon" onclick="closeModal('create-app-modal')">&times;</button>
+				<button class="btn-icon" type="button"
+					data-action="modal-close" data-modal="create-app-modal">&times;</button>
 			</div>
 			<form hx-post={ "/tenants/" + data.Tenant.Namespace + "/apps" }
 				hx-target="#main-content"
@@ -229,7 +230,8 @@ templ Tenant(data view.TenantPageData) {
 				</div>
 				<div id="schema-fields"></div>
 				<div class="modal-footer">
-					<button type="button" class="btn" onclick="closeModal('create-app-modal')">Cancel</button>
+					<button type="button" class="btn"
+						data-action="modal-close" data-modal="create-app-modal">Cancel</button>
 					<button type="submit" class="btn btn-primary">Create</button>
 				</div>
 			</form>
