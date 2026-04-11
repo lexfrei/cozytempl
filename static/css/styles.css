@@ -238,6 +238,13 @@ body:has(.dev-mode-banner) .app-layout {
 .main-content {
   padding: 24px;
   overflow-y: auto;
+  /* min-width: 0 stops the grid column from expanding to fit the
+     intrinsic width of nowrap flex children (the marketplace filter
+     pills strip, long app table rows, etc.). Without this, a long
+     pills row on mobile made the whole main-content grow past 100vw
+     and the entire page scrolled horizontally. */
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .page-header {
