@@ -25,6 +25,7 @@ templ AppDetail(data view.AppDetailData) {
 		@detailTab("Connection", "connection", data)
 		@detailTab("Conditions", "conditions", data)
 		@detailTab("Events", "events", data)
+		@detailTab("Logs", "logs", data)
 		@detailTab("Values", "values", data)
 	</div>
 
@@ -37,6 +38,8 @@ templ AppDetail(data view.AppDetailData) {
 				@conditionsTab(data)
 			case "events":
 				@eventsTab(data)
+			case "logs":
+				@logsTab(data)
 			case "values":
 				@valuesTab(data)
 			default:
@@ -165,6 +168,82 @@ templ eventsTab(data view.AppDetailData) {
 			</div>
 		</div>
 	}
+}
+
+// logsTab renders the pod selector + container selector + recent log
+// tail. Both selectors are plain <select> elements with hx-get to the
+// same /tenants/.../apps/.../?tab=logs URL with pod / container query
+// params — htmx swaps the whole #main-content, so the handler re-
+// fetches pods and log tail in one round trip.
+templ logsTab(data view.AppDetailData) {
+	if data.LogError != "" && len(data.Pods) == 0 {
+		<div class="empty-state">
+			<div class="empty-state-title">Logs unavailable</div>
+			<p class="text-muted">{ data.LogError }</p>
+		</div>
+	} else {
+		<div class="card">
+			<div class="flex items-center gap-3 mb-4">
+				<select class="form-select" name="pod" style="max-width: 380px;"
+					hx-get={ "/tenants/" + data.Tenant + "/apps/" + data.App.Name + "?tab=logs" }
+					hx-trigger="change"
+					hx-target="#main-content"
+					hx-push-url="false"
+					hx-include="[name='container']">
+					for _, p := range data.Pods {
+						<option value={ p.Name } selected?={ p.Name == data.SelectedPod }>
+							{ p.Name } ({ p.Phase })
+						</option>
+					}
+				</select>
+				if len(currentContainers(data)) > 1 {
+					<select class="form-select" name="container" style="max-width: 200px;"
+						hx-get={ "/tenants/" + data.Tenant + "/apps/" + data.App.Name + "?tab=logs" }
+						hx-trigger="change"
+						hx-target="#main-content"
+						hx-push-url="false"
+						hx-include="[name='pod']">
+						for _, c := range currentContainers(data) {
+							<option value={ c } selected?={ c == data.SelectedContainer }>{ c }</option>
+						}
+					</select>
+				} else if len(currentContainers(data)) == 1 {
+					<span class="text-sm text-muted">container: { data.SelectedContainer }</span>
+				}
+				<button type="button" class="btn btn-sm"
+					hx-get={ "/tenants/" + data.Tenant + "/apps/" + data.App.Name +
+						"?tab=logs&pod=" + data.SelectedPod + "&container=" + data.SelectedContainer }
+					hx-target="#main-content"
+					hx-push-url="false">
+					Refresh
+				</button>
+			</div>
+			if data.LogError != "" {
+				<div class="toast toast-error" style="position: static; margin-bottom: 12px;">
+					{ data.LogError }
+				</div>
+			}
+			<pre class="connection-info" style="white-space: pre-wrap; max-height: 600px; overflow-y: auto;">
+				if data.LogTail == "" {
+					<span class="text-muted">(no log output)</span>
+				} else {
+					{ data.LogTail }
+				}
+			</pre>
+		</div>
+	}
+}
+
+// currentContainers returns the container list of the currently-selected
+// pod so the container picker can populate its options without the
+// templ file needing to index into AppDetailData.Pods directly.
+func currentContainers(data view.AppDetailData) []string {
+	for _, p := range data.Pods {
+		if p.Name == data.SelectedPod {
+			return p.Containers
+		}
+	}
+	return nil
 }
 
 templ valuesTab(data view.AppDetailData) {

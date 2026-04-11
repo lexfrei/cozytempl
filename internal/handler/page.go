@@ -24,6 +24,7 @@ type PageHandler struct {
 	schemaSvc *k8s.SchemaService
 	usageSvc  *k8s.UsageService
 	eventSvc  *k8s.EventService
+	logSvc    *k8s.LogService
 	log       *slog.Logger
 }
 
@@ -34,6 +35,7 @@ func NewPageHandler(
 	schemaSvc *k8s.SchemaService,
 	usageSvc *k8s.UsageService,
 	eventSvc *k8s.EventService,
+	logSvc *k8s.LogService,
 	log *slog.Logger,
 ) *PageHandler {
 	return &PageHandler{
@@ -42,6 +44,7 @@ func NewPageHandler(
 		schemaSvc: schemaSvc,
 		usageSvc:  usageSvc,
 		eventSvc:  eventSvc,
+		logSvc:    logSvc,
 		log:       log,
 	}
 }
@@ -150,23 +153,7 @@ func (pgh *PageHandler) AppDetailPage(writer http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	// Events tab reads Kubernetes core/v1 Events filtered to the app's
-	// involvedObject name. Errors are non-fatal — the tab renders as
-	// empty with a log entry.
-	var events []k8s.Event
-	if tab == "events" {
-		events, err = pgh.eventSvc.ListForObject(req.Context(), usr.Username, usr.Groups, tenantNS, appName, appEventLimit)
-		if err != nil {
-			pgh.log.Debug("listing app events", "tenant", tenantNS, "app", appName, "error", err)
-		}
-	}
-
-	data := view.AppDetailData{
-		App:    *app,
-		Tenant: tenantNS,
-		Tab:    tab,
-		Events: events,
-	}
+	data := pgh.buildAppDetailData(req, usr, tenantNS, appName, app, tab)
 
 	content := page.AppDetail(data)
 	pgh.render(writer, req, usr.Username, tenants, "appDetail", tenantNS, content)
@@ -174,6 +161,9 @@ func (pgh *PageHandler) AppDetailPage(writer http.ResponseWriter, req *http.Requ
 
 // appEventLimit caps the number of events shown on a single tab.
 const appEventLimit = 50
+
+// appLogTailLines caps the log tail fetched for the Logs tab.
+const appLogTailLines = 500
 
 // tenantEventLimit caps the number of events shown on the tenant page
 // activity card. A smaller number than appEventLimit keeps the page
@@ -308,6 +298,96 @@ func groupByCategory(schemas []k8s.AppSchema) []view.CategoryGroup {
 	}
 
 	return groups
+}
+
+// buildAppDetailData composes the AppDetailData for a single request.
+// Splits the per-tab fetches (events, logs) out of AppDetailPage so
+// the outer handler stays short enough to satisfy the funlen linter
+// and so tab-specific logic stays in one place. Application is passed
+// by pointer because k8s.Application is ~150 bytes and the linter
+// flags the by-value copy.
+func (pgh *PageHandler) buildAppDetailData(
+	req *http.Request, usr *auth.UserContext, tenantNS, appName string, app *k8s.Application, tab string,
+) view.AppDetailData {
+	data := view.AppDetailData{
+		App:    *app,
+		Tenant: tenantNS,
+		Tab:    tab,
+	}
+
+	switch tab {
+	case "events":
+		events, err := pgh.eventSvc.ListForObject(
+			req.Context(), usr.Username, usr.Groups, tenantNS, appName, appEventLimit,
+		)
+		if err != nil {
+			pgh.log.Debug("listing app events", "tenant", tenantNS, "app", appName, "error", err)
+		}
+
+		data.Events = events
+	case "logs":
+		data.Pods, data.SelectedPod, data.SelectedContainer, data.LogTail, data.LogError = pgh.fetchAppLogs(req, usr, tenantNS, appName)
+	}
+
+	return data
+}
+
+// fetchAppLogs pulls the pod list for the app, picks the selected pod
+// and container from the query string (or the first of each if the
+// client did not specify), and returns the tail of that container's
+// log. Errors on the log fetch are returned as a message string for
+// the template to render inline — we do not surface them as toast /
+// 500, because "pod is terminating" or "container has no logs yet"
+// are perfectly normal states.
+//
+//nolint:gocritic // unnamedResult conflicts with nonamedreturns linter
+func (pgh *PageHandler) fetchAppLogs(
+	req *http.Request, usr *auth.UserContext, tenantNS, appName string,
+) ([]k8s.PodInfo, string, string, string, string) {
+	pods, listErr := pgh.logSvc.ListPodsForApp(req.Context(), usr.Username, usr.Groups, tenantNS, appName)
+	if listErr != nil {
+		pgh.log.Debug("listing pods for logs tab", "tenant", tenantNS, "app", appName, "error", listErr)
+
+		return nil, "", "", "", "Failed to list pods: " + listErr.Error()
+	}
+
+	if len(pods) == 0 {
+		return pods, "", "", "", "No pods found for this application."
+	}
+
+	selectedPod := req.URL.Query().Get("pod")
+	if selectedPod == "" {
+		selectedPod = pods[0].Name
+	}
+
+	var chosen *k8s.PodInfo
+
+	for idx := range pods {
+		if pods[idx].Name == selectedPod {
+			chosen = &pods[idx]
+
+			break
+		}
+	}
+
+	if chosen == nil {
+		return pods, selectedPod, "", "", "Selected pod not found in this application."
+	}
+
+	selectedContainer := req.URL.Query().Get("container")
+	if selectedContainer == "" && len(chosen.Containers) > 0 {
+		selectedContainer = chosen.Containers[0]
+	}
+
+	tail, tailErr := pgh.logSvc.TailLogs(req.Context(), usr.Username, usr.Groups, tenantNS,
+		selectedPod, selectedContainer, appLogTailLines)
+	if tailErr != nil {
+		pgh.log.Debug("tailing logs", "pod", selectedPod, "container", selectedContainer, "error", tailErr)
+
+		return pods, selectedPod, selectedContainer, "", "Failed to read logs: " + tailErr.Error()
+	}
+
+	return pods, selectedPod, selectedContainer, tail, ""
 }
 
 // buildTenantPageData gathers every per-tenant collection (apps,

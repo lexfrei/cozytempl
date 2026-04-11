@@ -48,6 +48,15 @@ type AppDetailData struct {
 	// other tabs so the JSON/HTML rendering does not lug a big slice
 	// around for every navigation.
 	Events []k8s.Event
+	// Pods is populated only when the Logs tab is active. Contains the
+	// list of pods for this app; the handler separately fetches the
+	// current tail for the selected pod.
+	Pods []k8s.PodInfo
+	// SelectedPod / SelectedContainer / LogTail feed the Logs tab UI.
+	SelectedPod       string
+	SelectedContainer string
+	LogTail           string
+	LogError          string
 }
 
 // MarketplaceData holds data for the marketplace page.

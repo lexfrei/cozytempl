@@ -1,0 +1,140 @@
+package k8s
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/client-go/rest"
+)
+
+// LogService streams pod logs for UI consumption. The impersonated
+// identity is passed on every call so read permission follows normal
+// Kubernetes RBAC — if a user cannot `get pods/log` in the namespace,
+// the UI sees the same error upstream.
+type LogService struct {
+	baseCfg *rest.Config
+}
+
+// NewLogService creates a new log service.
+func NewLogService(baseCfg *rest.Config) *LogService {
+	return &LogService{baseCfg: baseCfg}
+}
+
+// PodInfo is a tiny pod summary used by the logs tab to populate the
+// pod selector.
+type PodInfo struct {
+	Name       string   `json:"name"`
+	Phase      string   `json:"phase"`
+	Containers []string `json:"containers"`
+}
+
+// ListPodsForApp returns every pod in the namespace that carries the
+// Cozystack application.name label matching appName. Results are
+// sorted by name for stable rendering.
+func (lsv *LogService) ListPodsForApp(
+	ctx context.Context, username string, groups []string, namespace, appName string,
+) ([]PodInfo, error) {
+	if namespace == "" {
+		return nil, ErrNamespaceRequired
+	}
+
+	if !isValidLabelValue(appName) {
+		return nil, fmt.Errorf("%w: invalid application name %q", ErrAppNotFound, appName)
+	}
+
+	client, err := NewImpersonatingClient(lsv.baseCfg, username, groups)
+	if err != nil {
+		return nil, err
+	}
+
+	podList, listErr := client.Resource(PodGVR()).Namespace(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: cozyAppNameLabel + "=" + appName,
+	})
+	if listErr != nil {
+		return nil, fmt.Errorf("listing pods for %s/%s: %w", namespace, appName, listErr)
+	}
+
+	pods := make([]PodInfo, 0, len(podList.Items))
+
+	for idx := range podList.Items {
+		pods = append(pods, toPodInfo(&podList.Items[idx]))
+	}
+
+	return pods, nil
+}
+
+func toPodInfo(obj *unstructured.Unstructured) PodInfo {
+	info := PodInfo{Name: obj.GetName()}
+
+	info.Phase = nestedString(obj.Object, "status", "phase")
+
+	// Collect container names from spec.containers and
+	// spec.initContainers — the logs endpoint accepts either.
+	containers, _, _ := unstructured.NestedSlice(obj.Object, "spec", "containers")
+	for _, raw := range containers {
+		c, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if name, _ := c["name"].(string); name != "" {
+			info.Containers = append(info.Containers, name)
+		}
+	}
+
+	return info
+}
+
+// TailLogs returns the last `tailLines` lines of the given container's
+// log for the given pod. The Kubernetes typed client is avoided in
+// favour of a raw REST request so this package keeps its existing
+// dependency on only client-go/dynamic + client-go/rest — which is
+// enough because the /log subresource is a plain text stream.
+func (lsv *LogService) TailLogs(
+	ctx context.Context, username string, groups []string,
+	namespace, pod, container string, tailLines int64,
+) (string, error) {
+	if namespace == "" || pod == "" {
+		return "", ErrNamespaceRequired
+	}
+
+	if !isValidLabelValue(pod) {
+		return "", fmt.Errorf("%w: invalid pod name %q", ErrAppNotFound, pod)
+	}
+
+	// Build an impersonated REST client pointed at the core API group.
+	cfg := rest.CopyConfig(lsv.baseCfg)
+	cfg.Impersonate = rest.ImpersonationConfig{
+		UserName: username,
+		Groups:   groups,
+	}
+	cfg.APIPath = "/api"
+	cfg.GroupVersion = &corev1GV
+	cfg.NegotiatedSerializer = basicSerializer{}
+
+	restClient, err := rest.RESTClientFor(cfg)
+	if err != nil {
+		return "", fmt.Errorf("building rest client: %w", err)
+	}
+
+	request := restClient.Get().
+		Namespace(namespace).
+		Resource("pods").
+		Name(pod).
+		SubResource("log").
+		Param("tailLines", strconv.FormatInt(tailLines, 10))
+
+	if container != "" {
+		request = request.Param("container", container)
+	}
+
+	raw, reqErr := request.DoRaw(ctx)
+	if reqErr != nil {
+		return "", fmt.Errorf("reading pod log %s/%s: %w", namespace, pod, reqErr)
+	}
+
+	return string(raw), nil
+}
