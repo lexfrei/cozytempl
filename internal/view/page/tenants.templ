@@ -7,6 +7,7 @@ import (
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/internal/view/fragment"
+	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
 
 // parentDisplay turns a parent namespace ("tenant-root") into a display
@@ -72,9 +73,9 @@ templ Tenants(data view.TenantsPageData) {
 	<!-- Edit-modal slot: htmx-swapped with the tenant-edit fragment. -->
 	<div id="tenant-edit-slot"></div>
 	<div class="page-header">
-		<h1 class="page-title">Tenants</h1>
+		<h1 class="page-title">{ partial.Tc(ctx, "page.tenants.title") }</h1>
 		<button class="btn btn-primary" data-action="modal-open" data-modal="create-tenant-modal">
-			+ Create Tenant
+			{ partial.Tc(ctx, "page.tenants.createTenant") }
 		</button>
 	</div>
 
@@ -84,13 +85,13 @@ templ Tenants(data view.TenantsPageData) {
 			<table>
 				<thead>
 					<tr>
-						<th>Name</th>
-						<th>Apps</th>
-						<th>Pods</th>
-						<th title="Sum of spec.resources.requests.cpu across pods. Second line shows actual usage from metrics-server when available.">CPU requested</th>
-						<th title="Sum of spec.resources.requests.memory across pods. Second line shows actual usage from metrics-server when available.">Memory requested</th>
-						<th title="Sum of PVC requested storage">Storage</th>
-						<th>Status</th>
+						<th>{ partial.Tc(ctx, "label.name") }</th>
+						<th>{ partial.Tc(ctx, "label.apps") }</th>
+						<th>{ partial.Tc(ctx, "label.pods") }</th>
+						<th title={ partial.Tc(ctx, "page.tenants.cpuTooltip") }>{ partial.Tc(ctx, "label.cpuRequested") }</th>
+						<th title={ partial.Tc(ctx, "page.tenants.memTooltip") }>{ partial.Tc(ctx, "label.memRequested") }</th>
+						<th title={ partial.Tc(ctx, "page.tenants.storageTooltip") }>{ partial.Tc(ctx, "label.storage") }</th>
+						<th>{ partial.Tc(ctx, "label.status") }</th>
 						<th></th>
 					</tr>
 				</thead>
@@ -103,11 +104,11 @@ templ Tenants(data view.TenantsPageData) {
 		</div>
 		if len(data.Tenants) == 0 {
 			<div class="empty-state">
-				<div class="empty-state-title">No tenants yet</div>
-				<p class="text-muted mt-2">Tenants group applications into isolated workload namespaces. Create one to get started.</p>
+				<div class="empty-state-title">{ partial.Tc(ctx, "empty.tenants.title") }</div>
+				<p class="text-muted mt-2">{ partial.Tc(ctx, "empty.tenants.body") }</p>
 				<button class="btn btn-primary mt-3" type="button"
 					data-action="modal-open" data-modal="create-tenant-modal">
-					Create your first tenant
+					{ partial.Tc(ctx, "empty.tenants.cta") }
 				</button>
 			</div>
 		}
@@ -118,36 +119,35 @@ templ Tenants(data view.TenantsPageData) {
 		role="dialog" aria-modal="true" aria-labelledby="create-tenant-title">
 		<div class="modal">
 			<div class="modal-header">
-				<h2 id="create-tenant-title" class="modal-title">Create Tenant</h2>
+				<h2 id="create-tenant-title" class="modal-title">{ partial.Tc(ctx, "page.tenants.createTenantTitle") }</h2>
 				<button class="btn-icon" type="button"
-					aria-label="Close create tenant dialog"
+					aria-label={ partial.Tc(ctx, "aria.closeCreateTenant") }
 					data-action="modal-close" data-modal="create-tenant-modal">&times;</button>
 			</div>
 			<form hx-post="/tenants"
 				hx-target="#main-content"
 				hx-push-url="false">
 				<div class="form-group">
-					<label class="form-label">Name</label>
+					<label class="form-label">{ partial.Tc(ctx, "page.tenants.nameLabel") }</label>
 					<input class="form-input" type="text" name="name" required
-						placeholder="mytenant"
+						placeholder={ partial.Tc(ctx, "page.tenants.namePlaceholder") }
 						pattern="[a-z][a-z0-9]*"
-						title="Lowercase letters and digits only, starting with a letter. No dashes — Cozystack's Helm chart rejects them."
+						title={ partial.Tc(ctx, "page.tenants.nameTitle") }
 						data-ns-preview="tenant-ns-preview"/>
 					<div class="form-hint">
-						Lowercase letters and digits only, no dashes. Workload namespace will be
+						{ partial.Tc(ctx, "page.tenants.nameHint") }
 						<code id="tenant-ns-preview">tenant-...</code>
 					</div>
 				</div>
 				<div class="form-group">
-					<label class="form-label">Parent</label>
+					<label class="form-label">{ partial.Tc(ctx, "page.tenants.parentLabel") }</label>
 					<select class="form-select" name="parent">
 						for _, opt := range parentOptions(data.Tenants) {
 							<option value={ opt.Namespace }>{ opt.Label }</option>
 						}
 					</select>
 					<div class="form-hint">
-						Parent tenant. The new tenant is nested inside its workload
-						namespace. Depth is shown with leading dashes.
+						{ partial.Tc(ctx, "page.tenants.parentHint") }
 					</div>
 				</div>
 				if data.TenantSchema != nil {
@@ -155,8 +155,8 @@ templ Tenants(data view.TenantsPageData) {
 				}
 				<div class="modal-footer">
 					<button type="button" class="btn"
-						data-action="modal-close" data-modal="create-tenant-modal">Cancel</button>
-					<button type="submit" class="btn btn-primary">Create</button>
+						data-action="modal-close" data-modal="create-tenant-modal">{ partial.Tc(ctx, "action.cancel") }</button>
+					<button type="submit" class="btn btn-primary">{ partial.Tc(ctx, "action.create") }</button>
 				</div>
 			</form>
 		</div>
@@ -174,7 +174,7 @@ templ tenantRow(item view.TenantWithUsage, metrics bool) {
 				{ item.Tenant.DisplayName }
 			</a>
 			if item.Tenant.Parent != "" && !k8s.IsRootTenant(item.Tenant.Name) {
-				<div class="text-sm text-muted">parent: { parentDisplay(item.Tenant.Parent) }</div>
+				<div class="text-sm text-muted">{ partial.Tc(ctx, "page.tenants.parentPrefix", map[string]any{"Parent": parentDisplay(item.Tenant.Parent)}) }</div>
 			}
 		</td>
 		<td>{ fmt.Sprint(item.Tenant.AppCount) }</td>
@@ -188,7 +188,7 @@ templ tenantRow(item view.TenantWithUsage, metrics bool) {
 		<td class="text-sm text-muted">{ k8s.FormatStorage(item.Usage.StorageGi) }</td>
 		<td>
 			if k8s.IsRootTenant(item.Tenant.Name) {
-				<span class="badge badge-unknown" title="Root tenant is protected and cannot be deleted.">protected</span>
+				<span class="badge badge-unknown" title={ partial.Tc(ctx, "page.tenants.protectedTooltip") }>{ partial.Tc(ctx, "page.tenants.protected") }</span>
 			} else {
 				<span class="text-sm text-muted">{ item.Tenant.Status }</span>
 			}
@@ -199,17 +199,17 @@ templ tenantRow(item view.TenantWithUsage, metrics bool) {
 					hx-get={ "/fragments/tenant-edit?name=" + item.Tenant.Name + "&ns=" + item.Tenant.ParentNamespace }
 					hx-target="#tenant-edit-slot"
 					hx-swap="innerHTML">
-					Edit
+					{ partial.Tc(ctx, "action.edit") }
 				</button>
 				if k8s.IsRootTenant(item.Tenant.Name) {
-					<button class="btn btn-sm" disabled title="Root tenant cannot be deleted">Delete</button>
+					<button class="btn btn-sm" disabled title={ partial.Tc(ctx, "page.tenants.rootCannotDelete") }>{ partial.Tc(ctx, "action.delete") }</button>
 				} else {
 					<button class="btn btn-sm btn-danger"
 						hx-delete={ "/tenants/" + item.Tenant.Name + "?ns=" + item.Tenant.ParentNamespace }
 						hx-confirm={ "Delete tenant '" + item.Tenant.DisplayName + "' (" + item.Tenant.ParentNamespace + "/" + item.Tenant.Name + ")? This will delete the tenant namespace, every application inside it, and every nested sub-tenant. This cannot be undone." }
 						hx-target="closest tr"
 						hx-swap="delete swap:500ms">
-						Delete
+						{ partial.Tc(ctx, "action.delete") }
 					</button>
 				}
 			</div>
@@ -221,7 +221,7 @@ templ cpuCell(usage k8s.TenantUsage, metrics bool) {
 	<div>{ k8s.FormatCPU(usage.CPURequestsMi) }</div>
 	if metrics && usage.CPUUsageMi > 0 {
 		<div class="text-sm text-muted">
-			real: { k8s.FormatCPU(usage.CPUUsageMi) }
+			{ partial.Tc(ctx, "page.tenants.real", map[string]any{"Value": k8s.FormatCPU(usage.CPUUsageMi)}) }
 		</div>
 	}
 }
@@ -230,7 +230,7 @@ templ memCell(usage k8s.TenantUsage, metrics bool) {
 	<div>{ k8s.FormatMem(usage.MemRequestsMi) }</div>
 	if metrics && usage.MemUsageMi > 0 {
 		<div class="text-sm text-muted">
-			real: { k8s.FormatMem(usage.MemUsageMi) }
+			{ partial.Tc(ctx, "page.tenants.real", map[string]any{"Value": k8s.FormatMem(usage.MemUsageMi)}) }
 		</div>
 	}
 }

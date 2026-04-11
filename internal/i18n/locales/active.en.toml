@@ -162,3 +162,419 @@ other = "Қазақша"
 
 [lang.zh]
 other = "中文"
+
+# --- Common labels (column headers, field labels) ---
+
+[label.name]
+other = "Name"
+
+[label.type]
+other = "Type"
+
+[label.tenant]
+other = "Tenant"
+
+[label.status]
+other = "Status"
+
+[label.created]
+other = "Created"
+
+[label.apps]
+other = "Apps"
+
+[label.pods]
+other = "Pods"
+
+[label.cpuRequested]
+other = "CPU requested"
+
+[label.memRequested]
+other = "Memory requested"
+
+[label.storage]
+other = "Storage"
+
+[label.quota]
+other = "Quota"
+
+[label.resource]
+other = "Resource"
+
+[label.used]
+other = "Used"
+
+[label.hard]
+other = "Hard"
+
+[label.reason]
+other = "Reason"
+
+[label.object]
+other = "Object"
+
+[label.message]
+other = "Message"
+
+[label.lastSeen]
+other = "Last seen"
+
+[label.source]
+other = "Source"
+
+[label.count]
+other = "Count"
+
+[label.username]
+other = "Username"
+
+[label.groups]
+other = "Groups"
+
+[label.authMode]
+other = "Auth mode"
+
+[label.parent]
+other = "Parent"
+
+[label.namespace]
+other = "Namespace"
+
+# --- Dashboard page ---
+
+[page.dashboard.statTenants]
+other = "Tenants"
+
+[page.dashboard.statApps]
+other = "Applications"
+
+[page.dashboard.statReady]
+other = "Ready"
+
+[page.dashboard.statFailed]
+other = "Failed"
+
+[page.dashboard.recentApps]
+other = "Applications"
+
+# --- Marketplace page ---
+
+[page.marketplace.searchPlaceholder]
+other = "Search by name, type, or description..."
+
+[page.marketplace.available]
+other = "{{.Count}} applications available"
+
+[page.marketplace.services]
+other = "{{.Count}} services"
+
+[page.marketplace.allCategory]
+other = "All"
+
+[page.marketplace.noResults]
+other = "No applications match your search"
+
+[page.marketplace.noResultsHint]
+other = "Try a different search term or clear filters."
+
+[page.marketplace.opts]
+other = "{{.Count}} opt"
+
+# --- Tenants page ---
+
+[page.tenants.createTenant]
+other = "+ Create Tenant"
+
+[page.tenants.cpuTooltip]
+other = "Sum of spec.resources.requests.cpu across pods. Second line shows actual usage from metrics-server when available."
+
+[page.tenants.memTooltip]
+other = "Sum of spec.resources.requests.memory across pods. Second line shows actual usage from metrics-server when available."
+
+[page.tenants.storageTooltip]
+other = "Sum of PVC requested storage"
+
+[page.tenants.protected]
+other = "protected"
+
+[page.tenants.protectedTooltip]
+other = "Root tenant is protected and cannot be deleted."
+
+[page.tenants.rootCannotDelete]
+other = "Root tenant cannot be deleted"
+
+[page.tenants.parentPrefix]
+other = "parent: {{.Parent}}"
+
+[page.tenants.real]
+other = "real: {{.Value}}"
+
+[page.tenants.createTenantTitle]
+other = "Create Tenant"
+
+[page.tenants.closeDialog]
+other = "Close create tenant dialog"
+
+[page.tenants.nameLabel]
+other = "Name"
+
+[page.tenants.namePlaceholder]
+other = "mytenant"
+
+[page.tenants.nameTitle]
+other = "Lowercase letters and digits only, starting with a letter. No dashes — Cozystack's Helm chart rejects them."
+
+[page.tenants.nameHint]
+other = "Lowercase letters and digits only, no dashes. Workload namespace will be"
+
+[page.tenants.parentLabel]
+other = "Parent"
+
+[page.tenants.parentHint]
+other = "Parent tenant. The new tenant is nested inside its workload namespace. Depth is shown with leading dashes."
+
+# --- Tenant detail page ---
+
+[page.tenant.parentBtn]
+other = "↑ Parent"
+
+[page.tenant.createApp]
+other = "+ Create Application"
+
+[page.tenant.subTenants]
+other = "Sub-tenants"
+
+[page.tenant.appsCount]
+other = "{{.Count}} apps"
+
+[page.tenant.subTenantsCount]
+other = "{{.Count}} sub-tenants"
+
+[page.tenant.searchPlaceholder]
+other = "Search applications..."
+
+[page.tenant.allTypes]
+other = "All types"
+
+[page.tenant.clearFilters]
+other = "Clear"
+
+[page.tenant.truncatedBanner]
+other = "Showing the first {{.Count}} applications."
+
+[page.tenant.truncatedBannerHint]
+other = "This tenant has more than the display limit. Filters and sort apply to this window only. Use kubectl to see the full inventory."
+
+[page.tenant.resources]
+other = "Resources"
+
+[page.tenant.liveUsage]
+other = "live usage from metrics-server"
+
+[page.tenant.metricsConnected]
+other = "metrics-server connected, no live usage yet"
+
+[page.tenant.requestedOnly]
+other = "requested values only — metrics-server unavailable"
+
+[page.tenant.pvcRequested]
+other = "PVC requested"
+
+[page.tenant.quotas]
+other = "Quotas"
+
+[page.tenant.quotaLimits]
+other = "{{.Count}} limits"
+
+[page.tenant.recentActivity]
+other = "Recent activity"
+
+[page.tenant.events]
+other = "{{.Count}} events"
+
+[page.tenant.noRecentEvents]
+other = "No recent events"
+
+[page.tenant.noRecentEventsHint]
+other = "Kubernetes has no recent events for this namespace, or you lack permission to list them."
+
+[page.tenant.noAppsHint]
+other = "Pick a kind from the marketplace and cozytempl will drop the matching Cozystack CRD into this tenant's namespace with a schema-driven form."
+
+[page.tenant.createAppTitle]
+other = "Create Application"
+
+[page.tenant.closeAppDialog]
+other = "Close create application dialog"
+
+[page.tenant.selectType]
+other = "Select type..."
+
+[page.tenant.nameLabel]
+other = "Name"
+
+[page.tenant.appNamePlaceholder]
+other = "my-application"
+
+[page.tenant.appNameTitle]
+other = "Lowercase letters, digits and hyphens only. Must start and end with a letter or digit. Max 53 characters (Helm release name limit)."
+
+[page.tenant.sortByLabel]
+other = "Sort by {{.Label}}"
+
+# --- App detail page ---
+
+[page.appDetail.tabOverview]
+other = "Overview"
+
+[page.appDetail.tabConnection]
+other = "Connection"
+
+[page.appDetail.tabConditions]
+other = "Conditions"
+
+[page.appDetail.tabEvents]
+other = "Events"
+
+[page.appDetail.tabLogs]
+other = "Logs"
+
+[page.appDetail.tabValues]
+other = "Values"
+
+[page.appDetail.noLogs]
+other = "(no log output)"
+
+[page.appDetail.logsUnavailable]
+other = "Logs unavailable"
+
+[page.appDetail.refresh]
+other = "Refresh"
+
+[page.appDetail.revealHint]
+other = "Reveal for 30 seconds"
+
+[page.appDetail.container]
+other = "container: {{.Name}}"
+
+[empty.connection.title]
+other = "No connection info available"
+
+[empty.connection.body]
+other = "Connection details appear once the application is ready."
+
+[empty.events.title]
+other = "No events"
+
+[empty.events.body]
+other = "Kubernetes has no recent events for this application, or you lack permission to view them."
+
+# --- App-edit / tenant-edit fragment ---
+
+[form.app.typeLabel]
+other = "Type"
+
+[form.app.typeHint]
+other = "Application type is immutable. Delete and recreate to change kind."
+
+[form.app.nameLabel]
+other = "Name"
+
+[form.app.nameHint]
+other = "Name is immutable. Rename via delete + recreate."
+
+[form.app.noFields]
+other = "No editable spec fields are exposed for this application."
+
+[form.tenant.namespaceLabel]
+other = "Namespace"
+
+[form.tenant.namespaceHint]
+other = "Workload namespace is immutable. To rename, delete and recreate the tenant."
+
+[form.tenant.noFields]
+other = "No editable spec fields are exposed for this tenant."
+
+[form.app.editTitle]
+other = "Edit {{.Name}}"
+
+[form.app.closeEditDialog]
+other = "Close edit application dialog"
+
+[form.tenant.editTitle]
+other = "Edit {{.Name}}"
+
+[form.tenant.closeEditDialog]
+other = "Close edit tenant dialog"
+
+# --- Profile page ---
+
+[page.profile.noGroups]
+other = "(none)"
+
+[page.profile.howRbac]
+other = "How RBAC is enforced"
+
+[page.profile.passthrough]
+other = "Your OpenID Connect ID token is forwarded directly to the Kubernetes API server as an Authorization: Bearer credential. The API server validates the token against the same Keycloak issuer you logged in through. Cozytempl's own ServiceAccount has zero cluster permissions — a compromise of the cozytempl process cannot impersonate you or anyone else. Your token is automatically refreshed shortly before it expires, so active sessions keep working without re-login."
+
+[page.profile.byok]
+other = "You authenticated by uploading a kubeconfig. It is stored encrypted inside your session cookie and used to talk to the Kubernetes API on every request. The cozytempl ServiceAccount has no cluster permissions of its own — all authority comes from the kubeconfig you provided. Log out to discard the stored kubeconfig."
+
+[page.profile.impersonation]
+other = "Every Kubernetes call made on your behalf is impersonated: cozytempl sends Impersonate-User and Impersonate-Group headers equal to the values above. The API server evaluates RBAC as you, not as the service account running cozytempl, so you only see resources you have real access to. This mode is deprecated in favour of passthrough — migrate when your API server is OIDC-configured."
+
+[page.profile.dev]
+other = "Development mode is active. Authentication is disabled. Every request is served as the local process identity with full privileges. NEVER enable this mode in a production or multi-user deployment."
+
+[page.profile.devStrong]
+other = "Development mode is active."
+
+[page.profile.unknown]
+other = "The active authentication mode is not recognised. This is a configuration bug — contact your administrator."
+
+# --- Kubeconfig upload page (authpage + page) ---
+
+[page.kubeconfig.title]
+other = "Upload kubeconfig"
+
+[page.kubeconfig.modeIntro]
+other = "cozytempl is running in bring-your-own-kubeconfig mode. Upload a kubeconfig file that gives you access to your Kubernetes cluster; it will be stored encrypted inside your session cookie and used for every request until you log out."
+
+[page.kubeconfig.hint1]
+other = "The kubeconfig must use a static token or client certificate. Exec plugins are rejected — generate a static token with kubectl create token first."
+
+[page.kubeconfig.hint2]
+other = "Size is capped at 32 KB. Strip unused contexts with kubectl config view --minify --flatten."
+
+[page.kubeconfig.hint3]
+other = "The cluster URL must be reachable from the cozytempl pod."
+
+[page.kubeconfig.fileLabel]
+other = "kubeconfig file"
+
+[page.kubeconfig.submit]
+other = "Upload and continue"
+
+# --- ARIA labels ---
+
+[aria.revealField]
+other = "Reveal {{.Field}} for 30 seconds"
+
+[aria.copyField]
+other = "Copy {{.Field}} to clipboard"
+
+[aria.fieldHidden]
+other = "{{.Field}} value, currently hidden"
+
+[aria.closeEditApp]
+other = "Close edit application dialog"
+
+[aria.closeEditTenant]
+other = "Close edit tenant dialog"
+
+[aria.closeCreateTenant]
+other = "Close create tenant dialog"
+
+[aria.closeCreateApp]
+other = "Close create application dialog"

@@ -1,23 +1,38 @@
 package partial
 
 import (
+	"context"
+
 	"github.com/lexfrei/cozytempl/internal/i18n"
 )
 
-// T is the helper every templ file calls to render a translated
-// string. Accepts a nil *Localizer so tests or detached renderers
-// still work — a nil Localizer echoes the message id wrapped in
-// brackets so the missing translation is visible, never silent.
+// T is the helper every partial / layout template calls to
+// render a translated string when the caller has already pulled
+// the Localizer out of the context. Accepts a nil *Localizer so
+// tests or detached renderers still work — a nil Localizer
+// echoes the message id wrapped in brackets so the missing
+// translation is visible, never silent.
 //
-// templ templates can't import Go packages directly, so this
-// thin wrapper exists to make `{ partial.T(loc, "id") }` the
-// one-liner call site templ authors use.
+// Page templates should prefer Tc below: it resolves the
+// Localizer from the render context directly and saves the
+// caller from threading `loc *i18n.Localizer` through every
+// component signature.
 func T(loc *i18n.Localizer, messageID string, templateData ...map[string]any) string {
 	if loc == nil {
 		return "[" + messageID + "]"
 	}
 
 	return loc.T(messageID, templateData...)
+}
+
+// Tc is the context-aware counterpart of T. Inside a templ
+// component `ctx` is always in scope (the generated code binds
+// it from the render-time Input.Context), so call sites look
+// like `{ partial.Tc(ctx, "page.dashboard.title") }`. This is
+// how every page / fragment template resolves strings without
+// having to grow a `loc` parameter.
+func Tc(ctx context.Context, messageID string, templateData ...map[string]any) string {
+	return T(i18n.FromContext(ctx), messageID, templateData...)
 }
 
 // HTMLMessage renders a translated message that legitimately

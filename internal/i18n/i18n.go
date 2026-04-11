@@ -171,6 +171,24 @@ func ContextWithLocalizer(ctx context.Context, loc *Localizer) context.Context {
 	return context.WithValue(ctx, localizerKey{}, loc)
 }
 
+// FromContext returns the Localizer attached to ctx by
+// Middleware. Unlike (*Bundle).LocalizerFromContext, this helper
+// does NOT need a Bundle reference — it is intended for templ
+// components that want to resolve strings without having a
+// Bundle threaded into every template function. When no
+// localizer is on ctx the function returns nil; callers should
+// route through partial.Tc which handles the nil case by
+// echoing the message id in brackets.
+func FromContext(ctx context.Context) *Localizer {
+	if ctx == nil {
+		return nil
+	}
+
+	loc, _ := ctx.Value(localizerKey{}).(*Localizer)
+
+	return loc
+}
+
 // Middleware builds a per-request Localizer and stashes it on the
 // request context. Every downstream handler (and every templ
 // template via the handler's view data) can pull it out with

@@ -37,14 +37,14 @@ templ AppTableRow(tenant string, app k8s.Application) {
 					hx-get={ "/fragments/app-edit?tenant=" + tenant + "&name=" + app.Name }
 					hx-target="#app-edit-slot"
 					hx-swap="innerHTML">
-					Edit
+					{ partial.Tc(ctx, "action.edit") }
 				</button>
 				<button class="btn btn-sm btn-danger"
 					hx-delete={ "/tenants/" + tenant + "/apps/" + app.Name }
 					hx-confirm={ "Delete " + app.Kind + " '" + app.Name + "'? This cannot be undone." }
 					hx-target="closest tr"
 					hx-swap="delete swap:500ms">
-					Delete
+					{ partial.Tc(ctx, "action.delete") }
 				</button>
 			</div>
 		</td>

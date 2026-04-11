@@ -2,6 +2,7 @@ package fragment
 
 import (
 	"github.com/lexfrei/cozytempl/internal/k8s"
+	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
 
 // TenantEditModal renders the edit form modal for an existing tenant.
@@ -17,9 +18,9 @@ templ TenantEditModal(tenant k8s.Tenant, schema *k8s.AppSchema, spec map[string]
 	<div id="tenant-edit-modal" class="modal-backdrop" style="display: flex;">
 		<div class="modal">
 			<div class="modal-header">
-				<h2 class="modal-title">Edit { tenant.DisplayName }</h2>
+				<h2 class="modal-title">{ partial.Tc(ctx, "form.tenant.editTitle", map[string]any{"Name": tenant.DisplayName}) }</h2>
 				<button class="btn-icon" type="button"
-					aria-label="Close edit tenant dialog"
+					aria-label={ partial.Tc(ctx, "aria.closeEditTenant") }
 					data-action="modal-dismiss" data-modal="tenant-edit-modal">&times;</button>
 			</div>
 			<form hx-put={ "/tenants/" + tenant.Name + "?ns=" + tenant.ParentNamespace }
@@ -27,19 +28,19 @@ templ TenantEditModal(tenant k8s.Tenant, schema *k8s.AppSchema, spec map[string]
 				hx-push-url="false">
 				<input type="hidden" name="_resource_version" value={ resourceVersion }/>
 				<div class="form-group">
-					<label class="form-label">Namespace</label>
+					<label class="form-label">{ partial.Tc(ctx, "form.tenant.namespaceLabel") }</label>
 					<input class="form-input" type="text" value={ tenant.Namespace } disabled/>
-					<div class="form-hint">Workload namespace is immutable. To rename, delete and recreate the tenant.</div>
+					<div class="form-hint">{ partial.Tc(ctx, "form.tenant.namespaceHint") }</div>
 				</div>
 				if schema != nil {
 					@SchemaFieldsWithValues(*schema, spec)
 				} else {
-					<p class="text-muted text-sm">No editable spec fields are exposed for this tenant.</p>
+					<p class="text-muted text-sm">{ partial.Tc(ctx, "form.tenant.noFields") }</p>
 				}
 				<div class="modal-footer">
 					<button type="button" class="btn"
-						data-action="modal-dismiss" data-modal="tenant-edit-modal">Cancel</button>
-					<button type="submit" class="btn btn-primary">Save</button>
+						data-action="modal-dismiss" data-modal="tenant-edit-modal">{ partial.Tc(ctx, "action.cancel") }</button>
+					<button type="submit" class="btn btn-primary">{ partial.Tc(ctx, "action.save") }</button>
 				</div>
 			</form>
 		</div>

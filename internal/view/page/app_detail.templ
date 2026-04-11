@@ -51,12 +51,12 @@ templ AppDetail(data view.AppDetailData) {
 
 	<!-- Tabs -->
 	<div class="tabs">
-		@detailTab("Overview", "overview", data)
-		@detailTab("Connection", "connection", data)
-		@detailTab("Conditions", "conditions", data)
-		@detailTab("Events", "events", data)
-		@detailTab("Logs", "logs", data)
-		@detailTab("Values", "values", data)
+		@detailTab(partial.Tc(ctx, "page.appDetail.tabOverview"), "overview", data)
+		@detailTab(partial.Tc(ctx, "page.appDetail.tabConnection"), "connection", data)
+		@detailTab(partial.Tc(ctx, "page.appDetail.tabConditions"), "conditions", data)
+		@detailTab(partial.Tc(ctx, "page.appDetail.tabEvents"), "events", data)
+		@detailTab(partial.Tc(ctx, "page.appDetail.tabLogs"), "logs", data)
+		@detailTab(partial.Tc(ctx, "page.appDetail.tabValues"), "values", data)
 	</div>
 
 	<!-- Tab content -->
@@ -91,15 +91,15 @@ templ overviewTab(data view.AppDetailData) {
 	<div class="card">
 		<dl class="flex flex-col gap-3">
 			<div class="flex justify-between">
-				<dt class="text-muted">Type</dt>
+				<dt class="text-muted">{ partial.Tc(ctx, "label.type") }</dt>
 				<dd>{ data.App.Kind }</dd>
 			</div>
 			<div class="flex justify-between">
-				<dt class="text-muted">Tenant</dt>
+				<dt class="text-muted">{ partial.Tc(ctx, "label.tenant") }</dt>
 				<dd>{ data.Tenant }</dd>
 			</div>
 			<div class="flex justify-between">
-				<dt class="text-muted">Created</dt>
+				<dt class="text-muted">{ partial.Tc(ctx, "label.created") }</dt>
 				<dd>{ formatTime(data.App.CreatedAt) }</dd>
 			</div>
 		</dl>
@@ -119,7 +119,7 @@ templ connectionTab(data view.AppDetailData) {
 							<code>{ value }</code>
 							<button class="btn-icon copy-btn" type="button"
 								data-copy={ value }
-								aria-label={ "Copy " + key + " to clipboard" }>&#128203;</button>
+								aria-label={ partial.Tc(ctx, "aria.copyField", map[string]any{"Field": key}) }>&#128203;</button>
 						</div>
 					}
 				</div>
@@ -127,8 +127,8 @@ templ connectionTab(data view.AppDetailData) {
 		</div>
 	} else {
 		<div class="empty-state">
-			<div class="empty-state-title">No connection info available</div>
-			<p class="text-muted">Connection details appear once the application is ready.</p>
+			<div class="empty-state-title">{ partial.Tc(ctx, "empty.connection.title") }</div>
+			<p class="text-muted">{ partial.Tc(ctx, "empty.connection.body") }</p>
 		</div>
 	}
 }
@@ -140,10 +140,10 @@ templ connectionTab(data view.AppDetailData) {
 // credential's window of exposure in the DOM stays bounded.
 templ connectionSecretRow(tenant, appName, field string) {
 	<div class="connection-info connection-secret" data-reveal-timeout="30000">
-		<code data-reveal-target aria-label={ field + " value, currently hidden" }>••••••••</code>
+		<code data-reveal-target aria-label={ partial.Tc(ctx, "aria.fieldHidden", map[string]any{"Field": field}) }>••••••••</code>
 		<button class="btn-icon" type="button"
-			title="Reveal for 30 seconds"
-			aria-label={ "Reveal " + field + " for 30 seconds" }
+			title={ partial.Tc(ctx, "page.appDetail.revealHint") }
+			aria-label={ partial.Tc(ctx, "aria.revealField", map[string]any{"Field": field}) }
 			hx-get={ "/fragments/secrets/reveal?tenant=" + tenant + "&app=" + appName + "&field=" + field }
 			hx-target="previous [data-reveal-target]"
 			hx-swap="innerHTML">
@@ -158,10 +158,10 @@ templ conditionsTab(data view.AppDetailData) {
 			<table>
 				<thead>
 					<tr>
-						<th>Type</th>
-						<th>Status</th>
-						<th>Reason</th>
-						<th>Message</th>
+						<th>{ partial.Tc(ctx, "label.type") }</th>
+						<th>{ partial.Tc(ctx, "label.status") }</th>
+						<th>{ partial.Tc(ctx, "label.reason") }</th>
+						<th>{ partial.Tc(ctx, "label.message") }</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -184,8 +184,8 @@ templ conditionsTab(data view.AppDetailData) {
 templ eventsTab(data view.AppDetailData) {
 	if len(data.Events) == 0 {
 		<div class="empty-state">
-			<div class="empty-state-title">No events</div>
-			<p class="text-muted">Kubernetes has no recent events for this application, or you lack permission to view them.</p>
+			<div class="empty-state-title">{ partial.Tc(ctx, "empty.events.title") }</div>
+			<p class="text-muted">{ partial.Tc(ctx, "empty.events.body") }</p>
 		</div>
 	} else {
 		<div class="card">
@@ -193,12 +193,12 @@ templ eventsTab(data view.AppDetailData) {
 				<table>
 					<thead>
 						<tr>
-							<th>Type</th>
-							<th>Reason</th>
-							<th>Message</th>
-							<th>Source</th>
-							<th>Count</th>
-							<th>Last seen</th>
+							<th>{ partial.Tc(ctx, "label.type") }</th>
+							<th>{ partial.Tc(ctx, "label.reason") }</th>
+							<th>{ partial.Tc(ctx, "label.message") }</th>
+							<th>{ partial.Tc(ctx, "label.source") }</th>
+							<th>{ partial.Tc(ctx, "label.count") }</th>
+							<th>{ partial.Tc(ctx, "label.lastSeen") }</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -233,7 +233,7 @@ templ eventsTab(data view.AppDetailData) {
 templ logsTab(data view.AppDetailData) {
 	if data.LogError != "" && len(data.Pods) == 0 {
 		<div class="empty-state">
-			<div class="empty-state-title">Logs unavailable</div>
+			<div class="empty-state-title">{ partial.Tc(ctx, "page.appDetail.logsUnavailable") }</div>
 			<p class="text-muted">{ data.LogError }</p>
 		</div>
 	} else {
@@ -263,14 +263,14 @@ templ logsTab(data view.AppDetailData) {
 						}
 					</select>
 				} else if len(currentContainers(data)) == 1 {
-					<span class="text-sm text-muted">container: { data.SelectedContainer }</span>
+					<span class="text-sm text-muted">{ partial.Tc(ctx, "page.appDetail.container", map[string]any{"Name": data.SelectedContainer}) }</span>
 				}
 				<button type="button" class="btn btn-sm"
 					hx-get={ "/tenants/" + data.Tenant + "/apps/" + data.App.Name +
 						"?tab=logs&pod=" + data.SelectedPod + "&container=" + data.SelectedContainer }
 					hx-target="#main-content"
 					hx-push-url="false">
-					Refresh
+					{ partial.Tc(ctx, "page.appDetail.refresh") }
 				</button>
 			</div>
 			if data.LogError != "" {
@@ -280,7 +280,7 @@ templ logsTab(data view.AppDetailData) {
 			}
 			<pre class="connection-info" style="white-space: pre-wrap; max-height: 600px; overflow-y: auto;">
 				if data.LogTail == "" {
-					<span class="text-muted">(no log output)</span>
+					<span class="text-muted">{ partial.Tc(ctx, "page.appDetail.noLogs") }</span>
 				} else {
 					{ data.LogTail }
 				}

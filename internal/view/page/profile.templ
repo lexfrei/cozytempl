@@ -3,6 +3,7 @@ package page
 import (
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/config"
+	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
 
 // Profile renders the current user's identity, group membership and
@@ -12,19 +13,19 @@ import (
 // mode because the trust model is different.
 templ Profile(usr *auth.UserContext, mode config.AuthMode) {
 	<div class="page-header">
-		<h1 class="page-title">Profile</h1>
+		<h1 class="page-title">{ partial.Tc(ctx, "page.profile.title") }</h1>
 	</div>
 	<div class="card">
 		<dl class="flex flex-col gap-3">
 			<div class="flex justify-between">
-				<dt class="text-muted">Username</dt>
+				<dt class="text-muted">{ partial.Tc(ctx, "label.username") }</dt>
 				<dd class="text-mono">{ usr.Username }</dd>
 			</div>
 			<div class="flex justify-between">
-				<dt class="text-muted">Groups</dt>
+				<dt class="text-muted">{ partial.Tc(ctx, "label.groups") }</dt>
 				<dd class="text-mono text-sm" style="max-width: 60%; text-align: right; word-break: break-all;">
 					if len(usr.Groups) == 0 {
-						<span class="text-muted">(none)</span>
+						<span class="text-muted">{ partial.Tc(ctx, "page.profile.noGroups") }</span>
 					} else {
 						for idx, g := range usr.Groups {
 							if idx > 0 {
@@ -36,14 +37,14 @@ templ Profile(usr *auth.UserContext, mode config.AuthMode) {
 				</dd>
 			</div>
 			<div class="flex justify-between">
-				<dt class="text-muted">Auth mode</dt>
+				<dt class="text-muted">{ partial.Tc(ctx, "label.authMode") }</dt>
 				<dd class="text-mono">{ string(mode) }</dd>
 			</div>
 		</dl>
 	</div>
 	<div class="card mt-4">
 		<div class="card-header">
-			<div class="card-title">How RBAC is enforced</div>
+			<div class="card-title">{ partial.Tc(ctx, "page.profile.howRbac") }</div>
 		</div>
 		@profileModeExplanation(mode)
 	</div>
@@ -56,47 +57,24 @@ templ profileModeExplanation(mode config.AuthMode) {
 	switch mode {
 	case config.AuthModePassthrough:
 		<p class="text-sm text-muted" style="line-height: 1.6;">
-			Your OpenID Connect ID token is forwarded directly to the
-			Kubernetes API server as an <code>Authorization: Bearer</code>
-			credential. The API server validates the token against the
-			same Keycloak issuer you logged in through. Cozytempl's own
-			ServiceAccount has zero cluster permissions — a compromise
-			of the cozytempl process cannot impersonate you or anyone
-			else. Your token is automatically refreshed shortly before
-			it expires, so active sessions keep working without
-			re-login.
+			{ partial.Tc(ctx, "page.profile.passthrough") }
 		</p>
 	case config.AuthModeBYOK:
 		<p class="text-sm text-muted" style="line-height: 1.6;">
-			You authenticated by uploading a kubeconfig. It is stored
-			encrypted inside your session cookie and used to talk to
-			the Kubernetes API on every request. The cozytempl
-			ServiceAccount has no cluster permissions of its own — all
-			authority comes from the kubeconfig you provided. Log out
-			to discard the stored kubeconfig.
+			{ partial.Tc(ctx, "page.profile.byok") }
 		</p>
 	case config.AuthModeImpersonationLegacy:
 		<p class="text-sm text-muted" style="line-height: 1.6;">
-			Every Kubernetes call made on your behalf is impersonated:
-			cozytempl sends <code>Impersonate-User</code> and
-			<code>Impersonate-Group</code> headers equal to the values
-			above. The API server evaluates RBAC as you, not as the
-			service account running cozytempl, so you only see
-			resources you have real access to. This mode is deprecated
-			in favour of passthrough — migrate when your API server is
-			OIDC-configured.
+			{ partial.Tc(ctx, "page.profile.impersonation") }
 		</p>
 	case config.AuthModeDev:
 		<p class="text-sm text-muted" style="line-height: 1.6; color: var(--color-text-danger);">
-			<strong>Development mode is active.</strong> Authentication
-			is disabled. Every request is served as the local process
-			identity with full privileges. NEVER enable this mode in
-			a production or multi-user deployment.
+			<strong>{ partial.Tc(ctx, "page.profile.devStrong") }</strong>
+			{ partial.Tc(ctx, "page.profile.dev") }
 		</p>
 	default:
 		<p class="text-sm text-muted" style="line-height: 1.6;">
-			The active authentication mode is not recognised. This is
-			a configuration bug — contact your administrator.
+			{ partial.Tc(ctx, "page.profile.unknown") }
 		</p>
 	}
 }

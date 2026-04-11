@@ -9,28 +9,28 @@ import (
 
 templ Dashboard(data view.DashboardData) {
 	<div class="page-header">
-		<h1 class="page-title">Dashboard</h1>
+		<h1 class="page-title">{ partial.Tc(ctx, "page.dashboard.title") }</h1>
 	</div>
 	<div class="stats-grid">
-		@statCard(fmt.Sprint(data.Tenants), "Tenants")
-		@statCard(fmt.Sprint(data.Apps), "Applications")
-		@statCard(fmt.Sprint(data.Ready), "Ready")
-		@statCard(fmt.Sprint(data.Failed), "Failed")
+		@statCard(fmt.Sprint(data.Tenants), partial.Tc(ctx, "page.dashboard.statTenants"))
+		@statCard(fmt.Sprint(data.Apps), partial.Tc(ctx, "page.dashboard.statApps"))
+		@statCard(fmt.Sprint(data.Ready), partial.Tc(ctx, "page.dashboard.statReady"))
+		@statCard(fmt.Sprint(data.Failed), partial.Tc(ctx, "page.dashboard.statFailed"))
 	</div>
 
 	if len(data.RecentApps) > 0 {
 		<div class="card mt-4">
 			<div class="card-header">
-				<div class="card-title">Applications</div>
+				<div class="card-title">{ partial.Tc(ctx, "page.dashboard.recentApps") }</div>
 			</div>
 			<div class="table-container">
 				<table>
 					<thead>
 						<tr>
-							<th>Name</th>
-							<th>Type</th>
-							<th>Tenant</th>
-							<th>Status</th>
+							<th>{ partial.Tc(ctx, "label.name") }</th>
+							<th>{ partial.Tc(ctx, "label.type") }</th>
+							<th>{ partial.Tc(ctx, "label.tenant") }</th>
+							<th>{ partial.Tc(ctx, "label.status") }</th>
 						</tr>
 					</thead>
 					<tbody>

@@ -159,3 +159,419 @@ other = "Қазақша"
 
 [lang.zh]
 other = "中文"
+
+# --- Common labels ---
+
+[label.name]
+other = "Название"
+
+[label.type]
+other = "Тип"
+
+[label.tenant]
+other = "Тенант"
+
+[label.status]
+other = "Статус"
+
+[label.created]
+other = "Создано"
+
+[label.apps]
+other = "Приложения"
+
+[label.pods]
+other = "Поды"
+
+[label.cpuRequested]
+other = "Запрошено CPU"
+
+[label.memRequested]
+other = "Запрошено памяти"
+
+[label.storage]
+other = "Хранилище"
+
+[label.quota]
+other = "Квота"
+
+[label.resource]
+other = "Ресурс"
+
+[label.used]
+other = "Использовано"
+
+[label.hard]
+other = "Лимит"
+
+[label.reason]
+other = "Причина"
+
+[label.object]
+other = "Объект"
+
+[label.message]
+other = "Сообщение"
+
+[label.lastSeen]
+other = "Последнее событие"
+
+[label.source]
+other = "Источник"
+
+[label.count]
+other = "Кол-во"
+
+[label.username]
+other = "Имя пользователя"
+
+[label.groups]
+other = "Группы"
+
+[label.authMode]
+other = "Режим аутентификации"
+
+[label.parent]
+other = "Родитель"
+
+[label.namespace]
+other = "Неймспейс"
+
+# --- Dashboard page ---
+
+[page.dashboard.statTenants]
+other = "Тенанты"
+
+[page.dashboard.statApps]
+other = "Приложения"
+
+[page.dashboard.statReady]
+other = "Готовы"
+
+[page.dashboard.statFailed]
+other = "С ошибками"
+
+[page.dashboard.recentApps]
+other = "Приложения"
+
+# --- Marketplace page ---
+
+[page.marketplace.searchPlaceholder]
+other = "Поиск по названию, типу или описанию..."
+
+[page.marketplace.available]
+other = "Доступно приложений: {{.Count}}"
+
+[page.marketplace.services]
+other = "{{.Count}} сервисов"
+
+[page.marketplace.allCategory]
+other = "Все"
+
+[page.marketplace.noResults]
+other = "Нет приложений по вашему запросу"
+
+[page.marketplace.noResultsHint]
+other = "Попробуйте другой запрос или сбросьте фильтры."
+
+[page.marketplace.opts]
+other = "{{.Count}} пар."
+
+# --- Tenants page ---
+
+[page.tenants.createTenant]
+other = "+ Создать тенант"
+
+[page.tenants.cpuTooltip]
+other = "Сумма spec.resources.requests.cpu по всем подам. Вторая строка показывает фактическое потребление из metrics-server, если доступно."
+
+[page.tenants.memTooltip]
+other = "Сумма spec.resources.requests.memory по всем подам. Вторая строка показывает фактическое потребление из metrics-server, если доступно."
+
+[page.tenants.storageTooltip]
+other = "Суммарный запрошенный объём PVC"
+
+[page.tenants.protected]
+other = "защищён"
+
+[page.tenants.protectedTooltip]
+other = "Корневой тенант защищён и не может быть удалён."
+
+[page.tenants.rootCannotDelete]
+other = "Корневой тенант нельзя удалить"
+
+[page.tenants.parentPrefix]
+other = "родитель: {{.Parent}}"
+
+[page.tenants.real]
+other = "факт: {{.Value}}"
+
+[page.tenants.createTenantTitle]
+other = "Создать тенант"
+
+[page.tenants.closeDialog]
+other = "Закрыть диалог создания тенанта"
+
+[page.tenants.nameLabel]
+other = "Название"
+
+[page.tenants.namePlaceholder]
+other = "mytenant"
+
+[page.tenants.nameTitle]
+other = "Только строчные буквы и цифры, начинается с буквы. Дефисы запрещены — Helm-чарт Cozystack не принимает их."
+
+[page.tenants.nameHint]
+other = "Только строчные буквы и цифры, без дефисов. Рабочий неймспейс будет:"
+
+[page.tenants.parentLabel]
+other = "Родительский тенант"
+
+[page.tenants.parentHint]
+other = "Родительский тенант. Новый тенант создаётся внутри его рабочего неймспейса. Вложенность обозначается тире."
+
+# --- Tenant detail page ---
+
+[page.tenant.parentBtn]
+other = "↑ Родитель"
+
+[page.tenant.createApp]
+other = "+ Создать приложение"
+
+[page.tenant.subTenants]
+other = "Дочерние тенанты"
+
+[page.tenant.appsCount]
+other = "{{.Count}} прил."
+
+[page.tenant.subTenantsCount]
+other = "{{.Count}} дочерних"
+
+[page.tenant.searchPlaceholder]
+other = "Поиск приложений..."
+
+[page.tenant.allTypes]
+other = "Все типы"
+
+[page.tenant.clearFilters]
+other = "Сбросить"
+
+[page.tenant.truncatedBanner]
+other = "Показаны первые {{.Count}} приложений."
+
+[page.tenant.truncatedBannerHint]
+other = "У тенанта больше приложений, чем лимит отображения. Фильтры и сортировка применяются только к этому окну. Используйте kubectl для просмотра полного списка."
+
+[page.tenant.resources]
+other = "Ресурсы"
+
+[page.tenant.liveUsage]
+other = "актуальные данные из metrics-server"
+
+[page.tenant.metricsConnected]
+other = "metrics-server подключён, данных пока нет"
+
+[page.tenant.requestedOnly]
+other = "только запрошенные значения — metrics-server недоступен"
+
+[page.tenant.pvcRequested]
+other = "запрошено PVC"
+
+[page.tenant.quotas]
+other = "Квоты"
+
+[page.tenant.quotaLimits]
+other = "{{.Count}} лимитов"
+
+[page.tenant.recentActivity]
+other = "Недавняя активность"
+
+[page.tenant.events]
+other = "{{.Count}} событий"
+
+[page.tenant.noRecentEvents]
+other = "Нет недавних событий"
+
+[page.tenant.noRecentEventsHint]
+other = "Kubernetes не зафиксировал недавних событий для этого неймспейса, либо у вас нет прав на их просмотр."
+
+[page.tenant.noAppsHint]
+other = "Выберите тип из маркетплейса — cozytempl положит соответствующий Cozystack CRD в неймспейс этого тенанта и подставит поля формы по схеме."
+
+[page.tenant.createAppTitle]
+other = "Создать приложение"
+
+[page.tenant.closeAppDialog]
+other = "Закрыть диалог создания приложения"
+
+[page.tenant.selectType]
+other = "Выберите тип..."
+
+[page.tenant.nameLabel]
+other = "Название"
+
+[page.tenant.appNamePlaceholder]
+other = "my-application"
+
+[page.tenant.appNameTitle]
+other = "Только строчные буквы, цифры и дефисы. Должно начинаться и заканчиваться буквой или цифрой. Максимум 53 символа (ограничение имени Helm-релиза)."
+
+[page.tenant.sortByLabel]
+other = "Сортировать по {{.Label}}"
+
+# --- App detail page ---
+
+[page.appDetail.tabOverview]
+other = "Обзор"
+
+[page.appDetail.tabConnection]
+other = "Подключение"
+
+[page.appDetail.tabConditions]
+other = "Состояния"
+
+[page.appDetail.tabEvents]
+other = "События"
+
+[page.appDetail.tabLogs]
+other = "Логи"
+
+[page.appDetail.tabValues]
+other = "Значения"
+
+[page.appDetail.noLogs]
+other = "(нет вывода)"
+
+[page.appDetail.logsUnavailable]
+other = "Логи недоступны"
+
+[page.appDetail.refresh]
+other = "Обновить"
+
+[page.appDetail.revealHint]
+other = "Показать на 30 секунд"
+
+[page.appDetail.container]
+other = "контейнер: {{.Name}}"
+
+[empty.connection.title]
+other = "Информация о подключении недоступна"
+
+[empty.connection.body]
+other = "Данные подключения появятся после готовности приложения."
+
+[empty.events.title]
+other = "Нет событий"
+
+[empty.events.body]
+other = "Kubernetes не зафиксировал недавних событий для этого приложения, либо у вас нет прав на их просмотр."
+
+# --- App-edit / tenant-edit fragment ---
+
+[form.app.typeLabel]
+other = "Тип"
+
+[form.app.typeHint]
+other = "Тип приложения неизменен. Чтобы сменить тип, удалите и пересоздайте приложение."
+
+[form.app.nameLabel]
+other = "Название"
+
+[form.app.nameHint]
+other = "Название неизменно. Для переименования удалите и пересоздайте приложение."
+
+[form.app.noFields]
+other = "Для этого приложения нет редактируемых полей спека."
+
+[form.tenant.namespaceLabel]
+other = "Неймспейс"
+
+[form.tenant.namespaceHint]
+other = "Рабочий неймспейс неизменен. Чтобы переименовать, удалите и пересоздайте тенант."
+
+[form.tenant.noFields]
+other = "Для этого тенанта нет редактируемых полей спека."
+
+[form.app.editTitle]
+other = "Редактировать {{.Name}}"
+
+[form.app.closeEditDialog]
+other = "Закрыть диалог редактирования приложения"
+
+[form.tenant.editTitle]
+other = "Редактировать {{.Name}}"
+
+[form.tenant.closeEditDialog]
+other = "Закрыть диалог редактирования тенанта"
+
+# --- Profile page ---
+
+[page.profile.noGroups]
+other = "(нет)"
+
+[page.profile.howRbac]
+other = "Как применяется RBAC"
+
+[page.profile.passthrough]
+other = "Ваш токен OpenID Connect передаётся напрямую в API-сервер Kubernetes как учётные данные Authorization: Bearer. API-сервер проверяет токен через тот же Keycloak, через который вы вошли. Собственный ServiceAccount cozytempl не имеет прав на кластер — компрометация процесса cozytempl не позволит выдать себя за вас или кого-либо другого. Токен автоматически обновляется до истечения срока, поэтому активные сессии продолжают работать без повторного входа."
+
+[page.profile.byok]
+other = "Вы вошли, загрузив kubeconfig. Он хранится зашифрованным в cookie сессии и используется при каждом запросе к Kubernetes API. ServiceAccount cozytempl не имеет собственных прав на кластер — все права берутся из загруженного вами kubeconfig. Выйдите из системы, чтобы удалить сохранённый kubeconfig."
+
+[page.profile.impersonation]
+other = "Каждый вызов Kubernetes выполняется с имперсонацией: cozytempl отправляет заголовки Impersonate-User и Impersonate-Group с вашими значениями. API-сервер применяет RBAC от вашего имени, а не от имени сервисного аккаунта cozytempl, поэтому вы видите только ресурсы, к которым у вас есть реальный доступ. Этот режим устарел и заменён passthrough — выполните миграцию, когда ваш API-сервер будет настроен для OIDC."
+
+[page.profile.dev]
+other = "Активирован режим разработки. Аутентификация отключена. Каждый запрос выполняется с полными правами локального процесса. НИКОГДА не включайте этот режим в боевой или многопользовательской среде."
+
+[page.profile.devStrong]
+other = "Активирован режим разработки."
+
+[page.profile.unknown]
+other = "Активный режим аутентификации не распознан. Это ошибка конфигурации — обратитесь к администратору."
+
+# --- Kubeconfig upload page ---
+
+[page.kubeconfig.title]
+other = "Загрузить kubeconfig"
+
+[page.kubeconfig.modeIntro]
+other = "cozytempl работает в режиме bring-your-own-kubeconfig. Загрузите файл kubeconfig, дающий доступ к вашему кластеру Kubernetes; он будет храниться зашифрованным в cookie сессии и использоваться при каждом запросе до выхода из системы."
+
+[page.kubeconfig.hint1]
+other = "Kubeconfig должен использовать статический токен или клиентский сертификат. Exec-плагины не поддерживаются — сначала создайте статический токен командой kubectl create token."
+
+[page.kubeconfig.hint2]
+other = "Размер ограничен 32 КБ. Уберите лишние контексты командой kubectl config view --minify --flatten."
+
+[page.kubeconfig.hint3]
+other = "URL кластера должен быть доступен из пода cozytempl."
+
+[page.kubeconfig.fileLabel]
+other = "Файл kubeconfig"
+
+[page.kubeconfig.submit]
+other = "Загрузить и продолжить"
+
+# --- ARIA labels ---
+
+[aria.revealField]
+other = "Показать {{.Field}} на 30 секунд"
+
+[aria.copyField]
+other = "Скопировать {{.Field}} в буфер обмена"
+
+[aria.fieldHidden]
+other = "Значение {{.Field}} скрыто"
+
+[aria.closeEditApp]
+other = "Закрыть диалог редактирования приложения"
+
+[aria.closeEditTenant]
+other = "Закрыть диалог редактирования тенанта"
+
+[aria.closeCreateTenant]
+other = "Закрыть диалог создания тенанта"
+
+[aria.closeCreateApp]
+other = "Закрыть диалог создания приложения"

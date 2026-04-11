@@ -1,6 +1,7 @@
 package page
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -43,11 +44,11 @@ templ Tenant(data view.TenantPageData) {
 					hx-get={ "/tenants/" + data.Tenant.Parent }
 					hx-target="#main-content"
 					hx-push-url="true">
-					&uarr; Parent
+					{ partial.Tc(ctx, "page.tenant.parentBtn") }
 				</a>
 			}
 			<button class="btn btn-primary" data-action="modal-open" data-modal="create-app-modal">
-				+ Create Application
+				{ partial.Tc(ctx, "page.tenant.createApp") }
 			</button>
 		</div>
 	</div>
@@ -59,7 +60,7 @@ templ Tenant(data view.TenantPageData) {
 	if len(data.Children) > 0 {
 		<div class="card mb-4">
 			<div class="card-header">
-				<div class="card-title">Sub-tenants</div>
+				<div class="card-title">{ partial.Tc(ctx, "page.tenant.subTenants") }</div>
 				<span class="text-sm text-muted">{ fmt.Sprint(len(data.Children)) }</span>
 			</div>
 			<div class="mp-grid">
@@ -81,9 +82,9 @@ templ Tenant(data view.TenantPageData) {
 							<div style="flex:1;min-width:0;">
 								<div class="mp-card-title">{ child.DisplayName }</div>
 								<div class="mp-card-desc">
-									{ fmt.Sprint(child.AppCount) } apps
+									{ partial.Tc(ctx, "page.tenant.appsCount", map[string]any{"Count": child.AppCount}) }
 									if child.ChildCount > 0 {
-										&middot; { fmt.Sprint(child.ChildCount) } sub-tenants
+										&middot; { partial.Tc(ctx, "page.tenant.subTenantsCount", map[string]any{"Count": child.ChildCount}) }
 									}
 								</div>
 							</div>
@@ -96,7 +97,7 @@ templ Tenant(data view.TenantPageData) {
 
 	<!-- Filters -->
 	<div class="flex items-center gap-3 mb-4">
-		<input class="form-input" type="text" name="q" placeholder="Search applications..."
+		<input class="form-input" type="text" name="q" placeholder={ partial.Tc(ctx, "page.tenant.searchPlaceholder") }
 			value={ data.Query }
 			hx-get={ "/fragments/app-table?tenant=" + data.Tenant.Namespace }
 			hx-trigger="keyup changed delay:300ms"
@@ -108,7 +109,7 @@ templ Tenant(data view.TenantPageData) {
 			hx-trigger="change"
 			hx-target="#app-table-body"
 			hx-include="[name='q'],[name='sort']">
-			<option value="">All types</option>
+			<option value="">{ partial.Tc(ctx, "page.tenant.allTypes") }</option>
 			for _, kind := range uniqueKinds(data.Apps) {
 				<option value={ kind } selected?={ kind == data.KindFilter }>{ kind }</option>
 			}
@@ -122,7 +123,7 @@ templ Tenant(data view.TenantPageData) {
 		<!-- Clear filters: always visible so the user has a stable
 		     affordance. clearAppFilters() lives in main.ts and resets
 		     the q/kind/sort inputs then asks htmx to refetch. -->
-		<button type="button" class="btn btn-sm" data-action="clear-filters">Clear</button>
+		<button type="button" class="btn btn-sm" data-action="clear-filters">{ partial.Tc(ctx, "page.tenant.clearFilters") }</button>
 	</div>
 
 	<!-- App table -->
@@ -135,10 +136,9 @@ templ Tenant(data view.TenantPageData) {
 			     "3 results" when there are actually 10 000 apps feels
 			     like a bug. -->
 			<div class="truncated-banner">
-				<strong>Showing the first { fmt.Sprint(len(data.Apps)) } applications.</strong>
+				<strong>{ partial.Tc(ctx, "page.tenant.truncatedBanner", map[string]any{"Count": len(data.Apps)}) }</strong>
 				<span>
-					This tenant has more than the display limit. Filters and sort apply to this window only.
-					Use kubectl to see the full inventory.
+					{ partial.Tc(ctx, "page.tenant.truncatedBannerHint") }
 				</span>
 			</div>
 		}
@@ -146,10 +146,10 @@ templ Tenant(data view.TenantPageData) {
 			<table>
 				<thead>
 					<tr>
-						@sortableHeader(data.Tenant.Namespace, "name", "Name", data.SortBy)
-						@sortableHeader(data.Tenant.Namespace, "kind", "Type", data.SortBy)
-						@sortableHeader(data.Tenant.Namespace, "status", "Status", data.SortBy)
-						<th>Created</th>
+						@sortableHeader(data.Tenant.Namespace, "name", partial.Tc(ctx, "label.name"), data.SortBy)
+						@sortableHeader(data.Tenant.Namespace, "kind", partial.Tc(ctx, "label.type"), data.SortBy)
+						@sortableHeader(data.Tenant.Namespace, "status", partial.Tc(ctx, "label.status"), data.SortBy)
+						<th>{ partial.Tc(ctx, "label.created") }</th>
 						<th></th>
 					</tr>
 				</thead>
@@ -160,20 +160,19 @@ templ Tenant(data view.TenantPageData) {
 		</div>
 		if len(data.Apps) == 0 {
 			<div class="empty-state">
-				<div class="empty-state-title">No applications yet</div>
+				<div class="empty-state-title">{ partial.Tc(ctx, "empty.apps.title") }</div>
 				<p class="text-muted mt-2">
-					Pick a kind from the marketplace and cozytempl will drop the matching
-					Cozystack CRD into this tenant's namespace with a schema-driven form.
+					{ partial.Tc(ctx, "page.tenant.noAppsHint") }
 				</p>
 				<div class="flex items-center gap-2 mt-3" style="justify-content: center;">
 					<button class="btn btn-primary" type="button"
 						data-action="modal-open" data-modal="create-app-modal">
-						Create your first application
+						{ partial.Tc(ctx, "empty.apps.cta") }
 					</button>
 					<a class="btn" href="/marketplace"
 						hx-get="/marketplace"
 						hx-target="#main-content"
-						hx-push-url="true">Browse marketplace</a>
+						hx-push-url="true">{ partial.Tc(ctx, "action.browseMarketplace") }</a>
 				</div>
 			</div>
 		}
@@ -184,26 +183,26 @@ templ Tenant(data view.TenantPageData) {
 	     users understand the section exists even on a quiet namespace. -->
 	<div class="card">
 		<div class="card-header">
-			<div class="card-title">Recent activity</div>
+			<div class="card-title">{ partial.Tc(ctx, "page.tenant.recentActivity") }</div>
 			if len(data.Events) > 0 {
-				<span class="text-sm text-muted">{ fmt.Sprint(len(data.Events)) } events</span>
+				<span class="text-sm text-muted">{ partial.Tc(ctx, "page.tenant.events", map[string]any{"Count": len(data.Events)}) }</span>
 			}
 		</div>
 		if len(data.Events) == 0 {
 			<div class="empty-state">
-				<div class="empty-state-title">No recent events</div>
-				<p class="text-muted">Kubernetes has no recent events for this namespace, or you lack permission to list them.</p>
+				<div class="empty-state-title">{ partial.Tc(ctx, "page.tenant.noRecentEvents") }</div>
+				<p class="text-muted">{ partial.Tc(ctx, "page.tenant.noRecentEventsHint") }</p>
 			</div>
 		} else {
 			<div class="table-container">
 				<table>
 					<thead>
 						<tr>
-							<th>Type</th>
-							<th>Reason</th>
-							<th>Object</th>
-							<th>Message</th>
-							<th>Last seen</th>
+							<th>{ partial.Tc(ctx, "label.type") }</th>
+							<th>{ partial.Tc(ctx, "label.reason") }</th>
+							<th>{ partial.Tc(ctx, "label.object") }</th>
+							<th>{ partial.Tc(ctx, "label.message") }</th>
+							<th>{ partial.Tc(ctx, "label.lastSeen") }</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -233,40 +232,40 @@ templ Tenant(data view.TenantPageData) {
 		role="dialog" aria-modal="true" aria-labelledby="create-app-title">
 		<div class="modal">
 			<div class="modal-header">
-				<h2 id="create-app-title" class="modal-title">Create Application</h2>
+				<h2 id="create-app-title" class="modal-title">{ partial.Tc(ctx, "page.tenant.createAppTitle") }</h2>
 				<button class="btn-icon" type="button"
-					aria-label="Close create application dialog"
+					aria-label={ partial.Tc(ctx, "aria.closeCreateApp") }
 					data-action="modal-close" data-modal="create-app-modal">&times;</button>
 			</div>
 			<form hx-post={ "/tenants/" + data.Tenant.Namespace + "/apps" }
 				hx-target="#main-content"
 				hx-push-url="false">
 				<div class="form-group">
-					<label class="form-label">Type</label>
+					<label class="form-label">{ partial.Tc(ctx, "form.app.typeLabel") }</label>
 					<select class="form-select" name="kind" required
 						hx-get="/fragments/schema-fields"
 						hx-trigger="change"
 						hx-target="#schema-fields"
 						hx-include="this">
-						<option value="">Select type...</option>
+						<option value="">{ partial.Tc(ctx, "page.tenant.selectType") }</option>
 						for _, schema := range data.Schemas {
 							<option value={ schema.Kind }>{ schema.DisplayName }</option>
 						}
 					</select>
 				</div>
 				<div class="form-group">
-					<label class="form-label">Name</label>
+					<label class="form-label">{ partial.Tc(ctx, "page.tenant.nameLabel") }</label>
 					<input class="form-input" type="text" name="name" required
-						placeholder="my-application"
+						placeholder={ partial.Tc(ctx, "page.tenant.appNamePlaceholder") }
 						pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"
 						maxlength="53"
-						title="Lowercase letters, digits and hyphens only. Must start and end with a letter or digit. Max 53 characters (Helm release name limit)."/>
+						title={ partial.Tc(ctx, "page.tenant.appNameTitle") }/>
 				</div>
 				<div id="schema-fields"></div>
 				<div class="modal-footer">
 					<button type="button" class="btn"
-						data-action="modal-close" data-modal="create-app-modal">Cancel</button>
-					<button type="submit" class="btn btn-primary">Create</button>
+						data-action="modal-close" data-modal="create-app-modal">{ partial.Tc(ctx, "action.cancel") }</button>
+					<button type="submit" class="btn btn-primary">{ partial.Tc(ctx, "action.create") }</button>
 				</div>
 			</form>
 		</div>
@@ -294,20 +293,20 @@ func uniqueKinds(apps []k8s.Application) []string {
 templ tenantResources(usage k8s.TenantUsage) {
 	<div class="card mb-4">
 		<div class="card-header">
-			<div class="card-title">Resources</div>
+			<div class="card-title">{ partial.Tc(ctx, "page.tenant.resources") }</div>
 			if hasLiveMetrics(usage) {
-				<span class="text-sm text-muted">live usage from metrics-server</span>
+				<span class="text-sm text-muted">{ partial.Tc(ctx, "page.tenant.liveUsage") }</span>
 			} else if usage.MetricsEnabled {
-				<span class="text-sm text-muted">metrics-server connected, no live usage yet</span>
+				<span class="text-sm text-muted">{ partial.Tc(ctx, "page.tenant.metricsConnected") }</span>
 			} else {
-				<span class="text-sm text-muted">requested values only — metrics-server unavailable</span>
+				<span class="text-sm text-muted">{ partial.Tc(ctx, "page.tenant.requestedOnly") }</span>
 			}
 		</div>
 		<div class="stats-grid">
-			@resourceStat("Pods", fmt.Sprint(usage.PodCount), "")
-			@resourceStat("CPU requested", k8s.FormatCPU(usage.CPURequestsMi), cpuRealCaption(usage))
-			@resourceStat("Memory requested", k8s.FormatMem(usage.MemRequestsMi), memRealCaption(usage))
-			@resourceStat("Storage", k8s.FormatStorage(usage.StorageGi), "PVC requested")
+			@resourceStat(partial.Tc(ctx, "label.pods"), fmt.Sprint(usage.PodCount), "")
+			@resourceStat(partial.Tc(ctx, "label.cpuRequested"), k8s.FormatCPU(usage.CPURequestsMi), cpuRealCaption(ctx, usage))
+			@resourceStat(partial.Tc(ctx, "label.memRequested"), k8s.FormatMem(usage.MemRequestsMi), memRealCaption(ctx, usage))
+			@resourceStat(partial.Tc(ctx, "label.storage"), k8s.FormatStorage(usage.StorageGi), partial.Tc(ctx, "page.tenant.pvcRequested"))
 		</div>
 	</div>
 }
@@ -331,19 +330,19 @@ func hasLiveMetrics(usage k8s.TenantUsage) bool {
 
 // cpuRealCaption renders "real X" under the requested value when
 // metrics-server reports a non-zero usage for this namespace.
-func cpuRealCaption(usage k8s.TenantUsage) string {
+func cpuRealCaption(ctx context.Context, usage k8s.TenantUsage) string {
 	if !usage.MetricsEnabled || usage.CPUUsageMi == 0 {
 		return ""
 	}
-	return "real " + k8s.FormatCPU(usage.CPUUsageMi)
+	return partial.Tc(ctx, "page.tenants.real", map[string]any{"Value": k8s.FormatCPU(usage.CPUUsageMi)})
 }
 
 // memRealCaption mirrors cpuRealCaption for the memory stat.
-func memRealCaption(usage k8s.TenantUsage) string {
+func memRealCaption(ctx context.Context, usage k8s.TenantUsage) string {
 	if !usage.MetricsEnabled || usage.MemUsageMi == 0 {
 		return ""
 	}
-	return "real " + k8s.FormatMem(usage.MemUsageMi)
+	return partial.Tc(ctx, "page.tenants.real", map[string]any{"Value": k8s.FormatMem(usage.MemUsageMi)})
 }
 
 // tenantQuotas renders a table of ResourceQuota entries for a namespace.
@@ -354,17 +353,17 @@ func memRealCaption(usage k8s.TenantUsage) string {
 templ tenantQuotas(entries []k8s.ResourceQuotaEntry) {
 	<div class="card mb-4">
 		<div class="card-header">
-			<div class="card-title">Quotas</div>
-			<span class="text-sm text-muted">{ fmt.Sprint(len(entries)) } limits</span>
+			<div class="card-title">{ partial.Tc(ctx, "page.tenant.quotas") }</div>
+			<span class="text-sm text-muted">{ partial.Tc(ctx, "page.tenant.quotaLimits", map[string]any{"Count": len(entries)}) }</span>
 		</div>
 		<div class="table-container">
 			<table>
 				<thead>
 					<tr>
-						<th>Quota</th>
-						<th>Resource</th>
-						<th>Used</th>
-						<th>Hard</th>
+						<th>{ partial.Tc(ctx, "label.quota") }</th>
+						<th>{ partial.Tc(ctx, "label.resource") }</th>
+						<th>{ partial.Tc(ctx, "label.used") }</th>
+						<th>{ partial.Tc(ctx, "label.hard") }</th>
 					</tr>
 				</thead>
 				<tbody>

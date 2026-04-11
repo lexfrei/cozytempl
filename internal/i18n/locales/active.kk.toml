@@ -157,3 +157,419 @@ other = "Қазақша"
 
 [lang.zh]
 other = "中文"
+
+# --- Common labels ---
+
+[label.name]
+other = "Аты"
+
+[label.type]
+other = "Түрі"
+
+[label.tenant]
+other = "Тенант"
+
+[label.status]
+other = "Күйі"
+
+[label.created]
+other = "Жасалды"
+
+[label.apps]
+other = "Қолданбалар"
+
+[label.pods]
+other = "Подтар"
+
+[label.cpuRequested]
+other = "Сұралған CPU"
+
+[label.memRequested]
+other = "Сұралған жады"
+
+[label.storage]
+other = "Қойма"
+
+[label.quota]
+other = "Квота"
+
+[label.resource]
+other = "Ресурс"
+
+[label.used]
+other = "Пайдаланылды"
+
+[label.hard]
+other = "Шек"
+
+[label.reason]
+other = "Себебі"
+
+[label.object]
+other = "Объект"
+
+[label.message]
+other = "Хабар"
+
+[label.lastSeen]
+other = "Соңғы рет"
+
+[label.source]
+other = "Дерек көзі"
+
+[label.count]
+other = "Саны"
+
+[label.username]
+other = "Пайдаланушы аты"
+
+[label.groups]
+other = "Топтар"
+
+[label.authMode]
+other = "Аутентификация режимі"
+
+[label.parent]
+other = "Ата-аналық"
+
+[label.namespace]
+other = "Кеңістік"
+
+# --- Dashboard page ---
+
+[page.dashboard.statTenants]
+other = "Тенанттар"
+
+[page.dashboard.statApps]
+other = "Қолданбалар"
+
+[page.dashboard.statReady]
+other = "Дайын"
+
+[page.dashboard.statFailed]
+other = "Қатемен"
+
+[page.dashboard.recentApps]
+other = "Қолданбалар"
+
+# --- Marketplace page ---
+
+[page.marketplace.searchPlaceholder]
+other = "Атауы, түрі немесе сипаттамасы бойынша іздеу..."
+
+[page.marketplace.available]
+other = "Қолжетімді қолданба: {{.Count}}"
+
+[page.marketplace.services]
+other = "{{.Count}} қызмет"
+
+[page.marketplace.allCategory]
+other = "Барлығы"
+
+[page.marketplace.noResults]
+other = "Сұранысыңызға сәйкес қолданба табылмады"
+
+[page.marketplace.noResultsHint]
+other = "Басқа сұраныс енгізіп көріңіз немесе сүзгілерді тазалаңыз."
+
+[page.marketplace.opts]
+other = "{{.Count}} пар."
+
+# --- Tenants page ---
+
+[page.tenants.createTenant]
+other = "+ Тенант жасау"
+
+[page.tenants.cpuTooltip]
+other = "Барлық подтар бойынша spec.resources.requests.cpu жиынтығы. Екінші жол metrics-server қолжетімді болса, нақты тұтынуды көрсетеді."
+
+[page.tenants.memTooltip]
+other = "Барлық подтар бойынша spec.resources.requests.memory жиынтығы. Екінші жол metrics-server қолжетімді болса, нақты тұтынуды көрсетеді."
+
+[page.tenants.storageTooltip]
+other = "PVC сұралған жалпы көлемі"
+
+[page.tenants.protected]
+other = "қорғалған"
+
+[page.tenants.protectedTooltip]
+other = "Түбірлік тенант қорғалған және жойылмайды."
+
+[page.tenants.rootCannotDelete]
+other = "Түбірлік тенантты жою мүмкін емес"
+
+[page.tenants.parentPrefix]
+other = "ата-ана: {{.Parent}}"
+
+[page.tenants.real]
+other = "нақты: {{.Value}}"
+
+[page.tenants.createTenantTitle]
+other = "Тенант жасау"
+
+[page.tenants.closeDialog]
+other = "Тенант жасау терезесін жабу"
+
+[page.tenants.nameLabel]
+other = "Атауы"
+
+[page.tenants.namePlaceholder]
+other = "mytenant"
+
+[page.tenants.nameTitle]
+other = "Тек кіші әріптер мен сандар, әріптен басталу керек. Сызықшалар рұқсат етілмеген."
+
+[page.tenants.nameHint]
+other = "Тек кіші әріптер мен сандар, сызықшасыз. Жұмыс кеңістігі болады:"
+
+[page.tenants.parentLabel]
+other = "Ата-аналық тенант"
+
+[page.tenants.parentHint]
+other = "Жаңа тенант ата-аналық жұмыс кеңістігінің ішінде жасалады. Тереңдік сызықшалармен белгіленеді."
+
+# --- Tenant detail page ---
+
+[page.tenant.parentBtn]
+other = "↑ Жоғары"
+
+[page.tenant.createApp]
+other = "+ Қолданба жасау"
+
+[page.tenant.subTenants]
+other = "Бала тенанттар"
+
+[page.tenant.appsCount]
+other = "{{.Count}} қолд."
+
+[page.tenant.subTenantsCount]
+other = "{{.Count}} бала"
+
+[page.tenant.searchPlaceholder]
+other = "Қолданбаларды іздеу..."
+
+[page.tenant.allTypes]
+other = "Барлық түрлер"
+
+[page.tenant.clearFilters]
+other = "Тазалау"
+
+[page.tenant.truncatedBanner]
+other = "Алғашқы {{.Count}} қолданба көрсетілді."
+
+[page.tenant.truncatedBannerHint]
+other = "Тенантта көрсету шегінен көп қолданба бар. Сүзгілер тек осы терезеге қолданылады. Толық тізімді kubectl арқылы қараңыз."
+
+[page.tenant.resources]
+other = "Ресурстар"
+
+[page.tenant.liveUsage]
+other = "metrics-server нақты деректері"
+
+[page.tenant.metricsConnected]
+other = "metrics-server қосылған, деректер әлі жоқ"
+
+[page.tenant.requestedOnly]
+other = "тек сұралған мәндер — metrics-server қолжетімсіз"
+
+[page.tenant.pvcRequested]
+other = "PVC сұралды"
+
+[page.tenant.quotas]
+other = "Квоталар"
+
+[page.tenant.quotaLimits]
+other = "{{.Count}} шек"
+
+[page.tenant.recentActivity]
+other = "Соңғы белсенділік"
+
+[page.tenant.events]
+other = "{{.Count}} оқиға"
+
+[page.tenant.noRecentEvents]
+other = "Соңғы оқиғалар жоқ"
+
+[page.tenant.noRecentEventsHint]
+other = "Kubernetes осы кеңістік үшін соңғы оқиғаларды тіркемеді немесе сізде оларды қарау рұқсаты жоқ."
+
+[page.tenant.noAppsHint]
+other = "Маркетплейстен түрін таңдаңыз — cozytempl тиісті Cozystack CRD-ні осы тенанттың кеңістігіне салады және схема бойынша форманы толтырады."
+
+[page.tenant.createAppTitle]
+other = "Қолданба жасау"
+
+[page.tenant.closeAppDialog]
+other = "Қолданба жасау терезесін жабу"
+
+[page.tenant.selectType]
+other = "Түрін таңдаңыз..."
+
+[page.tenant.nameLabel]
+other = "Атауы"
+
+[page.tenant.appNamePlaceholder]
+other = "my-application"
+
+[page.tenant.appNameTitle]
+other = "Тек кіші әріптер, сандар және сызықшалар. Әріп немесе санмен басталып аяқталу керек. Ең көбі 53 таңба."
+
+[page.tenant.sortByLabel]
+other = "{{.Label}} бойынша сұрыптау"
+
+# --- App detail page ---
+
+[page.appDetail.tabOverview]
+other = "Шолу"
+
+[page.appDetail.tabConnection]
+other = "Қосылым"
+
+[page.appDetail.tabConditions]
+other = "Күйлер"
+
+[page.appDetail.tabEvents]
+other = "Оқиғалар"
+
+[page.appDetail.tabLogs]
+other = "Журналдар"
+
+[page.appDetail.tabValues]
+other = "Мәндер"
+
+[page.appDetail.noLogs]
+other = "(шығыс жоқ)"
+
+[page.appDetail.logsUnavailable]
+other = "Журналдар қолжетімсіз"
+
+[page.appDetail.refresh]
+other = "Жаңарту"
+
+[page.appDetail.revealHint]
+other = "30 секундқа көрсету"
+
+[page.appDetail.container]
+other = "контейнер: {{.Name}}"
+
+[empty.connection.title]
+other = "Қосылым туралы ақпарат жоқ"
+
+[empty.connection.body]
+other = "Қосылым деректері қолданба дайын болғаннан кейін пайда болады."
+
+[empty.events.title]
+other = "Оқиғалар жоқ"
+
+[empty.events.body]
+other = "Kubernetes осы қолданба үшін соңғы оқиғаларды тіркемеді немесе сізде оларды қарау рұқсаты жоқ."
+
+# --- App-edit / tenant-edit fragment ---
+
+[form.app.typeLabel]
+other = "Түрі"
+
+[form.app.typeHint]
+other = "Қолданба түрін өзгертуге болмайды. Түрді өзгерту үшін жойып, қайта жасаңыз."
+
+[form.app.nameLabel]
+other = "Атауы"
+
+[form.app.nameHint]
+other = "Атауды өзгертуге болмайды. Атауды өзгерту үшін жойып, қайта жасаңыз."
+
+[form.app.noFields]
+other = "Бұл қолданба үшін өңделетін спек өрістері жоқ."
+
+[form.tenant.namespaceLabel]
+other = "Кеңістік"
+
+[form.tenant.namespaceHint]
+other = "Жұмыс кеңістігін өзгертуге болмайды. Атауды өзгерту үшін жойып, қайта жасаңыз."
+
+[form.tenant.noFields]
+other = "Бұл тенант үшін өңделетін спек өрістері жоқ."
+
+[form.app.editTitle]
+other = "{{.Name}} өңдеу"
+
+[form.app.closeEditDialog]
+other = "Қолданба өңдеу терезесін жабу"
+
+[form.tenant.editTitle]
+other = "{{.Name}} өңдеу"
+
+[form.tenant.closeEditDialog]
+other = "Тенант өңдеу терезесін жабу"
+
+# --- Profile page ---
+
+[page.profile.noGroups]
+other = "(жоқ)"
+
+[page.profile.howRbac]
+other = "RBAC қалай қолданылады"
+
+[page.profile.passthrough]
+other = "OpenID Connect токеніңіз Kubernetes API серверіне Authorization: Bearer тіркелгі деректері ретінде тікелей жіберіледі. API сервері токенді сіз кірген Keycloak арқылы тексереді. cozytempl ServiceAccount кластерге ешқандай рұқсаты жоқ — cozytempl процесінің бұзылуы сізді немесе басқа біреуді жалған сеппейді. Токен мерзімі аяқталмас бұрын автоматты түрде жаңартылады, сондықтан белсенді сеанстар қайта кіруді қажет етпейді."
+
+[page.profile.byok]
+other = "Сіз kubeconfig жүктеп кіруді растадыңыз. Ол сеанс cookie-да шифрланған түрде сақталады және Kubernetes API-ге әрбір сұраныста қолданылады. cozytempl ServiceAccount кластерге өз рұқсаты жоқ — барлық рұқсаттар сіз берген kubeconfig-тен алынады. Сақталған kubeconfig-ті жою үшін жүйеден шығыңыз."
+
+[page.profile.impersonation]
+other = "Сіздің атыңыздан жасалған әрбір Kubernetes шақыруы имперсонациямен орындалады: cozytempl жоғарыдағы мәндерге тең Impersonate-User және Impersonate-Group тақырыптарын жібереді. API сервері RBAC-ты сіздің атыңыздан бағалайды, сондықтан сіз тек нақты қол жеткізе алатын ресурстарды ғана көресіз. Бұл режим ескірген және passthrough-мен алмастырылған."
+
+[page.profile.dev]
+other = "Әзірлеуші режимі қосулы. Аутентификация өшірілген. Әрбір сұраныс толық артықшылықпен жергілікті процесс ретінде орындалады. Бұл режимді ешқашан өндірістік немесе көп пайдаланушылы ортада іске қоспаңыз."
+
+[page.profile.devStrong]
+other = "Әзірлеуші режимі қосулы."
+
+[page.profile.unknown]
+other = "Белсенді аутентификация режимі танылмады. Бұл конфигурация қатесі — әкімшіге хабарласыңыз."
+
+# --- Kubeconfig upload page ---
+
+[page.kubeconfig.title]
+other = "kubeconfig жүктеу"
+
+[page.kubeconfig.modeIntro]
+other = "cozytempl bring-your-own-kubeconfig режимінде жұмыс істейді. Kubernetes кластеріне қол жеткізуді беретін kubeconfig файлын жүктеңіз; ол сеанс cookie-да шифрланған түрде сақталады және жүйеден шыққанша әрбір сұраныста қолданылады."
+
+[page.kubeconfig.hint1]
+other = "Kubeconfig статикалық токен немесе клиент сертификатын қолдануы керек. Exec плагиндері қабылданбайды — алдымен kubectl create token арқылы статикалық токен жасаңыз."
+
+[page.kubeconfig.hint2]
+other = "Өлшемі 32 КБ-мен шектелген. Артық контекстерді kubectl config view --minify --flatten арқылы алып тастаңыз."
+
+[page.kubeconfig.hint3]
+other = "Кластердің URL мекенжайы cozytempl подынан қол жетімді болуы керек."
+
+[page.kubeconfig.fileLabel]
+other = "kubeconfig файлы"
+
+[page.kubeconfig.submit]
+other = "Жүктеп, жалғастыру"
+
+# --- ARIA labels ---
+
+[aria.revealField]
+other = "{{.Field}} мәнін 30 секундқа ашу"
+
+[aria.copyField]
+other = "{{.Field}} мәнін алмасу буферіне көшіру"
+
+[aria.fieldHidden]
+other = "{{.Field}} мәні жасырылған"
+
+[aria.closeEditApp]
+other = "Қолданба өңдеу терезесін жабу"
+
+[aria.closeEditTenant]
+other = "Тенант өңдеу терезесін жабу"
+
+[aria.closeCreateTenant]
+other = "Тенант жасау терезесін жабу"
+
+[aria.closeCreateApp]
+other = "Қолданба жасау терезесін жабу"
