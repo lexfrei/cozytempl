@@ -7,8 +7,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lexfrei/cozytempl/internal/auth"
+	"github.com/lexfrei/cozytempl/internal/config"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 )
+
+// newTestSSEHandler creates an SSEHandler with nil watcher and baseCfg,
+// suitable for unit tests that do not exercise k8s connectivity.
+func newTestSSEHandler(t *testing.T) *SSEHandler {
+	t.Helper()
+
+	log := slog.New(slog.NewTextHandler(testingWriter{t}, nil))
+
+	return NewSSEHandler(nil, nil, config.AuthModeImpersonationLegacy, log)
+}
 
 // TestBuildMessageReturnsHTMLForAddedAndModified locks in the unified
 // resource-change protocol: both added and modified must carry fully
@@ -16,8 +28,7 @@ import (
 func TestBuildMessageReturnsHTMLForAddedAndModified(t *testing.T) {
 	t.Parallel()
 
-	log := slog.New(slog.NewTextHandler(testingWriter{t}, nil))
-	handler := NewSSEHandler(nil, nil, log)
+	handler := newTestSSEHandler(t)
 
 	cases := []struct {
 		name   string
@@ -85,8 +96,7 @@ func TestBuildMessageReturnsHTMLForAddedAndModified(t *testing.T) {
 func TestBuildMessageDeletedHasNoHTML(t *testing.T) {
 	t.Parallel()
 
-	log := slog.New(slog.NewTextHandler(testingWriter{t}, nil))
-	handler := NewSSEHandler(nil, nil, log)
+	handler := newTestSSEHandler(t)
 
 	evt := k8s.WatchEvent{
 		Type: k8s.WatchEventDeleted,
@@ -113,8 +123,7 @@ func TestBuildMessageDeletedHasNoHTML(t *testing.T) {
 func TestBuildMessageDropsAppsWithoutName(t *testing.T) {
 	t.Parallel()
 
-	log := slog.New(slog.NewTextHandler(testingWriter{t}, nil))
-	handler := NewSSEHandler(nil, nil, log)
+	handler := newTestSSEHandler(t)
 
 	evt := k8s.WatchEvent{
 		Type: k8s.WatchEventAdded,
@@ -131,10 +140,9 @@ func TestBuildMessageDropsAppsWithoutName(t *testing.T) {
 func TestAuthorizeTenantNilBaseCfgAllows(t *testing.T) {
 	t.Parallel()
 
-	log := slog.New(slog.NewTextHandler(testingWriter{t}, nil))
-	handler := NewSSEHandler(nil, nil, log)
+	handler := newTestSSEHandler(t)
 
-	err := handler.authorizeTenant(context.Background(), "alice", []string{"dev"}, "tenant-alice")
+	err := handler.authorizeTenant(context.Background(), &auth.UserContext{Username: "alice", Groups: []string{"dev"}}, "tenant-alice")
 	if err != nil {
 		t.Errorf("authorizeTenant with nil baseCfg should allow; got %v", err)
 	}

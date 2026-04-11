@@ -28,7 +28,7 @@ func (sch *SchemaHandler) List(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	schemas, err := sch.svc.List(req.Context(), usr.Username, usr.Groups)
+	schemas, err := sch.svc.List(req.Context(), usr)
 	if err != nil {
 		sch.log.Error("listing schemas", "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to list schemas")
@@ -50,7 +50,7 @@ func (sch *SchemaHandler) Get(writer http.ResponseWriter, req *http.Request) {
 
 	kind := req.PathValue("kind")
 
-	schema, err := sch.svc.Get(req.Context(), usr.Username, usr.Groups, kind)
+	schema, err := sch.svc.Get(req.Context(), usr, kind)
 	if err != nil {
 		sch.log.Error("getting schema", "kind", kind, "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to get schema")

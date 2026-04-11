@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/lexfrei/cozytempl/internal/auth"
+	"github.com/lexfrei/cozytempl/internal/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -47,16 +49,17 @@ func TenantCRDGVR() schema.GroupVersionResource {
 // via the apps.cozystack.io/v1alpha1 Tenant CRD.
 type TenantService struct {
 	baseCfg *rest.Config
+	mode    config.AuthMode
 }
 
 // NewTenantService creates a new tenant service.
-func NewTenantService(baseCfg *rest.Config) *TenantService {
-	return &TenantService{baseCfg: baseCfg}
+func NewTenantService(baseCfg *rest.Config, mode config.AuthMode) *TenantService {
+	return &TenantService{baseCfg: baseCfg, mode: mode}
 }
 
 // List returns all tenants visible to the user.
-func (tsv *TenantService) List(ctx context.Context, username string, groups []string) ([]Tenant, error) {
-	client, err := NewImpersonatingClient(tsv.baseCfg, username, groups)
+func (tsv *TenantService) List(ctx context.Context, usr *auth.UserContext) ([]Tenant, error) {
+	client, err := NewUserClient(tsv.baseCfg, usr, tsv.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +105,8 @@ func (tsv *TenantService) List(ctx context.Context, username string, groups []st
 }
 
 // Get returns a single tenant with details.
-func (tsv *TenantService) Get(ctx context.Context, username string, groups []string, name string) (*Tenant, error) {
-	client, err := NewImpersonatingClient(tsv.baseCfg, username, groups)
+func (tsv *TenantService) Get(ctx context.Context, usr *auth.UserContext, name string) (*Tenant, error) {
+	client, err := NewUserClient(tsv.baseCfg, usr, tsv.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -188,13 +191,13 @@ func findChildren(items []unstructured.Unstructured, parentNS string) []string {
 // back through a hidden form field so a concurrent write by another
 // user is rejected with 409 instead of silently clobbered.
 func (tsv *TenantService) GetSpecSnapshot(
-	ctx context.Context, username string, groups []string, namespace, name string,
+	ctx context.Context, usr *auth.UserContext, namespace, name string,
 ) (*SpecSnapshot, error) {
 	if namespace == "" {
 		return nil, ErrNamespaceRequired
 	}
 
-	client, err := NewImpersonatingClient(tsv.baseCfg, username, groups)
+	client, err := NewUserClient(tsv.baseCfg, usr, tsv.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -232,14 +235,14 @@ var reservedTenantSpecKeys = []string{"ns", "parent", "name"}
 // surfaced as k8s.ErrConflict. Pass "" to opt out of optimistic
 // concurrency (last-write-wins, historic behaviour).
 func (tsv *TenantService) Update(
-	ctx context.Context, username string, groups []string, namespace, name string,
+	ctx context.Context, usr *auth.UserContext, namespace, name string,
 	spec map[string]any, resourceVersion string,
 ) (*Tenant, error) {
 	if namespace == "" {
 		return nil, ErrNamespaceRequired
 	}
 
-	client, err := NewImpersonatingClient(tsv.baseCfg, username, groups)
+	client, err := NewUserClient(tsv.baseCfg, usr, tsv.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -291,8 +294,8 @@ func (tsv *TenantService) Update(
 }
 
 // Create creates a new tenant via the Tenant CRD.
-func (tsv *TenantService) Create(ctx context.Context, username string, groups []string, req CreateTenantRequest) (*Tenant, error) {
-	client, err := NewImpersonatingClient(tsv.baseCfg, username, groups)
+func (tsv *TenantService) Create(ctx context.Context, usr *auth.UserContext, req CreateTenantRequest) (*Tenant, error) {
+	client, err := NewUserClient(tsv.baseCfg, usr, tsv.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +349,7 @@ var ErrNamespaceRequired = errors.New("namespace required")
 // because Tenant CRs are namespaced — two different tenants can share
 // the same leaf name under different parents.
 func (tsv *TenantService) Delete(
-	ctx context.Context, username string, groups []string, namespace, name string,
+	ctx context.Context, usr *auth.UserContext, namespace, name string,
 ) error {
 	if IsRootTenant(name) {
 		return fmt.Errorf("%w: %s", ErrProtectedTenant, name)
@@ -356,7 +359,7 @@ func (tsv *TenantService) Delete(
 		return ErrNamespaceRequired
 	}
 
-	client, err := NewImpersonatingClient(tsv.baseCfg, username, groups)
+	client, err := NewUserClient(tsv.baseCfg, usr, tsv.mode)
 	if err != nil {
 		return err
 	}

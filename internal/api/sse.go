@@ -14,25 +14,27 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
+	"github.com/lexfrei/cozytempl/internal/config"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view/page"
 )
 
 // SSEHandler handles Server-Sent Events for real-time updates. It authorizes
-// each subscribe by doing an impersonated list against the requested tenant
+// each subscribe by doing a user-scoped list against the requested tenant
 // namespace — without this check any authenticated user could watch any
 // tenant's app stream just by passing ?tenant= in the query string.
 type SSEHandler struct {
 	watcher *k8s.Watcher
 	log     *slog.Logger
 	baseCfg *rest.Config
+	mode    config.AuthMode
 }
 
 // NewSSEHandler creates a new SSE handler. baseCfg is used to build
-// impersonated clients for the per-request tenant access check. Passing nil
+// user-scoped clients for the per-request tenant access check. Passing nil
 // disables authorization and should only be used in tests.
-func NewSSEHandler(watcher *k8s.Watcher, baseCfg *rest.Config, log *slog.Logger) *SSEHandler {
-	return &SSEHandler{watcher: watcher, log: log, baseCfg: baseCfg}
+func NewSSEHandler(watcher *k8s.Watcher, baseCfg *rest.Config, mode config.AuthMode, log *slog.Logger) *SSEHandler {
+	return &SSEHandler{watcher: watcher, log: log, baseCfg: baseCfg, mode: mode}
 }
 
 // ErrTenantAccessDenied is returned when a user tries to subscribe to a
@@ -82,7 +84,7 @@ func (ssh *SSEHandler) Stream(writer http.ResponseWriter, req *http.Request) {
 	// Authorization: verify the user can actually list resources in this
 	// tenant namespace before subscribing. Otherwise any authenticated user
 	// could peek at any tenant's updates just by knowing the namespace.
-	authErr := ssh.authorizeTenant(req.Context(), usr.Username, usr.Groups, tenant)
+	authErr := ssh.authorizeTenant(req.Context(), usr, tenant)
 	if authErr != nil {
 		ssh.log.Warn("SSE subscribe denied", "user", usr.Username, "tenant", tenant, "error", authErr)
 		Error(writer, http.StatusForbidden, "tenant access denied")
@@ -165,23 +167,22 @@ func parseLastEventID(raw string) int64 {
 	return id
 }
 
-// authorizeTenant returns nil if the impersonated user can list HelmReleases
-// in the tenant namespace. A List with limit=1 is used to keep the check
-// cheap and to surface the same RBAC error users would see in the UI.
+// authorizeTenant returns nil if the user can list HelmReleases in the tenant
+// namespace. A List with limit=1 is used to keep the check cheap and to
+// surface the same RBAC error users would see in the UI.
 // Returns ErrTenantAccessDenied wrapped with the upstream error details.
 func (ssh *SSEHandler) authorizeTenant(
 	ctx context.Context,
-	username string,
-	groups []string,
+	usr *auth.UserContext,
 	tenant string,
 ) error {
 	if ssh.baseCfg == nil {
 		return nil
 	}
 
-	client, err := k8s.NewImpersonatingClient(ssh.baseCfg, username, groups)
+	client, err := k8s.NewUserClient(ssh.baseCfg, usr, ssh.mode)
 	if err != nil {
-		return fmt.Errorf("building impersonating client: %w", err)
+		return fmt.Errorf("building user client: %w", err)
 	}
 
 	_, listErr := client.Resource(k8s.HelmReleaseGVR()).Namespace(tenant).List(ctx, metav1.ListOptions{

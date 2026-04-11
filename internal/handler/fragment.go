@@ -21,7 +21,7 @@ func (pgh *PageHandler) AppTableFragment(writer http.ResponseWriter, req *http.R
 
 	tenant := req.URL.Query().Get("tenant")
 
-	appList, err := pgh.appSvc.List(req.Context(), usr.Username, usr.Groups, tenant)
+	appList, err := pgh.appSvc.List(req.Context(), usr, tenant)
 	if err != nil {
 		pgh.log.Error("listing apps for fragment", "tenant", tenant, "error", err)
 
@@ -58,7 +58,7 @@ func (pgh *PageHandler) SchemaFieldsFragment(writer http.ResponseWriter, req *ht
 		return
 	}
 
-	schema, err := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, kind)
+	schema, err := pgh.schemaSvc.Get(req.Context(), usr, kind)
 	if err != nil {
 		pgh.log.Error("fetching schema", "kind", kind, "error", err)
 		http.Error(writer, "schema not found", http.StatusNotFound)
@@ -93,7 +93,7 @@ func (pgh *PageHandler) AppEditFragment(writer http.ResponseWriter, req *http.Re
 		return
 	}
 
-	app, err := pgh.appSvc.Get(req.Context(), usr.Username, usr.Groups, tenant, name)
+	app, err := pgh.appSvc.Get(req.Context(), usr, tenant, name)
 	if err != nil {
 		pgh.log.Error("loading app for edit", "tenant", tenant, "name", name, "error", err)
 		http.Error(writer, "application not found", http.StatusNotFound)
@@ -101,7 +101,7 @@ func (pgh *PageHandler) AppEditFragment(writer http.ResponseWriter, req *http.Re
 		return
 	}
 
-	snap, specErr := pgh.appSvc.GetSpecSnapshot(req.Context(), usr.Username, usr.Groups, tenant, name)
+	snap, specErr := pgh.appSvc.GetSpecSnapshot(req.Context(), usr, tenant, name)
 
 	var currentSpec map[string]any
 
@@ -114,7 +114,7 @@ func (pgh *PageHandler) AppEditFragment(writer http.ResponseWriter, req *http.Re
 		resourceVersion = snap.ResourceVersion
 	}
 
-	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, app.Kind)
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, app.Kind)
 	if schemaErr != nil {
 		pgh.log.Debug("loading schema for app edit", "kind", app.Kind, "error", schemaErr)
 	}
@@ -149,7 +149,7 @@ func (pgh *PageHandler) TenantEditFragment(writer http.ResponseWriter, req *http
 	// The current tenant view is looked up under its workload namespace
 	// (what the sidebar / tenant list links to). Pull the full CR through
 	// TenantService.Get so we get DisplayName, Namespace, ParentNamespace.
-	tenant, err := pgh.tenantSvc.Get(req.Context(), usr.Username, usr.Groups, name)
+	tenant, err := pgh.tenantSvc.Get(req.Context(), usr, name)
 	if err != nil {
 		pgh.log.Error("loading tenant for edit", "name", name, "error", err)
 		http.Error(writer, "tenant not found", http.StatusNotFound)
@@ -159,7 +159,7 @@ func (pgh *PageHandler) TenantEditFragment(writer http.ResponseWriter, req *http
 
 	// Current spec from the impersonated CR read — the CRs live in the
 	// parent's workload namespace, hence the 'namespace' query param.
-	snap, specErr := pgh.tenantSvc.GetSpecSnapshot(req.Context(), usr.Username, usr.Groups, namespace, name)
+	snap, specErr := pgh.tenantSvc.GetSpecSnapshot(req.Context(), usr, namespace, name)
 
 	var currentSpec map[string]any
 
@@ -174,7 +174,7 @@ func (pgh *PageHandler) TenantEditFragment(writer http.ResponseWriter, req *http
 
 	// Schema is optional: if it fails we still render the modal with a
 	// "no editable fields" note so the user is not left without feedback.
-	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, tenantSchemaKind)
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, tenantSchemaKind)
 	if schemaErr != nil {
 		pgh.log.Debug("loading tenant schema for edit", "error", schemaErr)
 	}
@@ -195,7 +195,7 @@ func (pgh *PageHandler) MarketplaceFragment(writer http.ResponseWriter, req *htt
 		return
 	}
 
-	schemas, _ := pgh.schemaSvc.List(req.Context(), usr.Username, usr.Groups)
+	schemas, _ := pgh.schemaSvc.List(req.Context(), usr)
 
 	data := buildMarketplaceData(
 		schemas,
@@ -274,7 +274,7 @@ func (pgh *PageHandler) SecretRevealFragment(writer http.ResponseWriter, req *ht
 		return
 	}
 
-	app, err := pgh.appSvc.Get(req.Context(), usr.Username, usr.Groups, tenant, appName)
+	app, err := pgh.appSvc.Get(req.Context(), usr, tenant, appName)
 	if err != nil {
 		pgh.log.Error("loading app for secret reveal", "tenant", tenant, "app", appName, "error", err)
 		pgh.recordAudit(req, usr, audit.ActionSecretView, appName, tenant,

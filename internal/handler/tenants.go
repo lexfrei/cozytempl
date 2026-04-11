@@ -55,7 +55,7 @@ func (pgh *PageHandler) TenantsPage(writer http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	tenants, err := pgh.tenantSvc.List(req.Context(), usr.Username, usr.Groups)
+	tenants, err := pgh.tenantSvc.List(req.Context(), usr)
 	if err != nil {
 		pgh.log.Error("listing tenants for tenants page", "error", err)
 
@@ -67,7 +67,7 @@ func (pgh *PageHandler) TenantsPage(writer http.ResponseWriter, req *http.Reques
 		namespaces = append(namespaces, tenants[idx].Namespace)
 	}
 
-	usageMap := pgh.usageSvc.CollectAll(req.Context(), usr.Username, usr.Groups, namespaces)
+	usageMap := pgh.usageSvc.CollectAll(req.Context(), usr, namespaces)
 
 	items := make([]view.TenantWithUsage, 0, len(tenants))
 	metricsEnabled := false
@@ -84,7 +84,7 @@ func (pgh *PageHandler) TenantsPage(writer http.ResponseWriter, req *http.Reques
 		})
 	}
 
-	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, tenantSchemaKind)
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, tenantSchemaKind)
 	if schemaErr != nil {
 		pgh.log.Debug("fetching tenant schema", "error", schemaErr)
 	}
@@ -131,7 +131,7 @@ func (pgh *PageHandler) CreateTenant(writer http.ResponseWriter, req *http.Reque
 
 	spec := pgh.tenantSpec(req, usr)
 
-	_, err := pgh.tenantSvc.Create(req.Context(), usr.Username, usr.Groups, k8s.CreateTenantRequest{
+	_, err := pgh.tenantSvc.Create(req.Context(), usr, k8s.CreateTenantRequest{
 		Name:   form.Name,
 		Parent: form.Parent,
 		Spec:   spec,
@@ -186,7 +186,7 @@ func (pgh *PageHandler) parseTenantForm(writer http.ResponseWriter, req *http.Re
 }
 
 func (pgh *PageHandler) tenantSpec(req *http.Request, usr *auth.UserContext) map[string]any {
-	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, tenantSchemaKind)
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, tenantSchemaKind)
 
 	var fieldTypes map[string]string
 	if schemaErr == nil {
@@ -247,7 +247,7 @@ func (pgh *PageHandler) doUpdateTenant(
 	// MaxBytesReader and called ParseForm.
 	resourceVersion := req.FormValue(formFieldResourceVersion) //nolint:gosec // body capped by caller
 
-	_, err := pgh.tenantSvc.Update(req.Context(), usr.Username, usr.Groups, namespace, name, spec, resourceVersion)
+	_, err := pgh.tenantSvc.Update(req.Context(), usr, namespace, name, spec, resourceVersion)
 	if err != nil {
 		if errors.Is(err, k8s.ErrConflict) {
 			pgh.log.Info("conflict updating tenant", "ns", namespace, "name", name)
@@ -291,7 +291,7 @@ func (pgh *PageHandler) DeleteTenant(writer http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	err := pgh.tenantSvc.Delete(req.Context(), usr.Username, usr.Groups, namespace, name)
+	err := pgh.tenantSvc.Delete(req.Context(), usr, namespace, name)
 	if err != nil {
 		if errors.Is(err, k8s.ErrProtectedTenant) {
 			pgh.recordAudit(req, usr, audit.ActionTenantDelete, name, namespace,

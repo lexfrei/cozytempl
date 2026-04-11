@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lexfrei/cozytempl/internal/auth"
+	"github.com/lexfrei/cozytempl/internal/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -36,6 +38,7 @@ type SchemaService struct {
 	baseCfg *rest.Config
 	cache   map[string]schemaCacheEntry
 	mu      sync.RWMutex
+	mode    config.AuthMode
 }
 
 type schemaCacheEntry struct {
@@ -44,16 +47,17 @@ type schemaCacheEntry struct {
 }
 
 // NewSchemaService creates a new schema service.
-func NewSchemaService(baseCfg *rest.Config) *SchemaService {
+func NewSchemaService(baseCfg *rest.Config, mode config.AuthMode) *SchemaService {
 	return &SchemaService{
 		baseCfg: baseCfg,
 		cache:   make(map[string]schemaCacheEntry),
+		mode:    mode,
 	}
 }
 
 // List returns all available application schemas from ApplicationDefinitions.
-func (ssv *SchemaService) List(ctx context.Context, username string, groups []string) ([]AppSchema, error) {
-	client, err := NewImpersonatingClient(ssv.baseCfg, username, groups)
+func (ssv *SchemaService) List(ctx context.Context, usr *auth.UserContext) ([]AppSchema, error) {
+	client, err := NewUserClient(ssv.baseCfg, usr, ssv.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +87,7 @@ func (ssv *SchemaService) List(ctx context.Context, username string, groups []st
 // "MinecraftServer"): if the lowercase short-name lookup fails, we fall
 // back to listing every ApplicationDefinition and matching by
 // spec.application.kind. Results are cached either way.
-func (ssv *SchemaService) Get(ctx context.Context, username string, groups []string, kind string) (*AppSchema, error) {
+func (ssv *SchemaService) Get(ctx context.Context, usr *auth.UserContext, kind string) (*AppSchema, error) {
 	ssv.mu.RLock()
 	entry, exists := ssv.cache[kind]
 	ssv.mu.RUnlock()
@@ -92,7 +96,7 @@ func (ssv *SchemaService) Get(ctx context.Context, username string, groups []str
 		return entry.schema, nil
 	}
 
-	client, err := NewImpersonatingClient(ssv.baseCfg, username, groups)
+	client, err := NewUserClient(ssv.baseCfg, usr, ssv.mode)
 	if err != nil {
 		return nil, err
 	}

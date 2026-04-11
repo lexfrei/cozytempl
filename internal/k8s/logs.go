@@ -5,22 +5,25 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/lexfrei/cozytempl/internal/auth"
+	"github.com/lexfrei/cozytempl/internal/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/rest"
 )
 
-// LogService streams pod logs for UI consumption. The impersonated
-// identity is passed on every call so read permission follows normal
-// Kubernetes RBAC — if a user cannot `get pods/log` in the namespace,
-// the UI sees the same error upstream.
+// LogService streams pod logs for UI consumption. The user identity is
+// passed on every call so read permission follows normal Kubernetes RBAC —
+// if a user cannot `get pods/log` in the namespace, the UI sees the same
+// error upstream.
 type LogService struct {
 	baseCfg *rest.Config
+	mode    config.AuthMode
 }
 
 // NewLogService creates a new log service.
-func NewLogService(baseCfg *rest.Config) *LogService {
-	return &LogService{baseCfg: baseCfg}
+func NewLogService(baseCfg *rest.Config, mode config.AuthMode) *LogService {
+	return &LogService{baseCfg: baseCfg, mode: mode}
 }
 
 // PodInfo is a tiny pod summary used by the logs tab to populate the
@@ -35,7 +38,7 @@ type PodInfo struct {
 // Cozystack application.name label matching appName. Results are
 // sorted by name for stable rendering.
 func (lsv *LogService) ListPodsForApp(
-	ctx context.Context, username string, groups []string, namespace, appName string,
+	ctx context.Context, usr *auth.UserContext, namespace, appName string,
 ) ([]PodInfo, error) {
 	if namespace == "" {
 		return nil, ErrNamespaceRequired
@@ -45,7 +48,7 @@ func (lsv *LogService) ListPodsForApp(
 		return nil, fmt.Errorf("%w: invalid application name %q", ErrAppNotFound, appName)
 	}
 
-	client, err := NewImpersonatingClient(lsv.baseCfg, username, groups)
+	client, err := NewUserClient(lsv.baseCfg, usr, lsv.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +97,7 @@ func toPodInfo(obj *unstructured.Unstructured) PodInfo {
 // dependency on only client-go/dynamic + client-go/rest — which is
 // enough because the /log subresource is a plain text stream.
 func (lsv *LogService) TailLogs(
-	ctx context.Context, username string, groups []string,
+	ctx context.Context, usr *auth.UserContext,
 	namespace, pod, container string, tailLines int64,
 ) (string, error) {
 	if namespace == "" || pod == "" {
@@ -105,12 +108,13 @@ func (lsv *LogService) TailLogs(
 		return "", fmt.Errorf("%w: invalid pod name %q", ErrAppNotFound, pod)
 	}
 
-	// Build an impersonated REST client pointed at the core API group.
-	cfg := rest.CopyConfig(lsv.baseCfg)
-	cfg.Impersonate = rest.ImpersonationConfig{
-		UserName: username,
-		Groups:   groups,
+	// Build a user-scoped REST config using the same auth logic as
+	// NewUserClient, then layer the log-specific settings on top.
+	cfg, err := buildUserRESTConfig(lsv.baseCfg, usr, lsv.mode)
+	if err != nil {
+		return "", fmt.Errorf("building user rest config: %w", err)
 	}
+
 	cfg.APIPath = "/api"
 	cfg.GroupVersion = &corev1GV
 	cfg.NegotiatedSerializer = basicSerializer{}

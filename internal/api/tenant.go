@@ -28,7 +28,7 @@ func (tnh *TenantHandler) List(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	tenants, err := tnh.svc.List(req.Context(), usr.Username, usr.Groups)
+	tenants, err := tnh.svc.List(req.Context(), usr)
 	if err != nil {
 		tnh.log.Error("listing tenants", "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to list tenants")
@@ -50,7 +50,7 @@ func (tnh *TenantHandler) Get(writer http.ResponseWriter, req *http.Request) {
 
 	name := req.PathValue("name")
 
-	tenant, err := tnh.svc.Get(req.Context(), usr.Username, usr.Groups, name)
+	tenant, err := tnh.svc.Get(req.Context(), usr, name)
 	if err != nil {
 		tnh.log.Error("getting tenant", "name", name, "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to get tenant")
@@ -79,7 +79,7 @@ func (tnh *TenantHandler) Create(writer http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	tenant, err := tnh.svc.Create(req.Context(), usr.Username, usr.Groups, body)
+	tenant, err := tnh.svc.Create(req.Context(), usr, body)
 	if err != nil {
 		tnh.log.Error("creating tenant", "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to create tenant")
@@ -102,7 +102,7 @@ func (tnh *TenantHandler) Delete(writer http.ResponseWriter, req *http.Request) 
 	name := req.PathValue("name")
 	namespace := req.URL.Query().Get("namespace")
 
-	err := tnh.svc.Delete(req.Context(), usr.Username, usr.Groups, namespace, name)
+	err := tnh.svc.Delete(req.Context(), usr, namespace, name)
 	if err != nil {
 		tnh.log.Error("deleting tenant", "namespace", namespace, "name", name, "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to delete tenant")

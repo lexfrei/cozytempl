@@ -6,6 +6,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/lexfrei/cozytempl/internal/auth"
+	"github.com/lexfrei/cozytempl/internal/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -18,11 +20,12 @@ import (
 // so a user only sees events in namespaces they have permission on.
 type EventService struct {
 	baseCfg *rest.Config
+	mode    config.AuthMode
 }
 
 // NewEventService creates a new event service.
-func NewEventService(baseCfg *rest.Config) *EventService {
-	return &EventService{baseCfg: baseCfg}
+func NewEventService(baseCfg *rest.Config, mode config.AuthMode) *EventService {
+	return &EventService{baseCfg: baseCfg, mode: mode}
 }
 
 func eventGVR() schema.GroupVersionResource {
@@ -32,13 +35,13 @@ func eventGVR() schema.GroupVersionResource {
 // ListInNamespace returns the most recent events in the given namespace,
 // sorted newest-first. limit caps the returned slice after sorting.
 func (evs *EventService) ListInNamespace(
-	ctx context.Context, username string, groups []string, namespace string, limit int,
+	ctx context.Context, usr *auth.UserContext, namespace string, limit int,
 ) ([]Event, error) {
 	if namespace == "" {
 		return nil, ErrNamespaceRequired
 	}
 
-	client, err := NewImpersonatingClient(evs.baseCfg, username, groups)
+	client, err := NewUserClient(evs.baseCfg, usr, evs.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -56,13 +59,13 @@ func (evs *EventService) ListInNamespace(
 // because the K8s fieldSelector for events does not reliably support
 // involvedObject.name across all clusters.
 func (evs *EventService) ListForObject(
-	ctx context.Context, username string, groups []string, namespace, name string, limit int,
+	ctx context.Context, usr *auth.UserContext, namespace, name string, limit int,
 ) ([]Event, error) {
 	if namespace == "" {
 		return nil, ErrNamespaceRequired
 	}
 
-	client, err := NewImpersonatingClient(evs.baseCfg, username, groups)
+	client, err := NewUserClient(evs.baseCfg, usr, evs.mode)
 	if err != nil {
 		return nil, err
 	}

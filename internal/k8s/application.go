@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lexfrei/cozytempl/internal/auth"
+	"github.com/lexfrei/cozytempl/internal/config"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -69,11 +71,12 @@ type SpecSnapshot struct {
 type ApplicationService struct {
 	baseCfg   *rest.Config
 	schemaSvc *SchemaService
+	mode      config.AuthMode
 }
 
 // NewApplicationService creates a new application service.
-func NewApplicationService(baseCfg *rest.Config, schemaSvc *SchemaService) *ApplicationService {
-	return &ApplicationService{baseCfg: baseCfg, schemaSvc: schemaSvc}
+func NewApplicationService(baseCfg *rest.Config, schemaSvc *SchemaService, mode config.AuthMode) *ApplicationService {
+	return &ApplicationService{baseCfg: baseCfg, schemaSvc: schemaSvc, mode: mode}
 }
 
 // AppListLimit caps how many applications a single List call
@@ -103,9 +106,9 @@ type ApplicationList struct {
 // ("why does this filter match 3 of 10 000 apps?"). Better to
 // return a bounded window and surface the truncation warning.
 func (asv *ApplicationService) List(
-	ctx context.Context, username string, groups []string, tenant string,
+	ctx context.Context, usr *auth.UserContext, tenant string,
 ) (ApplicationList, error) {
-	client, err := NewImpersonatingClient(asv.baseCfg, username, groups)
+	client, err := NewUserClient(asv.baseCfg, usr, asv.mode)
 	if err != nil {
 		return ApplicationList{}, err
 	}
@@ -136,13 +139,13 @@ func (asv *ApplicationService) List(
 
 // Get returns a single application with full details.
 func (asv *ApplicationService) Get(
-	ctx context.Context, username string, groups []string, tenant, name string,
+	ctx context.Context, usr *auth.UserContext, tenant, name string,
 ) (*Application, error) {
 	if !isValidLabelValue(name) {
 		return nil, fmt.Errorf("%w: invalid application name %q", ErrAppNotFound, name)
 	}
 
-	client, err := NewImpersonatingClient(asv.baseCfg, username, groups)
+	client, err := NewUserClient(asv.baseCfg, usr, asv.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -160,16 +163,16 @@ func (asv *ApplicationService) Get(
 	}
 
 	app := helmReleaseToApplication(&hrList.Items[0], tenant)
-	app.ConnectionInfo = asv.getConnectionInfo(ctx, client, username, groups, tenant, name, app.Kind)
+	app.ConnectionInfo = asv.getConnectionInfo(ctx, client, usr, tenant, name, app.Kind)
 
 	return &app, nil
 }
 
 // Create creates a new application via its Cozystack CRD.
 func (asv *ApplicationService) Create(
-	ctx context.Context, username string, groups []string, tenant string, req CreateApplicationRequest,
+	ctx context.Context, usr *auth.UserContext, tenant string, req CreateApplicationRequest,
 ) (*Application, error) {
-	client, err := NewImpersonatingClient(asv.baseCfg, username, groups)
+	client, err := NewUserClient(asv.baseCfg, usr, asv.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -206,13 +209,13 @@ func (asv *ApplicationService) Create(
 // the same object between this call and the Update, the API
 // server returns 409 Conflict.
 func (asv *ApplicationService) GetSpecSnapshot(
-	ctx context.Context, username string, groups []string, tenant, name string,
+	ctx context.Context, usr *auth.UserContext, tenant, name string,
 ) (*SpecSnapshot, error) {
 	if !isValidLabelValue(name) {
 		return nil, fmt.Errorf("%w: invalid application name %q", ErrAppNotFound, name)
 	}
 
-	client, err := NewImpersonatingClient(asv.baseCfg, username, groups)
+	client, err := NewUserClient(asv.baseCfg, usr, asv.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -252,9 +255,9 @@ func (asv *ApplicationService) GetSpecSnapshot(
 // The 409 is surfaced as ErrConflict so callers can give the
 // user a specific "reload and retry" message.
 func (asv *ApplicationService) Update(
-	ctx context.Context, username string, groups []string, tenant, name string, req UpdateApplicationRequest,
+	ctx context.Context, usr *auth.UserContext, tenant, name string, req UpdateApplicationRequest,
 ) (*Application, error) {
-	client, err := NewImpersonatingClient(asv.baseCfg, username, groups)
+	client, err := NewUserClient(asv.baseCfg, usr, asv.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -299,9 +302,9 @@ func (asv *ApplicationService) Update(
 
 // Delete removes an application via its Cozystack CRD.
 func (asv *ApplicationService) Delete(
-	ctx context.Context, username string, groups []string, tenant, name string,
+	ctx context.Context, usr *auth.UserContext, tenant, name string,
 ) error {
-	client, err := NewImpersonatingClient(asv.baseCfg, username, groups)
+	client, err := NewUserClient(asv.baseCfg, usr, asv.mode)
 	if err != nil {
 		return err
 	}
@@ -345,14 +348,14 @@ func (asv *ApplicationService) findAppKind(
 }
 
 func (asv *ApplicationService) getConnectionInfo(
-	ctx context.Context, client dynamic.Interface, username string, groups []string, tenant, name, kind string,
+	ctx context.Context, client dynamic.Interface, usr *auth.UserContext, tenant, name, kind string,
 ) map[string]string {
 	result := make(map[string]string)
 
 	// Fetch the ApplicationDefinition as the requesting user, not as the
 	// baked-in dev-admin — otherwise anyone who could hit GetConnectionInfo
 	// could read ApplicationDefinition metadata outside their RBAC scope.
-	appDef, err := asv.schemaSvc.Get(ctx, username, groups, kind)
+	appDef, err := asv.schemaSvc.Get(ctx, usr, kind)
 	if err == nil {
 		for _, tmpl := range appDef.SecretTemplates {
 			secretName := strings.ReplaceAll(tmpl, "{{ .name }}", name)

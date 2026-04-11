@@ -80,12 +80,12 @@ func run() error {
 		return err
 	}
 
-	tenantSvc := k8s.NewTenantService(k8sCfg)
-	schemaSvc := k8s.NewSchemaService(k8sCfg)
-	appSvc := k8s.NewApplicationService(k8sCfg, schemaSvc)
-	usageSvc := k8s.NewUsageService(k8sCfg)
-	eventSvc := k8s.NewEventService(k8sCfg)
-	logSvc := k8s.NewLogService(k8sCfg)
+	tenantSvc := k8s.NewTenantService(k8sCfg, cfg.AuthMode)
+	schemaSvc := k8s.NewSchemaService(k8sCfg, cfg.AuthMode)
+	appSvc := k8s.NewApplicationService(k8sCfg, schemaSvc, cfg.AuthMode)
+	usageSvc := k8s.NewUsageService(k8sCfg, cfg.AuthMode)
+	eventSvc := k8s.NewEventService(k8sCfg, cfg.AuthMode)
+	logSvc := k8s.NewLogService(k8sCfg, cfg.AuthMode)
 	watcher := k8s.NewWatcher(k8sCfg, log)
 
 	err = watcher.Start(ctx)
@@ -126,7 +126,7 @@ func run() error {
 		TenantHandler: api.NewTenantHandler(tenantSvc, log),
 		AppHandler:    api.NewApplicationHandler(appSvc, log),
 		SchemaHandler: api.NewSchemaHandler(schemaSvc, log),
-		SSEHandler:    api.NewSSEHandler(watcher, k8sCfg, log),
+		SSEHandler:    api.NewSSEHandler(watcher, k8sCfg, cfg.AuthMode, log),
 		PageHandler:   pageHandler,
 		I18n:          i18nBundle,
 		StaticFS:      static.FS,

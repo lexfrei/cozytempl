@@ -94,7 +94,7 @@ func (pgh *PageHandler) doCreateApp(
 	tenantNS, appName, appKind string,
 ) {
 	// Fetch schema to know field types for correct JSON encoding
-	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, appKind)
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, appKind)
 	if schemaErr != nil {
 		pgh.log.Error("fetching schema for create", "kind", appKind, "error", schemaErr)
 		pgh.renderErrorToast(writer, req, "Failed to load schema for "+appKind)
@@ -110,7 +110,7 @@ func (pgh *PageHandler) doCreateApp(
 		Spec: extractSpecFromForm(req, fieldTypes),
 	}
 
-	_, err := pgh.appSvc.Create(req.Context(), usr.Username, usr.Groups, tenantNS, createReq)
+	_, err := pgh.appSvc.Create(req.Context(), usr, tenantNS, createReq)
 	if err != nil {
 		// Log full error context server-side; show the user a generic
 		// message so Kubernetes RBAC denials don't leak resource names
@@ -237,7 +237,7 @@ func (pgh *PageHandler) doUpdateApp(
 ) {
 	// Kind is looked up via the service, not supplied by the client, so
 	// the user cannot change it mid-edit.
-	snap, specErr := pgh.appSvc.GetSpecSnapshot(req.Context(), usr.Username, usr.Groups, tenantNS, appName)
+	snap, specErr := pgh.appSvc.GetSpecSnapshot(req.Context(), usr, tenantNS, appName)
 	if specErr != nil {
 		pgh.log.Error("loading app for update", "tenant", tenantNS, "name", appName, "error", specErr)
 		pgh.renderErrorToast(writer, req,
@@ -248,7 +248,7 @@ func (pgh *PageHandler) doUpdateApp(
 
 	kind := snap.Kind
 
-	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, kind)
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, kind)
 	if schemaErr != nil {
 		pgh.log.Error("loading schema for update", "kind", kind, "error", schemaErr)
 		pgh.renderErrorToast(writer, req, "Failed to load schema for "+kind)
@@ -266,7 +266,7 @@ func (pgh *PageHandler) doUpdateApp(
 	// already called ParseForm, so the body size cap is in effect.
 	resourceVersion := req.FormValue(formFieldResourceVersion) //nolint:gosec // body already capped by caller
 
-	_, err := pgh.appSvc.Update(req.Context(), usr.Username, usr.Groups, tenantNS, appName,
+	_, err := pgh.appSvc.Update(req.Context(), usr, tenantNS, appName,
 		k8s.UpdateApplicationRequest{Spec: newSpec, ResourceVersion: resourceVersion})
 	if err != nil {
 		if errors.Is(err, k8s.ErrConflict) {
@@ -306,7 +306,7 @@ func (pgh *PageHandler) DeleteApp(writer http.ResponseWriter, req *http.Request)
 	tenantNS := req.PathValue("tenant")
 	appName := req.PathValue("name")
 
-	err := pgh.appSvc.Delete(req.Context(), usr.Username, usr.Groups, tenantNS, appName)
+	err := pgh.appSvc.Delete(req.Context(), usr, tenantNS, appName)
 	if err != nil {
 		pgh.log.Error("deleting app", "tenant", tenantNS, "name", appName, "error", err)
 		pgh.recordAudit(req, usr, audit.ActionAppDelete, appName, tenantNS,

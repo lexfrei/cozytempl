@@ -30,7 +30,7 @@ func (aph *ApplicationHandler) List(writer http.ResponseWriter, req *http.Reques
 
 	tenant := req.PathValue("tenant")
 
-	apps, err := aph.svc.List(req.Context(), usr.Username, usr.Groups, tenant)
+	apps, err := aph.svc.List(req.Context(), usr, tenant)
 	if err != nil {
 		aph.log.Error("listing apps", "tenant", tenant, "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to list applications")
@@ -53,7 +53,7 @@ func (aph *ApplicationHandler) Get(writer http.ResponseWriter, req *http.Request
 	tenant := req.PathValue("tenant")
 	name := req.PathValue("name")
 
-	application, err := aph.svc.Get(req.Context(), usr.Username, usr.Groups, tenant, name)
+	application, err := aph.svc.Get(req.Context(), usr, tenant, name)
 	if err != nil {
 		aph.log.Error("getting app", "tenant", tenant, "name", name, "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to get application")
@@ -84,7 +84,7 @@ func (aph *ApplicationHandler) Create(writer http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	application, err := aph.svc.Create(req.Context(), usr.Username, usr.Groups, tenant, body)
+	application, err := aph.svc.Create(req.Context(), usr, tenant, body)
 	if err != nil {
 		aph.log.Error("creating app", "tenant", tenant, "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to create application")
@@ -116,7 +116,7 @@ func (aph *ApplicationHandler) Update(writer http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	application, err := aph.svc.Update(req.Context(), usr.Username, usr.Groups, tenant, name, body)
+	application, err := aph.svc.Update(req.Context(), usr, tenant, name, body)
 	if err != nil {
 		aph.log.Error("updating app", "tenant", tenant, "name", name, "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to update application")
@@ -139,7 +139,7 @@ func (aph *ApplicationHandler) Delete(writer http.ResponseWriter, req *http.Requ
 	tenant := req.PathValue("tenant")
 	name := req.PathValue("name")
 
-	err := aph.svc.Delete(req.Context(), usr.Username, usr.Groups, tenant, name)
+	err := aph.svc.Delete(req.Context(), usr, tenant, name)
 	if err != nil {
 		aph.log.Error("deleting app", "tenant", tenant, "name", name, "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to delete application")

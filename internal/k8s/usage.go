@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/lexfrei/cozytempl/internal/auth"
+	"github.com/lexfrei/cozytempl/internal/config"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -29,11 +31,12 @@ type TenantUsage struct {
 // UsageService reads resource usage per tenant namespace.
 type UsageService struct {
 	baseCfg *rest.Config
+	mode    config.AuthMode
 }
 
 // NewUsageService creates a new usage service.
-func NewUsageService(baseCfg *rest.Config) *UsageService {
-	return &UsageService{baseCfg: baseCfg}
+func NewUsageService(baseCfg *rest.Config, mode config.AuthMode) *UsageService {
+	return &UsageService{baseCfg: baseCfg, mode: mode}
 }
 
 // PodGVR returns the GVR for core pods.
@@ -62,13 +65,13 @@ func ResourceQuotaGVR() schema.GroupVersionResource {
 // RBAC-denied read — callers should treat that as "not shown" rather
 // than a hard error.
 func (usv *UsageService) ListQuotas(
-	ctx context.Context, username string, groups []string, namespace string,
+	ctx context.Context, usr *auth.UserContext, namespace string,
 ) ([]ResourceQuotaEntry, error) {
 	if namespace == "" {
 		return nil, ErrNamespaceRequired
 	}
 
-	client, err := NewImpersonatingClient(usv.baseCfg, username, groups)
+	client, err := NewUserClient(usv.baseCfg, usr, usv.mode)
 	if err != nil {
 		return nil, err
 	}
@@ -121,9 +124,9 @@ func flattenQuota(obj *unstructured.Unstructured) []ResourceQuotaEntry {
 
 // Collect returns usage stats for a single tenant namespace.
 func (usv *UsageService) Collect(
-	ctx context.Context, username string, groups []string, namespace string,
+	ctx context.Context, usr *auth.UserContext, namespace string,
 ) (TenantUsage, error) {
-	client, err := NewImpersonatingClient(usv.baseCfg, username, groups)
+	client, err := NewUserClient(usv.baseCfg, usr, usv.mode)
 	if err != nil {
 		return TenantUsage{Namespace: namespace}, err
 	}
@@ -164,12 +167,12 @@ func (usv *UsageService) Collect(
 
 // CollectAll returns usage for multiple tenant namespaces.
 func (usv *UsageService) CollectAll(
-	ctx context.Context, username string, groups []string, namespaces []string,
+	ctx context.Context, usr *auth.UserContext, namespaces []string,
 ) map[string]TenantUsage {
 	result := make(map[string]TenantUsage, len(namespaces))
 
 	for _, namespace := range namespaces {
-		usage, err := usv.Collect(ctx, username, groups, namespace)
+		usage, err := usv.Collect(ctx, usr, namespace)
 		if err != nil {
 			result[namespace] = TenantUsage{Namespace: namespace}
 

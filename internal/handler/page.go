@@ -91,7 +91,7 @@ func (pgh *PageHandler) Dashboard(writer http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	tenants, err := pgh.tenantSvc.List(req.Context(), usr.Username, usr.Groups)
+	tenants, err := pgh.tenantSvc.List(req.Context(), usr)
 	if err != nil {
 		pgh.log.Error("listing tenants for dashboard", "error", err)
 
@@ -139,9 +139,9 @@ func (pgh *PageHandler) TenantPage(writer http.ResponseWriter, req *http.Request
 
 	tenantNS := req.PathValue("tenant")
 
-	tenants, _ := pgh.tenantSvc.List(req.Context(), usr.Username, usr.Groups)
+	tenants, _ := pgh.tenantSvc.List(req.Context(), usr)
 
-	tenant, err := pgh.tenantSvc.Get(req.Context(), usr.Username, usr.Groups, tenantNS)
+	tenant, err := pgh.tenantSvc.Get(req.Context(), usr, tenantNS)
 	if err != nil {
 		pgh.log.Error("getting tenant", "tenant", tenantNS, "error", err)
 		pgh.renderError(writer, req, usr.Username, tenants, http.StatusNotFound,
@@ -180,9 +180,9 @@ func (pgh *PageHandler) AppDetailPage(writer http.ResponseWriter, req *http.Requ
 		tab = "overview"
 	}
 
-	tenants, _ := pgh.tenantSvc.List(req.Context(), usr.Username, usr.Groups)
+	tenants, _ := pgh.tenantSvc.List(req.Context(), usr)
 
-	app, err := pgh.appSvc.Get(req.Context(), usr.Username, usr.Groups, tenantNS, appName)
+	app, err := pgh.appSvc.Get(req.Context(), usr, tenantNS, appName)
 	if err != nil {
 		pgh.log.Error("getting app", "tenant", tenantNS, "app", appName, "error", err)
 		pgh.renderError(writer, req, usr.Username, tenants, http.StatusNotFound,
@@ -227,7 +227,7 @@ func (pgh *PageHandler) ProfilePage(writer http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	tenants, _ := pgh.tenantSvc.List(req.Context(), usr.Username, usr.Groups)
+	tenants, _ := pgh.tenantSvc.List(req.Context(), usr)
 
 	content := page.Profile(usr)
 	pgh.render(writer, req, usr.Username, tenants, "profile", "", content)
@@ -240,8 +240,8 @@ func (pgh *PageHandler) MarketplacePage(writer http.ResponseWriter, req *http.Re
 		return
 	}
 
-	tenants, _ := pgh.tenantSvc.List(req.Context(), usr.Username, usr.Groups)
-	schemas, _ := pgh.schemaSvc.List(req.Context(), usr.Username, usr.Groups)
+	tenants, _ := pgh.tenantSvc.List(req.Context(), usr)
+	schemas, _ := pgh.schemaSvc.List(req.Context(), usr)
 
 	categoryFilter := req.URL.Query().Get("category")
 	tagFilter := req.URL.Query().Get("tag")
@@ -264,7 +264,7 @@ func (pgh *PageHandler) NotFoundPage(writer http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	tenants, _ := pgh.tenantSvc.List(req.Context(), usr.Username, usr.Groups)
+	tenants, _ := pgh.tenantSvc.List(req.Context(), usr)
 	pgh.renderError(writer, req, usr.Username, tenants, http.StatusNotFound,
 		"Page not found",
 		"The page '"+req.URL.Path+"' does not exist. Use the navigation on the left or head back to the dashboard.")
@@ -440,7 +440,7 @@ func (pgh *PageHandler) buildAppDetailData(
 	switch tab {
 	case "events":
 		events, err := pgh.eventSvc.ListForObject(
-			req.Context(), usr.Username, usr.Groups, tenantNS, appName, appEventLimit,
+			req.Context(), usr, tenantNS, appName, appEventLimit,
 		)
 		if err != nil {
 			pgh.log.Debug("listing app events", "tenant", tenantNS, "app", appName, "error", err)
@@ -466,7 +466,7 @@ func (pgh *PageHandler) buildAppDetailData(
 func (pgh *PageHandler) fetchAppLogs(
 	req *http.Request, usr *auth.UserContext, tenantNS, appName string,
 ) ([]k8s.PodInfo, string, string, string, string) {
-	pods, listErr := pgh.logSvc.ListPodsForApp(req.Context(), usr.Username, usr.Groups, tenantNS, appName)
+	pods, listErr := pgh.logSvc.ListPodsForApp(req.Context(), usr, tenantNS, appName)
 	if listErr != nil {
 		pgh.log.Debug("listing pods for logs tab", "tenant", tenantNS, "app", appName, "error", listErr)
 
@@ -501,7 +501,7 @@ func (pgh *PageHandler) fetchAppLogs(
 		selectedContainer = chosen.Containers[0]
 	}
 
-	tail, tailErr := pgh.logSvc.TailLogs(req.Context(), usr.Username, usr.Groups, tenantNS,
+	tail, tailErr := pgh.logSvc.TailLogs(req.Context(), usr, tenantNS,
 		selectedPod, selectedContainer, appLogTailLines)
 	if tailErr != nil {
 		pgh.log.Debug("tailing logs", "pod", selectedPod, "container", selectedContainer, "error", tailErr)
@@ -522,8 +522,8 @@ func (pgh *PageHandler) fetchAppLogs(
 func (pgh *PageHandler) buildTenantPageData(
 	req *http.Request, usr *auth.UserContext, tenantNS string, tenant *k8s.Tenant, allTenants []k8s.Tenant,
 ) view.TenantPageData {
-	appList, _ := pgh.appSvc.List(req.Context(), usr.Username, usr.Groups, tenantNS)
-	schemas, _ := pgh.schemaSvc.List(req.Context(), usr.Username, usr.Groups)
+	appList, _ := pgh.appSvc.List(req.Context(), usr, tenantNS)
+	schemas, _ := pgh.schemaSvc.List(req.Context(), usr)
 
 	// Direct children of this tenant, scoped to what the user can see:
 	// reuse the already-listed tenants slice so the child list inherits
@@ -537,18 +537,18 @@ func (pgh *PageHandler) buildTenantPageData(
 	}
 
 	events, evtErr := pgh.eventSvc.ListInNamespace(
-		req.Context(), usr.Username, usr.Groups, tenantNS, tenantEventLimit,
+		req.Context(), usr, tenantNS, tenantEventLimit,
 	)
 	if evtErr != nil {
 		pgh.log.Debug("listing tenant events", "tenant", tenantNS, "error", evtErr)
 	}
 
-	usage, usageErr := pgh.usageSvc.Collect(req.Context(), usr.Username, usr.Groups, tenantNS)
+	usage, usageErr := pgh.usageSvc.Collect(req.Context(), usr, tenantNS)
 	if usageErr != nil {
 		pgh.log.Debug("collecting tenant usage", "tenant", tenantNS, "error", usageErr)
 	}
 
-	quotas, quotaErr := pgh.usageSvc.ListQuotas(req.Context(), usr.Username, usr.Groups, tenantNS)
+	quotas, quotaErr := pgh.usageSvc.ListQuotas(req.Context(), usr, tenantNS)
 	if quotaErr != nil {
 		pgh.log.Debug("listing tenant quotas", "tenant", tenantNS, "error", quotaErr)
 	}
@@ -574,7 +574,7 @@ func (pgh *PageHandler) aggregateApps(
 	var allApps []k8s.Application
 
 	for idx := range tenants {
-		appList, err := pgh.appSvc.List(req.Context(), usr.Username, usr.Groups, tenants[idx].Namespace)
+		appList, err := pgh.appSvc.List(req.Context(), usr, tenants[idx].Namespace)
 		if err != nil {
 			pgh.log.Error("listing apps", "tenant", tenants[idx].Namespace, "error", err)
 
