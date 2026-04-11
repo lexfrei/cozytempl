@@ -11,6 +11,7 @@ import { initModals, openModal, closeModal } from "./modal";
 import { initClipboard } from "./clipboard";
 import { initSSE } from "./sse";
 import { initHtmxFeedback } from "./htmx";
+import { initReveal } from "./reveal";
 
 declare global {
   interface Window {
@@ -170,6 +171,7 @@ function initAll(): void {
   initModals();
   initClipboard();
   initSSE();
+  initReveal();
   window.__cozytemplInitialized = true;
 }
 

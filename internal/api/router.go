@@ -203,6 +203,7 @@ func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {
 	pageMux.HandleFunc("GET /fragments/schema-fields", pgh.SchemaFieldsFragment)
 	pageMux.HandleFunc("GET /fragments/tenant-edit", pgh.TenantEditFragment)
 	pageMux.HandleFunc("GET /fragments/app-edit", pgh.AppEditFragment)
+	pageMux.HandleFunc("GET /fragments/secrets/reveal", pgh.SecretRevealFragment)
 
 	return pageMux
 }

@@ -3,10 +3,40 @@ package page
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
+
+// connectionSecretSubstrings is the same allow-list of "this field
+// is sensitive" heuristics used by the create-app form. Duplicated
+// rather than imported from fragment because the two packages
+// serve different layers of the stack and we want the connection
+// tab to remain editable without touching form rendering.
+//
+//nolint:gochecknoglobals // effectively a constant lookup set
+var connectionSecretSubstrings = []string{
+	"password", "passwd", "secretkey", "secret_key", "secret-key",
+	"accesskey", "access_key", "access-key", "apikey", "api_key", "api-key",
+	"privatekey", "private_key", "private-key", "authtoken", "auth_token",
+	"auth-token", "bearertoken", "bearer_token", "bearer-token", "passphrase",
+	"token",
+}
+
+// isConnectionSecret returns true when the connection-info field
+// key looks like a credential we shouldn't render into the initial
+// page DOM. The click-to-reveal flow fetches the value on demand
+// and audits the access.
+func isConnectionSecret(key string) bool {
+	lower := strings.ToLower(key)
+	for _, needle := range connectionSecretSubstrings {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
 
 templ AppDetail(data view.AppDetailData) {
 	@partial.Breadcrumb([]partial.BreadcrumbItem{
@@ -82,10 +112,14 @@ templ connectionTab(data view.AppDetailData) {
 			for key, value := range data.App.ConnectionInfo {
 				<div class="form-group">
 					<label class="form-label">{ key }</label>
-					<div class="connection-info">
-						<code>{ value }</code>
-						<button class="btn-icon copy-btn" data-copy={ value }>&#128203;</button>
-					</div>
+					if isConnectionSecret(key) {
+						@connectionSecretRow(data.Tenant, data.App.Name, key)
+					} else {
+						<div class="connection-info">
+							<code>{ value }</code>
+							<button class="btn-icon copy-btn" data-copy={ value }>&#128203;</button>
+						</div>
+					}
 				</div>
 			}
 		</div>
@@ -95,6 +129,24 @@ templ connectionTab(data view.AppDetailData) {
 			<p class="text-muted">Connection details appear once the application is ready.</p>
 		</div>
 	}
+}
+
+// connectionSecretRow renders a placeholder with a reveal button
+// instead of the real credential. The reveal handler fetches the
+// value on demand, logs an audit event, and the client-side JS
+// timer auto-hides the revealed value after 30 seconds so the
+// credential's window of exposure in the DOM stays bounded.
+templ connectionSecretRow(tenant, appName, field string) {
+	<div class="connection-info connection-secret" data-reveal-timeout="30000">
+		<code data-reveal-target>••••••••</code>
+		<button class="btn-icon"
+			title="Reveal for 30 seconds"
+			hx-get={ "/fragments/secrets/reveal?tenant=" + tenant + "&app=" + appName + "&field=" + field }
+			hx-target="previous [data-reveal-target]"
+			hx-swap="innerHTML">
+			&#128065;
+		</button>
+	</div>
 }
 
 templ conditionsTab(data view.AppDetailData) {

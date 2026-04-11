@@ -1058,6 +1058,35 @@ tr[hx-get]:hover {
   right: 8px;
 }
 
+/* Connection-info credential in placeholder state. The eyeball
+   button fetches and reveals the real value for ~30 seconds (see
+   static/ts/reveal.ts) — this styling keeps the dot-dot-dot
+   placeholder muted until the user explicitly asks for the value. */
+.connection-info.connection-secret {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.connection-info.connection-secret code {
+  color: var(--color-text-muted);
+  letter-spacing: 0.15em;
+}
+
+/* Once revealed, briefly highlight the row so the user sees the
+   temporary disclosure landed. The class is added by reveal.ts
+   on the htmx:afterSwap for the data-reveal-target span. */
+.connection-info.connection-secret-revealed {
+  background: var(--color-warning-bg);
+  border-color: var(--color-warning);
+}
+
+.connection-info.connection-secret-revealed code {
+  color: var(--color-text);
+  letter-spacing: 0;
+}
+
 /* Tabs */
 .tabs {
   display: flex;

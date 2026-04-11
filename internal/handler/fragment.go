@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"html"
 	"net/http"
 	"sort"
 	"strings"
 
+	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view/fragment"
 	"github.com/lexfrei/cozytempl/internal/view/page"
@@ -244,4 +246,62 @@ func filterAndSortApps(apps []k8s.Application, query, kindFilter, sortBy string)
 	})
 
 	return filtered
+}
+
+// SecretRevealFragment serves a single connection-info credential
+// in response to an htmx click-to-reveal. The value is re-fetched
+// from k8s via the app service rather than pulled from a cached
+// render, and every call produces an audit event so the compliance
+// trail can answer "who looked at the postgres password at 14:02."
+//
+// The response is a plain HTML fragment (no wrapper) intended to be
+// swapped into the [data-reveal-target] span on the page. A
+// client-side timer (static/ts/reveal.ts) hides the value again
+// after ~30 seconds to bound DOM exposure.
+func (pgh *PageHandler) SecretRevealFragment(writer http.ResponseWriter, req *http.Request) {
+	usr := pgh.requireUser(writer, req)
+	if usr == nil {
+		return
+	}
+
+	tenant := req.URL.Query().Get("tenant")
+	appName := req.URL.Query().Get("app")
+	field := req.URL.Query().Get("field")
+
+	if tenant == "" || appName == "" || field == "" {
+		http.Error(writer, "tenant, app and field required", http.StatusBadRequest)
+
+		return
+	}
+
+	app, err := pgh.appSvc.Get(req.Context(), usr.Username, usr.Groups, tenant, appName)
+	if err != nil {
+		pgh.log.Error("loading app for secret reveal", "tenant", tenant, "app", appName, "error", err)
+		pgh.recordAudit(req, usr, audit.ActionSecretView, appName, tenant,
+			audit.OutcomeError, map[string]any{"field": field, "error": err.Error()})
+		http.Error(writer, "application not found", http.StatusNotFound)
+
+		return
+	}
+
+	value, ok := app.ConnectionInfo[field]
+	if !ok {
+		pgh.recordAudit(req, usr, audit.ActionSecretView, appName, tenant,
+			audit.OutcomeDenied, map[string]any{"field": field, "reason": "field_not_found"})
+		http.Error(writer, "secret field not found", http.StatusNotFound)
+
+		return
+	}
+
+	pgh.recordAudit(req, usr, audit.ActionSecretView, appName, tenant,
+		audit.OutcomeSuccess, map[string]any{"field": field, "kind": app.Kind})
+
+	// Emit the value wrapped in HTML escape so an unusual secret
+	// (e.g. contains <) cannot break out of the target element.
+	// Cache-Control: no-store keeps the revealed credential from
+	// lingering in any intermediate proxy.
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	writer.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	writer.Header().Set("Pragma", "no-cache")
+	_, _ = writer.Write([]byte(html.EscapeString(value)))
 }
