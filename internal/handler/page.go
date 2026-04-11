@@ -312,7 +312,7 @@ func (pgh *PageHandler) SetLanguage(writer http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	i18n.SetLocaleCookie(writer, tag)
+	i18n.SetLocaleCookie(writer, req, tag)
 
 	// Prefer Referer so the switch stays on the current page.
 	// Fall back to the dashboard if the header is missing

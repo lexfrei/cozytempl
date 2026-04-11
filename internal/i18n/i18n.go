@@ -208,20 +208,45 @@ func (b *Bundle) resolve(req *http.Request) *Localizer {
 }
 
 // SetLocaleCookie writes the user's picked locale as a persistent
-// cookie. Called by the language-switcher POST handler. Uses the
-// same Secure/SameSite posture as the session cookie for
-// consistency — not strictly required for a preference cookie,
-// but nothing is lost by being strict.
-func SetLocaleCookie(writer http.ResponseWriter, tag language.Tag) {
+// cookie. Called by the language-switcher POST handler.
+//
+// Secure is set only when the inbound request was itself over
+// HTTPS — detected either via req.TLS (direct TLS termination at
+// the Go server) or via the X-Forwarded-Proto header (a trusted
+// reverse proxy / ingress doing the TLS work). Setting Secure
+// unconditionally would silently drop the cookie on http://localhost
+// dev port-forwards, which is exactly how operators first smoke-test
+// a fresh deployment — and that was the "language switch does
+// nothing" bug on the live dev9 install.
+//
+// The cookie is not security-sensitive (it only carries the user's
+// language preference) so dropping Secure on HTTP is not a real
+// regression versus the previous always-Secure posture.
+func SetLocaleCookie(writer http.ResponseWriter, req *http.Request, tag language.Tag) {
 	http.SetCookie(writer, &http.Cookie{
 		Name:     cookieName,
 		Value:    tag.String(),
 		Path:     "/",
 		MaxAge:   cookieMaxAge,
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   isHTTPS(req),
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// isHTTPS reports whether the inbound request was served over
+// TLS, either terminated directly by the Go server or by a
+// trusted upstream proxy that sets X-Forwarded-Proto.
+func isHTTPS(req *http.Request) bool {
+	if req == nil {
+		return false
+	}
+
+	if req.TLS != nil {
+		return true
+	}
+
+	return req.Header.Get("X-Forwarded-Proto") == "https"
 }
 
 // LookupSupported parses the given language string and returns
