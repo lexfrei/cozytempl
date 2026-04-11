@@ -58,6 +58,9 @@ other = "Удалить"
 [action.close]
 other = "Закрыть"
 
+[action.learnMore]
+other = "Подробнее"
+
 [action.backToDashboard]
 other = "Вернуться на обзор"
 
@@ -277,10 +280,16 @@ other = "Попробуйте другой запрос или сбросьте 
 [page.marketplace.opts]
 other = "{{.Count}} пар."
 
+[page.marketplace.cardAria]
+other = "Создать {{.Kind}}"
+
 # --- Tenants page ---
 
 [page.tenants.createTenant]
 other = "+ Создать тенант"
+
+[page.tenants.pickForKind]
+other = "Выберите тенант ниже, чтобы создать в нём {{.Kind}}."
 
 [page.tenants.cpuTooltip]
 other = "Сумма spec.resources.requests.cpu по всем подам. Вторая строка показывает фактическое потребление из metrics-server, если доступно."

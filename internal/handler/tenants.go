@@ -89,10 +89,17 @@ func (pgh *PageHandler) TenantsPage(writer http.ResponseWriter, req *http.Reques
 		pgh.log.Debug("fetching tenant schema", "error", schemaErr)
 	}
 
+	// Marketplace cards forward the chosen kind via ?kind=<k> so the
+	// tenants page can render a hint banner and make it obvious what
+	// the user is about to create. Unknown / empty values are
+	// dropped silently — no banner, no error.
+	preselectedKind := req.URL.Query().Get("kind")
+
 	data := view.TenantsPageData{
-		Tenants:        items,
-		TenantSchema:   schema,
-		MetricsEnabled: metricsEnabled,
+		Tenants:         items,
+		TenantSchema:    schema,
+		MetricsEnabled:  metricsEnabled,
+		PreselectedKind: preselectedKind,
 	}
 
 	content := page.Tenants(data)

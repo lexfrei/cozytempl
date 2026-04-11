@@ -17,6 +17,11 @@ type TenantsPageData struct {
 	Tenants        []TenantWithUsage
 	TenantSchema   *k8s.AppSchema
 	MetricsEnabled bool
+	// PreselectedKind is non-empty when the user arrived on the
+	// tenants page from a marketplace card click. The template
+	// renders a hint banner telling them to pick a tenant to
+	// create the chosen kind in. Empty = no hint, normal list.
+	PreselectedKind string
 }
 
 // TenantWithUsage combines tenant metadata and resource usage.

@@ -55,6 +55,9 @@ other = "删除"
 [action.close]
 other = "关闭"
 
+[action.learnMore]
+other = "了解更多"
+
 [action.backToDashboard]
 other = "返回控制台"
 
@@ -274,10 +277,16 @@ other = "请尝试其他搜索词或清除筛选条件。"
 [page.marketplace.opts]
 other = "{{.Count}} 项"
 
+[page.marketplace.cardAria]
+other = "创建 {{.Kind}}"
+
 # --- Tenants page ---
 
 [page.tenants.createTenant]
 other = "+ 创建租户"
+
+[page.tenants.pickForKind]
+other = "请在下方选择一个租户以创建 {{.Kind}}。"
 
 [page.tenants.cpuTooltip]
 other = "所有 Pod 的 spec.resources.requests.cpu 之和。如果 metrics-server 可用，第二行显示实际用量。"

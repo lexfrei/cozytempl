@@ -50,31 +50,60 @@ templ Profile(usr *auth.UserContext, mode config.AuthMode) {
 	</div>
 }
 
-// profileModeExplanation emits the mode-specific paragraph. Kept
-// as a sibling templ component so each branch is explicit and easy
-// to translate later.
+// docBaseURL is the prefix for every "Learn more" link rendered on
+// profile / byok / error pages. Points at the master branch of the
+// canonical repo so a user who clicks always lands on the latest
+// published doc rather than a version frozen at install time.
+//
+// A fork that wants to serve its own docs can monkey-patch this at
+// runtime via an env var — not wired yet; for the first pass the
+// URL is a plain compile-time constant.
+const docBaseURL = "https://github.com/lexfrei/cozytempl/blob/master"
+
+// profileModeExplanation emits the mode-specific paragraph plus a
+// "Learn more" link pointing at the mode's section in
+// docs/auth-architecture.md. The link URL is fixed (master branch,
+// stable anchors) and only the visible text goes through i18n.
 templ profileModeExplanation(mode config.AuthMode) {
 	switch mode {
 	case config.AuthModePassthrough:
 		<p class="text-sm text-muted" style="line-height: 1.6;">
 			{ partial.Tc(ctx, "page.profile.passthrough") }
+			@docLink("/docs/auth-architecture.md#passthrough")
 		</p>
 	case config.AuthModeBYOK:
 		<p class="text-sm text-muted" style="line-height: 1.6;">
 			{ partial.Tc(ctx, "page.profile.byok") }
+			@docLink("/docs/auth-architecture.md#byok")
 		</p>
 	case config.AuthModeImpersonationLegacy:
 		<p class="text-sm text-muted" style="line-height: 1.6;">
 			{ partial.Tc(ctx, "page.profile.impersonation") }
+			@docLink("/docs/migrating-to-passthrough-auth.md")
 		</p>
 	case config.AuthModeDev:
 		<p class="text-sm text-muted" style="line-height: 1.6; color: var(--color-text-danger);">
 			<strong>{ partial.Tc(ctx, "page.profile.devStrong") }</strong>
 			{ partial.Tc(ctx, "page.profile.dev") }
+			@docLink("/docs/auth-architecture.md#dev")
 		</p>
 	default:
 		<p class="text-sm text-muted" style="line-height: 1.6;">
 			{ partial.Tc(ctx, "page.profile.unknown") }
 		</p>
 	}
+}
+
+// docLink renders an inline "Learn more →" anchor at the end of an
+// explanatory paragraph. anchorPath is joined with docBaseURL to
+// produce the href; the visible text comes from i18n so "Learn more",
+// "Подробнее", "Толығырақ", "了解更多" each render in the user's
+// chosen language.
+templ docLink(anchorPath string) {
+	<a class="doc-link"
+		href={ templ.SafeURL(docBaseURL + anchorPath) }
+		target="_blank"
+		rel="noopener noreferrer">
+		{ partial.Tc(ctx, "action.learnMore") } →
+	</a>
 }

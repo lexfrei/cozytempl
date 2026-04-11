@@ -79,6 +79,17 @@ templ Tenants(data view.TenantsPageData) {
 		</button>
 	</div>
 
+	if data.PreselectedKind != "" {
+		<!-- Hint banner that appears when the user arrived from a
+		     marketplace card click. Tells them to pick a tenant
+		     row below to create the chosen kind inside. The kind
+		     string comes from schema.Kind (cluster data), not a
+		     translated label, so it renders as-is. -->
+		<div class="banner banner-info mb-4" role="status">
+			{ partial.Tc(ctx, "page.tenants.pickForKind", map[string]any{"Kind": data.PreselectedKind}) }
+		</div>
+	}
+
 	<!-- Tenants table -->
 	<div class="card">
 		<div class="table-container">

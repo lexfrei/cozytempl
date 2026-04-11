@@ -276,6 +276,19 @@ templ logsTab(data view.AppDetailData) {
 			if data.LogError != "" {
 				<div class="toast toast-error" style="position: static; margin-bottom: 12px;">
 					{ data.LogError }
+					<!-- The untranslated tail (e.g. upstream
+					     k8s.io/client-go "the server rejected our
+					     request") comes from the Go client library
+					     and intentionally stays in English. Link to
+					     the troubleshooting doc so users have a
+					     path forward instead of a dead string. -->
+					<a class="doc-link"
+						href="https://github.com/lexfrei/cozytempl/blob/master/docs/troubleshooting.md"
+						target="_blank"
+						rel="noopener noreferrer"
+						style="margin-left: 0.5rem;">
+						{ partial.Tc(ctx, "action.learnMore") } →
+					</a>
 				</div>
 			}
 			<pre class="connection-info" style="white-space: pre-wrap; max-height: 600px; overflow-y: auto;">

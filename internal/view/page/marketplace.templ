@@ -88,7 +88,19 @@ templ MarketplaceGrid(data view.MarketplaceData) {
 }
 
 templ marketplaceCard(schema k8s.AppSchema) {
-	<div class="mp-card">
+	<!-- Card is a proper <a> so keyboard focus, middle-click to
+	     open in a new tab, and right-click context menu all work.
+	     Clicking the card hx-nav's to /tenants?kind=<k>, which
+	     renders a hint banner telling the user to pick a tenant
+	     to create the chosen kind in. A prior iteration rendered
+	     the card as a <div> with cursor:pointer and no handler —
+	     that was a dead click zone, flagged by the user on dev9. -->
+	<a class="mp-card mp-card-link"
+		href={ templ.SafeURL("/tenants?kind=" + schema.Kind) }
+		hx-get={ "/tenants?kind=" + schema.Kind }
+		hx-target="#main-content"
+		hx-push-url="true"
+		aria-label={ partial.Tc(ctx, "page.marketplace.cardAria", map[string]any{"Kind": schema.DisplayName}) }>
 		<div class="mp-card-row">
 			<div class="mp-card-icon">
 				if schema.Icon != "" {
@@ -114,7 +126,7 @@ templ marketplaceCard(schema k8s.AppSchema) {
 				}
 			</div>
 		}
-	</div>
+	</a>
 }
 
 func schemaFieldCount(schema k8s.AppSchema) int {

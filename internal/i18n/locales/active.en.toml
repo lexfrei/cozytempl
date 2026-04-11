@@ -61,6 +61,9 @@ other = "Delete"
 [action.close]
 other = "Close"
 
+[action.learnMore]
+other = "Learn more"
+
 [action.backToDashboard]
 other = "Back to dashboard"
 
@@ -280,10 +283,16 @@ other = "Try a different search term or clear filters."
 [page.marketplace.opts]
 other = "{{.Count}} opt"
 
+[page.marketplace.cardAria]
+other = "Create a {{.Kind}}"
+
 # --- Tenants page ---
 
 [page.tenants.createTenant]
 other = "+ Create Tenant"
+
+[page.tenants.pickForKind]
+other = "Pick a tenant below to create a {{.Kind}} in."
 
 [page.tenants.cpuTooltip]
 other = "Sum of spec.resources.requests.cpu across pods. Second line shows actual usage from metrics-server when available."

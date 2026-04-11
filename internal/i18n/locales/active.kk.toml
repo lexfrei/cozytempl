@@ -56,6 +56,9 @@ other = "Жою"
 [action.close]
 other = "Жабу"
 
+[action.learnMore]
+other = "Толығырақ"
+
 [action.backToDashboard]
 other = "Басты бетке оралу"
 
@@ -275,10 +278,16 @@ other = "Басқа сұраныс енгізіп көріңіз немесе с
 [page.marketplace.opts]
 other = "{{.Count}} пар."
 
+[page.marketplace.cardAria]
+other = "{{.Kind}} жасау"
+
 # --- Tenants page ---
 
 [page.tenants.createTenant]
 other = "+ Тенант жасау"
+
+[page.tenants.pickForKind]
+other = "Төмендегі тенанттардың бірін таңдап, онда {{.Kind}} жасаңыз."
 
 [page.tenants.cpuTooltip]
 other = "Барлық подтар бойынша spec.resources.requests.cpu жиынтығы. Екінші жол metrics-server қолжетімді болса, нақты тұтынуды көрсетеді."
