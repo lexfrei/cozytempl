@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -13,7 +12,10 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-const tenantNamespacePrefix = "tenant-"
+const (
+	tenantNamespacePrefix = "tenant-"
+	rootTenantName        = "root"
+)
 
 // NamespaceGVR returns the GVR for core namespaces.
 func NamespaceGVR() schema.GroupVersionResource {
@@ -131,16 +133,26 @@ func (tsv *TenantService) Get(ctx context.Context, username string, groups []str
 	return &tenant, nil
 }
 
+// findTenantObj resolves a tenant lookup that may be spelled as either the
+// short name ("demo"), the workload namespace ("tenant-demo"), or the bare
+// prefixed form. The lookup goes in specificity order: exact CR name first,
+// then workload namespace (status.namespace), then prefixed name fallback.
+// Matching on metadata.namespace is deliberately NOT used — since
+// cozystack 1.2 flattened namespace naming, every child CR shares the same
+// metadata.namespace as its sibling, so that match would collide.
 func findTenantObj(items []unstructured.Unstructured, name string) *unstructured.Unstructured {
+	// First pass: exact name match.
 	for idx := range items {
-		obj := &items[idx]
+		if items[idx].GetName() == name {
+			return &items[idx]
+		}
+	}
 
-		objNS := obj.GetNamespace()
-		statusNS := nestedString(obj.Object, "status", "namespace")
-
-		if obj.GetName() == name || objNS == name || statusNS == name ||
-			objNS == tenantNamespacePrefix+name || statusNS == tenantNamespacePrefix+name {
-			return obj
+	// Second pass: workload namespace match (status.namespace).
+	for idx := range items {
+		statusNS := nestedString(items[idx].Object, "status", "namespace")
+		if statusNS != "" && (statusNS == name || statusNS == tenantNamespacePrefix+name) {
+			return &items[idx]
 		}
 	}
 
@@ -150,10 +162,20 @@ func findTenantObj(items []unstructured.Unstructured, name string) *unstructured
 func findChildren(items []unstructured.Unstructured, parentNS string) []string {
 	var children []string
 
+	// A child Tenant CR lives in its parent's workload namespace — i.e.
+	// metadata.namespace of the child equals status.namespace of the parent.
+	// This is flat since cozystack 1.2 stopped nesting namespace names
+	// (tenant "demo" under "tenant-root" is now "tenant-demo", not
+	// "tenant-root-demo"), so we identify parent/child by CR location,
+	// not by string prefix on the namespace name.
 	for idx := range items {
-		childNS := nestedString(items[idx].Object, "status", "namespace")
-		if childNS != "" && strings.HasPrefix(childNS, parentNS+"-") {
-			children = append(children, items[idx].GetName())
+		if items[idx].GetNamespace() == parentNS {
+			name := items[idx].GetName()
+			// Skip root tenant itself: it lives in its own namespace, which
+			// would otherwise make it appear as a child of itself.
+			if name != rootTenantName {
+				children = append(children, name)
+			}
 		}
 	}
 
@@ -253,7 +275,7 @@ var ErrProtectedTenant = errors.New("tenant is protected")
 
 // IsRootTenant reports whether the given name or namespace refers to root.
 func IsRootTenant(nameOrNamespace string) bool {
-	return nameOrNamespace == "root" || nameOrNamespace == tenantNamespacePrefix+"root"
+	return nameOrNamespace == rootTenantName || nameOrNamespace == tenantNamespacePrefix+rootTenantName
 }
 
 // ErrNamespaceRequired is returned when a delete call is missing the parent namespace.
@@ -291,12 +313,17 @@ func (tsv *TenantService) Delete(
 func crdToTenant(obj *unstructured.Unstructured) Tenant {
 	name := obj.GetName()
 
-	// metadata.namespace is where the CR lives (parent's namespace).
-	// For root, it equals the tenant's own namespace.
+	// metadata.namespace is where the CR lives (the parent's workload
+	// namespace). For the root tenant, it equals the tenant's own
+	// namespace. For any other tenant, it is distinct.
 	parentNamespace := obj.GetNamespace()
 	namespace := parentNamespace
 
-	// status.namespace is the actual workload namespace created by the controller.
+	// status.namespace is the actual workload namespace created by the
+	// Cozystack controller. Since cozystack 1.2 this is flat — a tenant
+	// named "demo" becomes "tenant-demo" regardless of parent depth, so
+	// the hierarchy can no longer be derived by splitting the namespace
+	// name on hyphens (the 1.1-era "tenant-root-demo" scheme is gone).
 	statusNS := nestedString(obj.Object, "status", "namespace")
 	if statusNS != "" {
 		namespace = statusNS
@@ -309,8 +336,15 @@ func crdToTenant(obj *unstructured.Unstructured) Tenant {
 		status = "Active"
 	}
 
-	// Determine logical parent from namespace hierarchy
-	parent := parentFromNamespace(namespace)
+	// Parent = the namespace the CR lives in. That IS the parent tenant's
+	// workload namespace by definition (cozystack creates each tenant's
+	// children as CRs inside the parent's namespace). The root tenant
+	// lives in its own namespace, so Parent equals Namespace in that case
+	// and we zero it out to mark it as root.
+	parent := parentNamespace
+	if parent == namespace {
+		parent = ""
+	}
 
 	return Tenant{
 		Name:            name,
@@ -321,15 +355,4 @@ func crdToTenant(obj *unstructured.Unstructured) Tenant {
 		Status:          status,
 		Version:         version,
 	}
-}
-
-const minTenantNameParts = 2
-
-func parentFromNamespace(namespace string) string {
-	parts := strings.Split(namespace, "-")
-	if len(parts) <= minTenantNameParts {
-		return ""
-	}
-
-	return strings.Join(parts[:len(parts)-1], "-")
 }

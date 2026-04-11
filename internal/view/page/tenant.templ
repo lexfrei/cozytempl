@@ -2,22 +2,27 @@ package page
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
 
+const tenantNSPrefix = "tenant-"
+
 // tenantBreadcrumb builds the crumb trail from dashboard down to the tenant.
-// The parent is synthesized from the Parent namespace without trying to
-// derive display names for intermediate ancestors: rendering "cozylex" for
-// namespace "tenant-root-cozylex" is enough without an extra tenant lookup.
+// The parent label is the parent namespace with the "tenant-" prefix stripped
+// so the crumb reads "root" rather than "tenant-root". That matches the
+// display name we'd get from a full Tenant lookup without the extra API
+// round-trip.
 func tenantBreadcrumb(t k8s.Tenant) []partial.BreadcrumbItem {
 	crumbs := []partial.BreadcrumbItem{
 		{Label: "Dashboard", URL: "/"},
 	}
 	if t.Parent != "" && !k8s.IsRootTenant(t.Name) {
 		crumbs = append(crumbs, partial.BreadcrumbItem{
-			Label: t.Parent,
+			Label: strings.TrimPrefix(t.Parent, tenantNSPrefix),
 			URL:   "/tenants/" + t.Parent,
 		})
 	}

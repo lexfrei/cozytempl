@@ -2,10 +2,18 @@ package page
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/internal/view/fragment"
 )
+
+// parentDisplay turns a parent namespace ("tenant-root") into a display
+// string ("root") for hint labels on tenant rows. Root tenants return "".
+func parentDisplay(parent string) string {
+	return strings.TrimPrefix(parent, tenantNSPrefix)
+}
 
 templ Tenants(data view.TenantsPageData) {
 	<div class="page-header">
@@ -91,8 +99,8 @@ templ tenantRow(item view.TenantWithUsage, metrics bool) {
 				style="color: inherit; text-decoration: none;">
 				{ item.Tenant.DisplayName }
 			</a>
-			if item.Tenant.Namespace != "tenant-root" && item.Tenant.Parent != "" {
-				<div class="text-sm text-muted">parent: { item.Tenant.Parent }</div>
+			if item.Tenant.Parent != "" && !k8s.IsRootTenant(item.Tenant.Name) {
+				<div class="text-sm text-muted">parent: { parentDisplay(item.Tenant.Parent) }</div>
 			}
 		</td>
 		<td>{ fmt.Sprint(item.Tenant.AppCount) }</td>
