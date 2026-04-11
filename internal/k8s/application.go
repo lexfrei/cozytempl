@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -20,9 +21,48 @@ const (
 	secretsResource = "secrets"
 )
 
-// ErrAppNotFound is returned when an application is not found in a tenant.
 // ErrAppNotFound is returned when an application cannot be found.
 var ErrAppNotFound = errors.New("application not found")
+
+// ErrConflict is returned by Update when the stored resource has
+// changed since the caller fetched its spec. The user should
+// reload the edit form and retry. Mapped from k8s 409 Conflict
+// responses, which the API server emits when the incoming
+// resourceVersion no longer matches.
+var ErrConflict = errors.New("resource was modified by another writer")
+
+// conflictMessageFragment matches the stable English fragment k8s
+// embeds in every 409 Conflict error message. Used as a fallback
+// conflict detector when cozystack's admission webhook rewraps
+// the underlying StatusError in a plain %v error, stripping the
+// StatusReason metadata apierrors.IsConflict relies on.
+const conflictMessageFragment = "the object has been modified"
+
+// isConflictError returns true for both typed k8s 409 Conflict
+// StatusErrors and for cozystack's webhook-wrapped variant where
+// the type information has been lost but the canonical message
+// fragment survives.
+func isConflictError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if apierrors.IsConflict(err) {
+		return true
+	}
+
+	return strings.Contains(err.Error(), conflictMessageFragment)
+}
+
+// SpecSnapshot is an editable point-in-time read of a CRD's spec.
+// ResourceVersion pins the read so a subsequent Update can use it
+// for optimistic concurrency control — the API server will reject
+// a Put whose resourceVersion no longer matches with 409 Conflict.
+type SpecSnapshot struct {
+	Spec            map[string]any
+	Kind            string
+	ResourceVersion string
+}
 
 // ApplicationService provides operations on Cozystack applications
 // via the apps.cozystack.io/v1alpha1 CRDs.
@@ -127,40 +167,44 @@ func (asv *ApplicationService) Create(
 	return &app, nil
 }
 
-// GetSpec returns the raw spec map of an existing application CRD and
-// its resolved Kind, so the edit modal can pre-populate form fields and
-// coerce values to the right types. The kind is looked up from the
-// HelmRelease label selector — same path Update uses — so callers do
-// not need to supply it.
-//
-//nolint:gocritic // unnamedResult conflicts with nonamedreturns linter
-func (asv *ApplicationService) GetSpec(
+// GetSpecSnapshot returns the raw spec map, resolved Kind, and
+// resourceVersion of an existing application CRD. The edit modal
+// uses the spec to pre-populate form fields, the kind to find the
+// right schema, and the resourceVersion to pin the subsequent
+// Update for optimistic concurrency — if another user writes to
+// the same object between this call and the Update, the API
+// server returns 409 Conflict.
+func (asv *ApplicationService) GetSpecSnapshot(
 	ctx context.Context, username string, groups []string, tenant, name string,
-) (map[string]any, string, error) {
+) (*SpecSnapshot, error) {
 	if !isValidLabelValue(name) {
-		return nil, "", fmt.Errorf("%w: invalid application name %q", ErrAppNotFound, name)
+		return nil, fmt.Errorf("%w: invalid application name %q", ErrAppNotFound, name)
 	}
 
 	client, err := NewImpersonatingClient(asv.baseCfg, username, groups)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	kind, findErr := asv.findAppKind(ctx, client, tenant, name)
 	if findErr != nil {
-		return nil, "", findErr
+		return nil, findErr
 	}
 
 	gvr := appGVR(kind)
 
 	obj, getErr := client.Resource(gvr).Namespace(tenant).Get(ctx, name, metav1.GetOptions{})
 	if getErr != nil {
-		return nil, kind, fmt.Errorf("getting %s %s/%s: %w", kind, tenant, name, getErr)
+		return nil, fmt.Errorf("getting %s %s/%s: %w", kind, tenant, name, getErr)
 	}
 
 	spec, _, _ := unstructured.NestedMap(obj.Object, "spec")
 
-	return spec, kind, nil
+	return &SpecSnapshot{
+		Spec:            spec,
+		Kind:            kind,
+		ResourceVersion: obj.GetResourceVersion(),
+	}, nil
 }
 
 // Update updates an application's spec via its Cozystack CRD. The
@@ -169,6 +213,13 @@ func (asv *ApplicationService) GetSpec(
 // e.g. postgresql.parameters.max_connections) survive every edit.
 // A plain replacement would be a silent data-loss bug for any app
 // whose schema has nested objects beyond what the form exposes.
+//
+// If req.ResourceVersion is non-empty, Update pins it on the
+// outgoing object so the API server rejects the Put with 409
+// Conflict when another writer has modified the resource in
+// between — preventing silent clobbers in the multi-user case.
+// The 409 is surfaced as ErrConflict so callers can give the
+// user a specific "reload and retry" message.
 func (asv *ApplicationService) Update(
 	ctx context.Context, username string, groups []string, tenant, name string, req UpdateApplicationRequest,
 ) (*Application, error) {
@@ -197,8 +248,16 @@ func (asv *ApplicationService) Update(
 		return nil, fmt.Errorf("setting spec: %w", setErr)
 	}
 
+	if req.ResourceVersion != "" {
+		obj.SetResourceVersion(req.ResourceVersion)
+	}
+
 	updated, err := client.Resource(gvr).Namespace(tenant).Update(ctx, obj, metav1.UpdateOptions{})
 	if err != nil {
+		if isConflictError(err) {
+			return nil, ErrConflict
+		}
+
 		return nil, fmt.Errorf("updating %s %s/%s: %w", kind, tenant, name, err)
 	}
 

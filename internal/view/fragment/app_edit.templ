@@ -4,10 +4,16 @@ import (
 	"github.com/lexfrei/cozytempl/internal/k8s"
 )
 
-// AppEditModal renders the edit form for an existing application. The
-// schema-driven fields are pre-populated from the app's current spec so
-// the user edits in place instead of re-typing every value.
-templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, spec map[string]any) {
+// AppEditModal renders the edit form for an existing application.
+// The schema-driven fields are pre-populated from the app's current
+// spec so the user edits in place instead of re-typing every value.
+//
+// The resourceVersion argument is echoed into a hidden input so the
+// subsequent PUT can pin optimistic-lock semantics at the k8s API
+// server. If two users have the same form open and one hits Save
+// first, the second save returns 409 Conflict and the user sees a
+// "resource was modified" error instead of a silent clobber.
+templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, spec map[string]any, resourceVersion string) {
 	<div id="app-edit-modal" class="modal-backdrop" style="display: flex;">
 		<div class="modal">
 			<div class="modal-header">
@@ -18,6 +24,7 @@ templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, sp
 			<form hx-put={ "/tenants/" + tenant + "/apps/" + app.Name }
 				hx-target="#main-content"
 				hx-push-url="false">
+				<input type="hidden" name="_resource_version" value={ resourceVersion }/>
 				<div class="form-group">
 					<label class="form-label">Type</label>
 					<input class="form-input" type="text" value={ app.Kind } disabled/>

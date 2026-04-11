@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -12,11 +13,15 @@ import (
 )
 
 const (
-	maxFormBytes  = 1 << 20 // 1 MB
-	formFieldName = "name"
-	formFieldKind = "kind"
-	sortByName    = "name"
-	sortByKind    = "kind"
+	maxFormBytes = 1 << 20 // 1 MB
+	// formFieldName, formFieldKind and formFieldResourceVersion
+	// are the only reserved form fields. Everything else is a
+	// schema-driven spec field and flows through extractSpecFromForm.
+	formFieldName            = "name"
+	formFieldKind            = "kind"
+	formFieldResourceVersion = "_resource_version"
+	sortByName               = "name"
+	sortByKind               = "kind"
 
 	// maxAppNameLength mirrors Helm's 53-character cap on release
 	// names. Cozystack applications are materialised as HelmReleases,
@@ -225,7 +230,7 @@ func (pgh *PageHandler) doUpdateApp(
 ) {
 	// Kind is looked up via the service, not supplied by the client, so
 	// the user cannot change it mid-edit.
-	_, kind, specErr := pgh.appSvc.GetSpec(req.Context(), usr.Username, usr.Groups, tenantNS, appName)
+	snap, specErr := pgh.appSvc.GetSpecSnapshot(req.Context(), usr.Username, usr.Groups, tenantNS, appName)
 	if specErr != nil {
 		pgh.log.Error("loading app for update", "tenant", tenantNS, "name", appName, "error", specErr)
 		pgh.renderErrorToast(writer, req,
@@ -233,6 +238,8 @@ func (pgh *PageHandler) doUpdateApp(
 
 		return
 	}
+
+	kind := snap.Kind
 
 	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, kind)
 	if schemaErr != nil {
@@ -243,10 +250,26 @@ func (pgh *PageHandler) doUpdateApp(
 	}
 
 	newSpec := extractSpecFromForm(req, extractFieldTypes(schema))
+	// The edit form echoes the resourceVersion it observed as a
+	// hidden input so the Update can pin optimistic-lock semantics.
+	// An empty value falls back to last-write-wins behaviour for
+	// any caller who hasn't been migrated yet.
+	// Safe to call req.FormValue without an explicit MaxBytesReader
+	// check here: the outer UpdateApp handler wrapped req.Body and
+	// already called ParseForm, so the body size cap is in effect.
+	resourceVersion := req.FormValue(formFieldResourceVersion) //nolint:gosec // body already capped by caller
 
 	_, err := pgh.appSvc.Update(req.Context(), usr.Username, usr.Groups, tenantNS, appName,
-		k8s.UpdateApplicationRequest{Spec: newSpec})
+		k8s.UpdateApplicationRequest{Spec: newSpec, ResourceVersion: resourceVersion})
 	if err != nil {
+		if errors.Is(err, k8s.ErrConflict) {
+			pgh.log.Info("conflict updating app", "tenant", tenantNS, "name", appName)
+			pgh.renderErrorToast(writer, req,
+				"Another user modified "+appName+" while you were editing. Please reload and try again.")
+
+			return
+		}
+
 		pgh.log.Error("updating app", "tenant", tenantNS, "name", appName, "error", err)
 		pgh.renderErrorToast(writer, req, "Failed to update "+appName+". Check that you have permission.")
 
@@ -327,7 +350,7 @@ func extractSpecFromForm(req *http.Request, fieldTypes map[string]string) map[st
 	spec := map[string]any{}
 
 	for key, values := range req.Form {
-		if key == formFieldName || key == formFieldKind {
+		if key == formFieldName || key == formFieldKind || key == formFieldResourceVersion {
 			continue
 		}
 

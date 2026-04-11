@@ -8,7 +8,12 @@ import (
 // Delivered by the handler into #tenant-edit-slot on the tenants page;
 // form fields are pre-populated from the tenant's current spec so the
 // user edits in place instead of having to re-type every value.
-templ TenantEditModal(tenant k8s.Tenant, schema *k8s.AppSchema, spec map[string]any) {
+//
+// The resourceVersion argument is echoed into a hidden input so the
+// subsequent PUT can pin optimistic-lock semantics at the k8s API
+// server. Concurrent edits by two users now produce a visible 409
+// Conflict on the second save instead of a silent clobber.
+templ TenantEditModal(tenant k8s.Tenant, schema *k8s.AppSchema, spec map[string]any, resourceVersion string) {
 	<div id="tenant-edit-modal" class="modal-backdrop" style="display: flex;">
 		<div class="modal">
 			<div class="modal-header">
@@ -19,6 +24,7 @@ templ TenantEditModal(tenant k8s.Tenant, schema *k8s.AppSchema, spec map[string]
 			<form hx-put={ "/tenants/" + tenant.Name + "?ns=" + tenant.ParentNamespace }
 				hx-target="#main-content"
 				hx-push-url="false">
+				<input type="hidden" name="_resource_version" value={ resourceVersion }/>
 				<div class="form-group">
 					<label class="form-label">Namespace</label>
 					<input class="form-input" type="text" value={ tenant.Namespace } disabled/>

@@ -214,6 +214,15 @@ func (pgh *PageHandler) UpdateTenant(writer http.ResponseWriter, req *http.Reque
 		return
 	}
 
+	pgh.doUpdateTenant(writer, req, usr, namespace, name)
+}
+
+// doUpdateTenant is the body of UpdateTenant after form parsing.
+// Split out so the public handler stays under the funlen limit and
+// the error-branch plumbing around ErrConflict reads cleanly.
+func (pgh *PageHandler) doUpdateTenant(
+	writer http.ResponseWriter, req *http.Request, usr *auth.UserContext, namespace, name string,
+) {
 	spec := pgh.tenantSpec(req, usr)
 	if len(spec) == 0 {
 		pgh.renderErrorToast(writer, req, "Nothing to update: no form fields recognized against the tenant schema")
@@ -221,8 +230,24 @@ func (pgh *PageHandler) UpdateTenant(writer http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	_, err := pgh.tenantSvc.Update(req.Context(), usr.Username, usr.Groups, namespace, name, spec)
+	// The edit form carries the resourceVersion as a hidden input
+	// so the Update can pin optimistic-lock semantics. Empty string
+	// falls back to last-write-wins for any caller that has not been
+	// migrated yet (e.g. a direct curl against the endpoint).
+	// Safe: the outer handler already wrapped req.Body with
+	// MaxBytesReader and called ParseForm.
+	resourceVersion := req.FormValue(formFieldResourceVersion) //nolint:gosec // body capped by caller
+
+	_, err := pgh.tenantSvc.Update(req.Context(), usr.Username, usr.Groups, namespace, name, spec, resourceVersion)
 	if err != nil {
+		if errors.Is(err, k8s.ErrConflict) {
+			pgh.log.Info("conflict updating tenant", "ns", namespace, "name", name)
+			pgh.renderErrorToast(writer, req,
+				"Another user modified this tenant while you were editing. Please reload and try again.")
+
+			return
+		}
+
 		pgh.log.Error("updating tenant", "ns", namespace, "name", name, "error", err)
 		pgh.renderErrorToast(writer, req, "Failed to update tenant. Check that you have permission to modify its spec.")
 
@@ -274,12 +299,16 @@ func (pgh *PageHandler) DeleteTenant(writer http.ResponseWriter, req *http.Reque
 
 // isReservedTenantFormKey reports whether a form key should be skipped
 // when building the tenant spec. The tenant name, the chosen parent
-// namespace, and the "ns" query-string param used by Update/Delete to
-// disambiguate sibling tenants must not leak into spec — ParseForm
-// merges query and body into req.Form, so the query param lands
-// alongside the real form fields.
+// namespace, the "ns" query-string param used by Update/Delete to
+// disambiguate sibling tenants, and the _resource_version optimistic
+// locking token must not leak into spec — ParseForm merges query and
+// body into req.Form, so any of these can appear alongside real form
+// fields and would otherwise land on spec.foo = "bar".
 func isReservedTenantFormKey(key string) bool {
-	return key == formFieldName || key == "parent" || key == "ns"
+	return key == formFieldName ||
+		key == "parent" ||
+		key == "ns" ||
+		key == formFieldResourceVersion
 }
 
 // extractTenantSpec pulls schema-driven fields out of the tenant form.

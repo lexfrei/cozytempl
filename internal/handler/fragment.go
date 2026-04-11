@@ -99,9 +99,17 @@ func (pgh *PageHandler) AppEditFragment(writer http.ResponseWriter, req *http.Re
 		return
 	}
 
-	currentSpec, _, specErr := pgh.appSvc.GetSpec(req.Context(), usr.Username, usr.Groups, tenant, name)
+	snap, specErr := pgh.appSvc.GetSpecSnapshot(req.Context(), usr.Username, usr.Groups, tenant, name)
+
+	var currentSpec map[string]any
+
+	var resourceVersion string
+
 	if specErr != nil {
 		pgh.log.Debug("loading app spec for edit", "tenant", tenant, "name", name, "error", specErr)
+	} else if snap != nil {
+		currentSpec = snap.Spec
+		resourceVersion = snap.ResourceVersion
 	}
 
 	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, app.Kind)
@@ -112,7 +120,7 @@ func (pgh *PageHandler) AppEditFragment(writer http.ResponseWriter, req *http.Re
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 	writer.Header().Set("Cache-Control", "no-store")
 
-	renderErr := fragment.AppEditModal(tenant, *app, schema, currentSpec).Render(req.Context(), writer)
+	renderErr := fragment.AppEditModal(tenant, *app, schema, currentSpec, resourceVersion).Render(req.Context(), writer)
 	if renderErr != nil {
 		pgh.log.Error("rendering app edit modal", "error", renderErr)
 	}
@@ -149,9 +157,17 @@ func (pgh *PageHandler) TenantEditFragment(writer http.ResponseWriter, req *http
 
 	// Current spec from the impersonated CR read — the CRs live in the
 	// parent's workload namespace, hence the 'namespace' query param.
-	currentSpec, specErr := pgh.tenantSvc.GetSpec(req.Context(), usr.Username, usr.Groups, namespace, name)
+	snap, specErr := pgh.tenantSvc.GetSpecSnapshot(req.Context(), usr.Username, usr.Groups, namespace, name)
+
+	var currentSpec map[string]any
+
+	var resourceVersion string
+
 	if specErr != nil {
 		pgh.log.Debug("loading tenant spec for edit", "ns", namespace, "name", name, "error", specErr)
+	} else if snap != nil {
+		currentSpec = snap.Spec
+		resourceVersion = snap.ResourceVersion
 	}
 
 	// Schema is optional: if it fails we still render the modal with a
@@ -164,7 +180,7 @@ func (pgh *PageHandler) TenantEditFragment(writer http.ResponseWriter, req *http
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 	writer.Header().Set("Cache-Control", "no-store")
 
-	renderErr := fragment.TenantEditModal(*tenant, schema, currentSpec).Render(req.Context(), writer)
+	renderErr := fragment.TenantEditModal(*tenant, schema, currentSpec, resourceVersion).Render(req.Context(), writer)
 	if renderErr != nil {
 		pgh.log.Error("rendering tenant edit modal", "error", renderErr)
 	}

@@ -181,13 +181,15 @@ func findChildren(items []unstructured.Unstructured, parentNS string) []string {
 	return children
 }
 
-// GetSpec returns the raw spec map of an existing Tenant CR. Used by edit
-// flows to pre-populate a schema-driven form with the current values.
-// Uses the same namespace+name lookup as Delete/Update to disambiguate
-// tenants sharing a leaf name under different parents.
-func (tsv *TenantService) GetSpec(
+// GetSpecSnapshot returns the raw spec map and resourceVersion of an
+// existing Tenant CR. Used by edit flows to pre-populate a
+// schema-driven form AND to pin the optimistic-lock token for the
+// subsequent Update call — the returned ResourceVersion is echoed
+// back through a hidden form field so a concurrent write by another
+// user is rejected with 409 instead of silently clobbered.
+func (tsv *TenantService) GetSpecSnapshot(
 	ctx context.Context, username string, groups []string, namespace, name string,
-) (map[string]any, error) {
+) (*SpecSnapshot, error) {
 	if namespace == "" {
 		return nil, ErrNamespaceRequired
 	}
@@ -204,7 +206,11 @@ func (tsv *TenantService) GetSpec(
 
 	spec, _, _ := unstructured.NestedMap(obj.Object, "spec")
 
-	return spec, nil
+	return &SpecSnapshot{
+		Spec:            spec,
+		Kind:            "Tenant",
+		ResourceVersion: obj.GetResourceVersion(),
+	}, nil
 }
 
 // reservedTenantSpecKeys are never legitimate spec fields. They appear in
@@ -214,14 +220,20 @@ func (tsv *TenantService) GetSpec(
 //nolint:gochecknoglobals // small read-only set
 var reservedTenantSpecKeys = []string{"ns", "parent", "name"}
 
-// Update merges the given spec fields into an existing Tenant CR. The caller
-// specifies the parent namespace (where the CR lives, i.e. metadata.namespace)
-// because two tenants can share the same leaf name under different parents,
-// just like Delete. The root tenant is allowed to update since we don't let
-// users delete it — letting them tweak its quotas is safer than making root
-// read-only and having escape-hatch editing happen in kubectl.
+// Update merges the given spec fields into an existing Tenant CR.
+// The caller specifies the parent namespace (where the CR lives, i.e.
+// metadata.namespace) because two tenants can share the same leaf
+// name under different parents, just like Delete. The root tenant is
+// allowed to update since we don't let users delete it — letting
+// them tweak its quotas is safer than making root read-only.
+//
+// If resourceVersion is non-empty, Update pins it on the outgoing
+// object and the API server rejects concurrent writes with 409,
+// surfaced as k8s.ErrConflict. Pass "" to opt out of optimistic
+// concurrency (last-write-wins, historic behaviour).
 func (tsv *TenantService) Update(
-	ctx context.Context, username string, groups []string, namespace, name string, spec map[string]any,
+	ctx context.Context, username string, groups []string, namespace, name string,
+	spec map[string]any, resourceVersion string,
 ) (*Tenant, error) {
 	if namespace == "" {
 		return nil, ErrNamespaceRequired
@@ -260,8 +272,16 @@ func (tsv *TenantService) Update(
 		return nil, fmt.Errorf("setting spec: %w", setErr)
 	}
 
+	if resourceVersion != "" {
+		obj.SetResourceVersion(resourceVersion)
+	}
+
 	updated, err := client.Resource(TenantCRDGVR()).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
 	if err != nil {
+		if isConflictError(err) {
+			return nil, ErrConflict
+		}
+
 		return nil, fmt.Errorf("updating tenant %s/%s: %w", namespace, name, err)
 	}
 

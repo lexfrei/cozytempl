@@ -80,6 +80,13 @@ type CreateApplicationRequest struct {
 // UpdateApplicationRequest is the payload for updating an application.
 type UpdateApplicationRequest struct {
 	Spec map[string]any `json:"spec"`
+	// ResourceVersion carries the resourceVersion the caller
+	// observed when reading the edit form. Update passes it
+	// to the API server so a concurrent write by another user
+	// produces a 409 Conflict (k8s.ErrConflict) instead of a
+	// silent overwrite. An empty string disables optimistic
+	// locking and keeps the historic last-write-wins behaviour.
+	ResourceVersion string `json:"-"`
 }
 
 // CreateTenantRequest is the payload for creating a new tenant.
