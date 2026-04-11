@@ -134,7 +134,19 @@ func Router(cfg *RouterConfig) http.Handler {
 	mux.Handle("PUT /", protect(pageMux))
 	mux.Handle("DELETE /", protect(pageMux))
 
-	return withSecurityHeaders(withRequestTimeout(mux))
+	// Middleware order matters. Outer → inner:
+	//   withRequestID:       mints/reads the correlation ID and
+	//                        injects it into the request context.
+	//                        MUST be outermost so every downstream
+	//                        middleware, including withAccessLog,
+	//                        sees the ID when reading the context.
+	//   withAccessLog:       emits one structured log line per
+	//                        completed request, including request_id
+	//                        pulled from the enriched context.
+	//   withSecurityHeaders: sets CSP/HSTS/etc on every response,
+	//                        including error pages and 404s.
+	//   withRequestTimeout:  caps handler execution (bypassed for SSE).
+	return withRequestID(withAccessLog(cfg.Log, withSecurityHeaders(withRequestTimeout(mux))))
 }
 
 func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {

@@ -14,9 +14,11 @@ test: generate
 	go test ./cmd/... ./internal/... ./static/... -count=1 -race
 
 # Run linters (Go + TypeScript). Same scope as test — avoid scanning
-# node_modules for Go code.
+# node_modules for Go code. govulncheck runs against the Go module
+# graph and fails the build on any known CVE in the vendored deps.
 lint: generate
 	golangci-lint run ./cmd/... ./internal/... ./static/...
+	govulncheck ./cmd/... ./internal/...
 	npx eslint static/ts/
 
 # Build binary (embeds static assets). Same scoping rationale — package
@@ -37,4 +39,5 @@ clean:
 install-tools:
 	go install github.com/a-h/templ/cmd/templ@latest
 	go install github.com/air-verse/air@latest
+	go install golang.org/x/vuln/cmd/govulncheck@latest
 	npm install --save-dev eslint @typescript-eslint/eslint-plugin @typescript-eslint/parser typescript
