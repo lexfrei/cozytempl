@@ -163,7 +163,12 @@ func (asv *ApplicationService) GetSpec(
 	return spec, kind, nil
 }
 
-// Update updates an application's spec via its Cozystack CRD.
+// Update updates an application's spec via its Cozystack CRD. The
+// incoming spec is deep-merged into the existing spec, so fields the
+// UI does not render (arrays, objects deeper than maxNestedDepth,
+// e.g. postgresql.parameters.max_connections) survive every edit.
+// A plain replacement would be a silent data-loss bug for any app
+// whose schema has nested objects beyond what the form exposes.
 func (asv *ApplicationService) Update(
 	ctx context.Context, username string, groups []string, tenant, name string, req UpdateApplicationRequest,
 ) (*Application, error) {
@@ -172,7 +177,6 @@ func (asv *ApplicationService) Update(
 		return nil, err
 	}
 
-	// Need to find the kind first from HelmRelease labels
 	kind, findErr := asv.findAppKind(ctx, client, tenant, name)
 	if findErr != nil {
 		return nil, findErr
@@ -185,9 +189,12 @@ func (asv *ApplicationService) Update(
 		return nil, fmt.Errorf("getting %s for update: %w", kind, err)
 	}
 
-	err = unstructured.SetNestedField(obj.Object, req.Spec, "spec")
-	if err != nil {
-		return nil, fmt.Errorf("setting spec: %w", err)
+	existing, _, _ := unstructured.NestedMap(obj.Object, "spec")
+	merged := deepMergeSpec(existing, req.Spec)
+
+	setErr := unstructured.SetNestedField(obj.Object, merged, "spec")
+	if setErr != nil {
+		return nil, fmt.Errorf("setting spec: %w", setErr)
 	}
 
 	updated, err := client.Resource(gvr).Namespace(tenant).Update(ctx, obj, metav1.UpdateOptions{})

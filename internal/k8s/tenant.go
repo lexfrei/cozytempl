@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -238,10 +237,11 @@ func (tsv *TenantService) Update(
 		return nil, fmt.Errorf("getting tenant %s/%s: %w", namespace, name, err)
 	}
 
-	// Merge: we don't want to wipe fields the UI didn't render. Only the
-	// keys present in the incoming spec map are set; missing keys keep
-	// their current value. This matches the schema-driven form where
-	// leaving a field blank means "don't change".
+	// Merge: we don't want to wipe fields the UI didn't render. Nested
+	// maps are merged recursively so a partial update that only touches
+	// spec.backup.schedule keeps spec.backup.s3SecretKey intact — a
+	// shallow merge was a real data-loss bug during E2E, hitting any
+	// app or tenant whose schema had a nested block with secrets.
 	existing, _, _ := unstructured.NestedMap(obj.Object, "spec")
 	if existing == nil {
 		existing = map[string]any{}
@@ -253,9 +253,9 @@ func (tsv *TenantService) Update(
 		delete(existing, key)
 	}
 
-	maps.Copy(existing, spec)
+	merged := deepMergeSpec(existing, spec)
 
-	setErr := unstructured.SetNestedField(obj.Object, existing, "spec")
+	setErr := unstructured.SetNestedField(obj.Object, merged, "spec")
 	if setErr != nil {
 		return nil, fmt.Errorf("setting spec: %w", setErr)
 	}

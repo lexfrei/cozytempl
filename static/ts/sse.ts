@@ -21,6 +21,24 @@ interface ResourceMessage {
 const RECONNECT_DELAY_MS = 5000;
 const ROW_FLASH_MS = 1600;
 
+// PENDING_DELETE_WINDOW_MS is how long we suppress SSE "added" and
+// "modified" events for a resource name after the client has just
+// issued a delete. Cozystack's helm-controller can keep emitting
+// watch events on a failing HelmRelease for a while after the
+// underlying CRD has been deleted — the stale events would re-
+// insert the row moments after the user clicked Delete, which
+// looks like a bug to anyone not staring at the controller logs.
+// Five seconds is long enough to cover a normal helm rollback;
+// after that the watcher's real "deleted" event takes over.
+const PENDING_DELETE_WINDOW_MS = 5000;
+
+// pendingDeletions tracks names the user just asked to delete so
+// the reducer can drop concurrent added/modified events for them.
+// Entries are cleaned up either when the watcher emits the real
+// "removed" event or after PENDING_DELETE_WINDOW_MS — whichever
+// comes first.
+const pendingDeletions = new Map<string, number>();
+
 let currentSource: EventSource | null = null;
 let currentTenant = "";
 let reconnectTimer: number | null = null;
@@ -148,6 +166,14 @@ function applyChange(msg: ResourceMessage): void {
   const op = msg.op ?? msg.type;
   if (!op) return;
 
+  // Suppress noise from watchers that haven't caught up with a just-
+  // issued delete. The window expires on its own after
+  // PENDING_DELETE_WINDOW_MS; the real "removed" event clears the
+  // entry explicitly below.
+  if (op !== "removed" && isPendingDelete(msg.name)) {
+    return;
+  }
+
   switch (op) {
     case "added":
       if (msg.html) {
@@ -166,11 +192,36 @@ function applyChange(msg: ResourceMessage): void {
       }
       return;
     case "removed":
+      pendingDeletions.delete(msg.name);
       removeRow(msg.name);
       return;
     default:
       return;
   }
+}
+
+// isPendingDelete returns true if the name was recently marked for
+// deletion by the client (via notePendingDelete) and the suppression
+// window has not yet elapsed. Stale entries are garbage-collected
+// on read.
+function isPendingDelete(name: string): boolean {
+  const markedAt = pendingDeletions.get(name);
+  if (markedAt === undefined) return false;
+
+  if (Date.now() - markedAt > PENDING_DELETE_WINDOW_MS) {
+    pendingDeletions.delete(name);
+    return false;
+  }
+
+  return true;
+}
+
+// notePendingDelete records that the user just issued a delete for
+// the given name. Called from a document-level htmx:beforeRequest
+// listener set up in initSSE. The reducer uses it to ignore
+// concurrent watcher noise until the real removed event lands.
+function notePendingDelete(name: string): void {
+  pendingDeletions.set(name, Date.now());
 }
 
 function handleMessage(raw: string): void {
@@ -240,5 +291,24 @@ export function initSSE(): void {
 
   window.addEventListener("popstate", () => {
     syncFromLocation();
+  });
+
+  // Mark names the user just asked to delete so the SSE reducer
+  // can suppress concurrent watcher noise. We parse the name out
+  // of the hx-delete URL suffix (everything after the last /).
+  document.addEventListener("htmx:beforeRequest", (evt) => {
+    const detail = (evt as CustomEvent).detail ?? {};
+    const verb: string | undefined = detail.requestConfig?.verb;
+    if (verb !== "delete") return;
+
+    const path: string | undefined = detail.requestConfig?.path;
+    if (!path) return;
+
+    const cleaned = path.split("?")[0] ?? "";
+    const lastSlash = cleaned.lastIndexOf("/");
+    if (lastSlash < 0) return;
+
+    const name = cleaned.slice(lastSlash + 1);
+    if (name) notePendingDelete(name);
   });
 }

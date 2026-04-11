@@ -14,6 +14,50 @@ import (
 // 4-level cluster specs that really belong in a YAML editor.
 const maxNestedDepth = 2
 
+// secretKeySubstrings are case-insensitive substring matches on form
+// field dot-paths that cause the renderer to use type="password"
+// instead of type="text". Conservative list — we don't want to
+// accidentally mask a purely descriptive field like "keyspace" or
+// "tokenLifetime", so everything here is something that would be
+// surprising to leave on screen.
+var secretKeySubstrings = []string{
+	"password",
+	"passwd",
+	"secretkey",
+	"secret_key",
+	"secret-key",
+	"accesskey",
+	"access_key",
+	"access-key",
+	"apikey",
+	"api_key",
+	"api-key",
+	"privatekey",
+	"private_key",
+	"private-key",
+	"authtoken",
+	"auth_token",
+	"auth-token",
+	"bearertoken",
+	"bearer_token",
+	"bearer-token",
+	"passphrase",
+}
+
+// looksLikeSecret returns true when the form-field dot-path contains
+// any of the secretKeySubstrings. Match is case-insensitive. Triggered
+// during render so the field is a <input type="password">; the server
+// still receives the same form-encoded value.
+func looksLikeSecret(key string) bool {
+	lower := strings.ToLower(key)
+	for _, needle := range secretKeySubstrings {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
 // SchemaFields renders form fields dynamically from a JSON Schema.
 // For edit flows use SchemaFieldsWithValues to pre-populate the form.
 templ SchemaFields(schema k8s.AppSchema) {
@@ -66,6 +110,9 @@ templ renderField(field SchemaField) {
 			</select>
 		case field.Type == "integer" || field.Type == "number":
 			<input class="form-input" type="number" name={ field.Key } value={ field.Default }/>
+		case looksLikeSecret(field.Key):
+			<input class="form-input" type="password" name={ field.Key } value={ field.Default }
+				autocomplete="new-password" spellcheck="false"/>
 		default:
 			<input class="form-input" type="text" name={ field.Key } value={ field.Default }/>
 	}
