@@ -123,6 +123,13 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE_REPO }}
+          # IMPORTANT: `type=semver,pattern={{version}}` STRIPS the
+          # `v` prefix from the git tag. A git tag of `v0.1.0`
+          # produces image tag `0.1.0` (no `v`), matching the
+          # OCI convention used by gateway-controller and stock
+          # docker/metadata-action semantics. Use `type=ref` or
+          # `type=semver,pattern={{raw}}` if you ever need the raw
+          # `v0.1.0` form — we don't.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -132,6 +139,20 @@ jobs:
             org.opencontainers.image.title=cozytempl
             org.opencontainers.image.description=Web UI for Cozystack platform management
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Echo resolved image tags
+        # Visibility step: fails-safe verification that the meta
+        # action produced tags without the `v` prefix. Any drift
+        # shows up in the job log before buildx actually pushes.
+        run: |
+          echo "Resolved image tags for $GITHUB_REF_NAME:"
+          echo "${{ steps.meta.outputs.tags }}"
+          {
+            echo "### Resolved image tags (${{ matrix.arch }})"
+            echo '```text'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build and Push by Digest
         id: build
@@ -186,11 +207,25 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE_REPO }}
+          # Same {{version}} semantics as build-and-push: `v0.1.0`
+          # git tag → `0.1.0` image tag. See the long comment
+          # there for the why.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest
+
+      - name: Echo resolved image tags
+        run: |
+          echo "Resolved image tags for manifest list:"
+          echo "${{ steps.meta.outputs.tags }}"
+          {
+            echo "### Manifest list tags"
+            echo '```text'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
@@ -236,9 +271,22 @@ jobs:
 
       - name: Extract version
         id: version
+        # ${GITHUB_REF_NAME#v} strips the leading `v` if present.
+        # Git tag v0.1.0 → VERSION=0.1.0. Same normalisation that
+        # docker/metadata-action's {{version}} template applies to
+        # the container image tags in build-and-push, so chart
+        # version, chart appVersion, values.yaml image.tag and the
+        # image tag on ghcr all line up on 0.1.0.
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved VERSION=${VERSION} (from git tag ${GITHUB_REF_NAME})"
+          {
+            echo "### Release version"
+            echo ""
+            echo "- Git tag: \`${GITHUB_REF_NAME}\`"
+            echo "- Chart version / appVersion / image tag: \`${VERSION}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Helm
         uses: azure/setup-helm@v4
