@@ -84,9 +84,11 @@ func (pgh *PageHandler) doCreateApp(
 	}
 
 	pgh.log.Info("app created", "tenant", tenantNS, "name", appName, "kind", appKind)
-
-	writer.Header().Set("Hx-Redirect", "/tenants/"+tenantNS)
-	writer.WriteHeader(http.StatusCreated)
+	pgh.emitSuccessToast(writer, req, "Application created: "+appName)
+	// Re-render the tenant page so the new row appears in the app table
+	// and the create modal closes (it's inside the tenant template, so
+	// the swap replaces it with a fresh, closed copy).
+	pgh.TenantPage(writer, req)
 }
 
 // extractFieldTypes walks the JSON schema and returns a map from
@@ -221,8 +223,10 @@ func (pgh *PageHandler) doUpdateApp(
 	}
 
 	pgh.log.Info("app updated", "tenant", tenantNS, "name", appName, "kind", kind)
-	writer.Header().Set("Hx-Redirect", "/tenants/"+tenantNS)
-	writer.WriteHeader(http.StatusOK)
+	pgh.emitSuccessToast(writer, req, "Application updated: "+appName)
+	// Re-render so the changed spec values show up immediately in the
+	// app row and the edit slot collapses.
+	pgh.TenantPage(writer, req)
 }
 
 // DeleteApp handles DELETE to remove an application.
@@ -244,8 +248,11 @@ func (pgh *PageHandler) DeleteApp(writer http.ResponseWriter, req *http.Request)
 	}
 
 	pgh.log.Info("app deleted", "tenant", tenantNS, "name", appName)
-
-	writer.WriteHeader(http.StatusOK)
+	// Delete is hx-swap="delete swap:500ms" so the triggering row is
+	// removed client-side regardless of the response body. Sending
+	// *only* an OOB toast keeps the row-delete animation intact while
+	// still giving the user explicit confirmation.
+	pgh.emitSuccessToast(writer, req, "Application deleted: "+appName)
 }
 
 // renderErrorToast writes an OOB error toast without touching the htmx target.
@@ -258,6 +265,24 @@ func (pgh *PageHandler) renderErrorToast(writer http.ResponseWriter, req *http.R
 	renderErr := partial.Toast("error", msg).Render(req.Context(), writer)
 	if renderErr != nil {
 		pgh.log.Error("rendering toast", "error", renderErr)
+	}
+}
+
+// emitSuccessToast writes an OOB success toast directly to the response
+// body. The caller typically follows this with a page-render call so
+// the response carries both the toast (OOB swap target =
+// #toast-container) and the fresh main content in a single round-trip.
+//
+// This is intentionally NOT a drop-in replacement for renderErrorToast:
+// error toasts use Hx-Reswap: none because the failing mutation should
+// leave the current DOM untouched, whereas success toasts go out
+// alongside a fresh content swap that the caller produces.
+func (pgh *PageHandler) emitSuccessToast(writer http.ResponseWriter, req *http.Request, msg string) {
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	renderErr := partial.Toast("success", msg).Render(req.Context(), writer)
+	if renderErr != nil {
+		pgh.log.Error("rendering success toast", "error", renderErr)
 	}
 }
 

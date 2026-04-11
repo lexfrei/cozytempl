@@ -143,8 +143,10 @@ func (pgh *PageHandler) CreateTenant(writer http.ResponseWriter, req *http.Reque
 	}
 
 	pgh.log.Info("tenant created", "name", form.Name, "parent", form.Parent)
-	writer.Header().Set("Hx-Redirect", "/tenants")
-	writer.WriteHeader(http.StatusCreated)
+	pgh.emitSuccessToast(writer, req, "Tenant created: "+form.Name)
+	// Re-render the tenants list so the new row shows up and the
+	// create modal closes with a fresh (closed) template.
+	pgh.TenantsPage(writer, req)
 }
 
 type tenantFormValues struct {
@@ -228,8 +230,8 @@ func (pgh *PageHandler) UpdateTenant(writer http.ResponseWriter, req *http.Reque
 	}
 
 	pgh.log.Info("tenant updated", "ns", namespace, "name", name, "keys", len(spec))
-	writer.Header().Set("Hx-Redirect", "/tenants")
-	writer.WriteHeader(http.StatusOK)
+	pgh.emitSuccessToast(writer, req, "Tenant updated: "+name)
+	pgh.TenantsPage(writer, req)
 }
 
 // DeleteTenant handles DELETE /tenants/{name}?ns=... to remove a tenant.
@@ -264,7 +266,10 @@ func (pgh *PageHandler) DeleteTenant(writer http.ResponseWriter, req *http.Reque
 	}
 
 	pgh.log.Info("tenant deleted", "ns", namespace, "name", name)
-	writer.WriteHeader(http.StatusOK)
+	// Delete is hx-swap="delete swap:500ms" — the row disappears
+	// client-side regardless of the response body. Toast only; no
+	// re-render so the row-delete animation plays cleanly.
+	pgh.emitSuccessToast(writer, req, "Tenant deleted: "+name)
 }
 
 // isReservedTenantFormKey reports whether a form key should be skipped
