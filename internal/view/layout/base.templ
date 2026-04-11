@@ -8,16 +8,18 @@ templ Base(title string) {
 	<head>
 		<meta charset="UTF-8"/>
 		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<meta name="referrer" content="same-origin"/>
+		<meta http-equiv="X-Content-Type-Options" content="nosniff"/>
 		<title>{ title } — cozytempl</title>
 		<link rel="stylesheet" href={ "/static/css/styles.css?v=" + static.AssetVersion() }/>
 		<link rel="preconnect" href="https://fonts.googleapis.com"/>
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"/>
 		<script src="https://unpkg.com/htmx.org@2/dist/htmx.min.js"></script>
-		<script src="https://unpkg.com/htmx-ext-sse@2/sse.js"></script>
 		<script defer src={ "/static/dist/bundle.js?v=" + static.AssetVersion() }></script>
 	</head>
 	<body>
+		<div id="htmx-progress-bar" aria-hidden="true"></div>
 		{ children... }
 	</body>
 	</html>

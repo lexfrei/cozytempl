@@ -71,7 +71,7 @@ func run() error {
 		TenantHandler: api.NewTenantHandler(tenantSvc, log),
 		AppHandler:    api.NewApplicationHandler(appSvc, log),
 		SchemaHandler: api.NewSchemaHandler(schemaSvc, log),
-		SSEHandler:    api.NewSSEHandler(watcher, log),
+		SSEHandler:    api.NewSSEHandler(watcher, k8sCfg, log),
 		PageHandler:   pageHandler,
 		StaticFS:      static.FS,
 		Log:           log,

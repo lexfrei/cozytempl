@@ -539,15 +539,33 @@ tr.row-flash td {
   z-index: 200;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  max-width: min(440px, calc(100vw - 32px));
 }
 
 .toast {
-  padding: 12px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px 14px 14px;
   border-radius: var(--radius-md);
   font-size: 0.9rem;
+  line-height: 1.4;
   box-shadow: var(--shadow-md);
-  animation: toast-in 200ms ease;
+  animation: toast-in 220ms ease;
+  position: relative;
+  overflow: hidden;
+  min-width: 280px;
+}
+
+/* Left accent bar drawn via ::before — no emoji/unicode icons. */
+.toast::before {
+  content: "";
+  flex: 0 0 4px;
+  align-self: stretch;
+  margin: -2px 2px -2px 0;
+  border-radius: 2px;
+  background: currentColor;
 }
 
 .toast-success {
@@ -558,8 +576,28 @@ tr.row-flash td {
 
 .toast-error {
   background: var(--color-danger-bg);
-  border: 1px solid var(--color-danger);
+  border: 2px solid var(--color-danger);
   color: var(--color-danger);
+  font-weight: 500;
+}
+
+/* Auto-dismiss countdown bar (optional visual; driven by CSS animation). */
+.toast[data-auto-dismiss]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: currentColor;
+  opacity: 0.4;
+  transform-origin: left;
+  animation: toast-countdown 4000ms linear forwards;
+}
+
+@keyframes toast-countdown {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
 }
 
 @keyframes toast-in {
@@ -594,6 +632,146 @@ tr.row-flash td {
   padding: 48px;
   color: var(--color-text-muted);
   gap: 12px;
+}
+
+/* ---- htmx request feedback ---------------------------------------------- */
+
+/*
+ * Global top progress bar. The bar is driven by htmx.ts on
+ * htmx:beforeRequest / htmx:afterRequest events. A single element in
+ * base.templ (#htmx-progress-bar) handles every request across the app.
+ */
+#htmx-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--color-primary) 0%,
+    var(--color-primary-hover) 50%,
+    var(--color-primary) 100%
+  );
+  z-index: 1000;
+  transform-origin: left;
+  transform: scaleX(0);
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 0 6px var(--color-primary);
+}
+
+#htmx-progress-bar.loading {
+  opacity: 1;
+  transform: scaleX(0.85);
+  transition: transform 8s cubic-bezier(0.05, 0.7, 0.1, 1);
+}
+
+#htmx-progress-bar.done {
+  opacity: 0;
+  transform: scaleX(1);
+  transition: transform 180ms ease-out, opacity 320ms ease-out 160ms;
+}
+
+/*
+ * Element issuing an in-flight htmx request. htmx automatically toggles the
+ * .htmx-request class on the triggering element and on any element matching
+ * hx-indicator. We style buttons/links/inputs to be visibly busy.
+ */
+.htmx-request {
+  pointer-events: none;
+}
+
+button.htmx-request,
+a.btn.htmx-request,
+.tab.htmx-request {
+  position: relative;
+  color: transparent !important;
+  cursor: wait;
+}
+
+button.htmx-request::after,
+a.btn.htmx-request::after,
+.tab.htmx-request::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid var(--color-text);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 600ms linear infinite;
+  color: var(--color-text);
+}
+
+.btn-primary.htmx-request::after {
+  border-color: #fff;
+  border-right-color: transparent;
+}
+
+.btn-danger.htmx-request::after {
+  border-color: var(--color-danger);
+  border-right-color: transparent;
+}
+
+/* Inputs (search, selects) get a subtle ring while the fragment is loading. */
+input.htmx-request,
+select.htmx-request,
+textarea.htmx-request {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-bg);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+/* Dashed link/nav row gets a soft highlight while loading. */
+a.sidebar-item.htmx-request,
+.mp-pill.htmx-request,
+.mp-tag-pill.htmx-request {
+  background: var(--color-primary-bg);
+  color: var(--color-primary);
+}
+
+/* Row being swapped out after a delete. Slides right and fades. */
+tr.htmx-swapping {
+  animation: row-delete 500ms ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes row-delete {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+    background: var(--color-danger-bg);
+    box-shadow: inset 3px 0 0 var(--color-danger);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(24px);
+    background: var(--color-danger-bg);
+    box-shadow: inset 3px 0 0 var(--color-danger);
+  }
+}
+
+tr.htmx-swapping td {
+  border-bottom-color: var(--color-danger);
+}
+
+/* The dashboard row is clickable via hx-get; show loading cursor on hover. */
+tr[hx-get]:hover {
+  cursor: pointer;
+}
+
+/* Prevent layout shift while htmx is settling (fade-in for new content). */
+#main-content.htmx-swapping {
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+#main-content.htmx-settling {
+  opacity: 1;
+  transition: opacity 180ms ease-in;
 }
 
 /* Empty state */

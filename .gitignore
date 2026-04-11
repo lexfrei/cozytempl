@@ -37,3 +37,6 @@ tmp/
 
 # Node (for Tailwind build)
 node_modules/
+
+# Claude Code scratch dir
+.claude/

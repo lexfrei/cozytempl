@@ -2,6 +2,7 @@ import { initToasts } from "./toast";
 import { initModals, openModal, closeModal } from "./modal";
 import { initClipboard } from "./clipboard";
 import { initSSE } from "./sse";
+import { initHtmxFeedback } from "./htmx";
 
 // Expose modal functions globally for onclick handlers in templ
 declare global {
@@ -47,6 +48,7 @@ function initBurger(): void {
 }
 
 function initAll(): void {
+  initHtmxFeedback();
   initBurger();
   initToasts();
   initModals();

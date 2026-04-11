@@ -1,15 +1,25 @@
-// SSE subscription for real-time app status badge updates, row inserts, and removals.
-// Parses tenant namespace from URL (/tenants/:ns/...) and subscribes to
-// /api/events?tenant=:ns. Server pushes JSON messages with type=added|status|removed.
+// SSE subscription for real-time app updates.
+//
+// One connection per tenant page. The server emits a unified
+// "resource change" message with a discriminator (op: added | modified |
+// removed). The client runs a single reducer that upserts or deletes a row
+// keyed by its name, so create / update / delete go through the same code
+// path. When a filter or sort is active the client refetches the fragment
+// instead of blindly appending.
 
-interface SSEMessage {
-  type: "added" | "status" | "removed";
+type ResourceOp = "added" | "modified" | "removed";
+
+interface ResourceMessage {
+  // Backwards-compatible field. Older servers may still send {type: ...}.
+  type?: ResourceOp;
+  op?: ResourceOp;
   name: string;
   status?: string;
   html?: string;
 }
 
 const RECONNECT_DELAY_MS = 5000;
+const ROW_FLASH_MS = 1600;
 
 let currentSource: EventSource | null = null;
 let currentTenant = "";
@@ -28,11 +38,20 @@ function badgeClass(status: string): string {
   return "badge badge-unknown";
 }
 
+function rowForName(name: string): HTMLTableRowElement | null {
+  const byId = document.getElementById(`row-${name}`);
+  if (byId instanceof HTMLTableRowElement) return byId;
+
+  // Legacy fallback: older server renders only put an id on the status badge.
+  const badge = document.getElementById(`status-${name}`);
+  return badge?.closest("tr") ?? null;
+}
+
 function applyStatus(name: string, status: string): void {
-  const el = document.getElementById(`status-${name}`);
-  if (!el) return;
-  el.className = badgeClass(status);
-  el.textContent = status;
+  const badgeEl = document.getElementById(`status-${name}`);
+  if (!badgeEl) return;
+  badgeEl.className = badgeClass(status);
+  badgeEl.textContent = status;
 }
 
 function getFilterValue(selector: string): string {
@@ -40,9 +59,9 @@ function getFilterValue(selector: string): string {
   return el?.value ?? "";
 }
 
-// hasActiveAppFilter reports whether any filter/sort input on the tenant page
-// has a non-default value. When true, naive append would show rows that should
-// be hidden, so we must refetch the fragment with the current params instead.
+// Any filter/sort input on the tenant page has a non-default value. When
+// true, blindly inserting a row would show rows that ought to be hidden or
+// place them out of sort order — we refetch the fragment instead.
 function hasActiveAppFilter(): boolean {
   const query = getFilterValue('input[name="q"]');
   const kind = getFilterValue('select[name="kind"]');
@@ -50,8 +69,10 @@ function hasActiveAppFilter(): boolean {
   return query !== "" || kind !== "" || (sort !== "" && sort !== "name");
 }
 
-// refreshAppTable re-fetches the app-table fragment with current filter params
-// and swaps it via htmx. Keeps the visible list consistent with server state.
+interface HtmxGlobal {
+  ajax: (method: string, url: string, target: string) => void;
+}
+
 function refreshAppTable(tenant: string): void {
   if (!tenant) return;
 
@@ -62,25 +83,38 @@ function refreshAppTable(tenant: string): void {
     sort: getFilterValue('select[name="sort"]'),
   });
 
-  const htmxGlobal = (window as unknown as { htmx?: { ajax: (method: string, url: string, target: string) => void } }).htmx;
+  const htmxGlobal = (window as unknown as { htmx?: HtmxGlobal }).htmx;
   if (htmxGlobal) {
-    htmxGlobal.ajax("GET", `/fragments/app-table?${params.toString()}`, "#app-table-body");
+    htmxGlobal.ajax(
+      "GET",
+      `/fragments/app-table?${params.toString()}`,
+      "#app-table-body",
+    );
   }
 }
 
-function appendRow(name: string, html: string): void {
-  if (!html) return;
-  // If a row for this app already exists, don't duplicate it.
-  if (document.getElementById(`status-${name}`)) return;
+function flashRow(row: HTMLElement): void {
+  row.classList.add("row-flash");
+  window.setTimeout(() => row.classList.remove("row-flash"), ROW_FLASH_MS);
+}
 
+// upsertRow is a single path for "row should exist with this HTML".
+// Called for added and modified events; the server sends the full row HTML.
+function upsertRow(name: string, html: string): void {
   const tbody = document.getElementById("app-table-body");
   if (!tbody) return;
 
-  // If filters/sort are active, the naive append would put rows in the wrong
-  // position or show rows that should be hidden. Refetch instead.
-  if (hasActiveAppFilter()) {
-    refreshAppTable(currentTenant);
+  const existing = rowForName(name);
 
+  // If a filter/sort is active, any structural change (add or reorder) must
+  // be reflected by refetching. Simple status updates still work because the
+  // badge DOM node is replaced via applyStatus.
+  if (!existing && hasActiveAppFilter()) {
+    refreshAppTable(currentTenant);
+    return;
+  }
+
+  if (!html) {
     return;
   }
 
@@ -89,43 +123,44 @@ function appendRow(name: string, html: string): void {
   const fragment = template.content;
   if (fragment.childNodes.length === 0) return;
 
-  tbody.appendChild(fragment);
+  const newRow = fragment.firstElementChild as HTMLElement | null;
+  if (!newRow) return;
 
-  // Flash the newly inserted row once.
-  const inserted = document.getElementById(`status-${name}`)?.closest("tr");
-  if (inserted) {
-    inserted.classList.add("row-flash");
-    window.setTimeout(() => inserted.classList.remove("row-flash"), 1600);
+  if (existing) {
+    existing.replaceWith(newRow);
+  } else {
+    tbody.appendChild(newRow);
+    flashRow(newRow);
   }
 }
 
 function removeRow(name: string): void {
-  const badge = document.getElementById(`status-${name}`);
-  if (!badge) return;
-  const row = badge.closest("tr");
+  const row = rowForName(name);
   if (row) row.remove();
 }
 
-function handleMessage(raw: string): void {
-  let msg: SSEMessage;
-  try {
-    msg = JSON.parse(raw) as SSEMessage;
-  } catch {
-    return;
-  }
-
+// applyChange is the single reducer for every server-pushed update. Any
+// future event shape (e.g. tenant changes, quota updates) should plug into
+// this function rather than growing a parallel handler.
+function applyChange(msg: ResourceMessage): void {
   if (!msg.name) return;
 
-  switch (msg.type) {
+  const op = msg.op ?? msg.type;
+  if (!op) return;
+
+  switch (op) {
     case "added":
       if (msg.html) {
-        appendRow(msg.name, msg.html);
+        upsertRow(msg.name, msg.html);
       }
       if (msg.status) {
         applyStatus(msg.name, msg.status);
       }
       return;
-    case "status":
+    case "modified":
+      if (msg.html) {
+        upsertRow(msg.name, msg.html);
+      }
       if (msg.status) {
         applyStatus(msg.name, msg.status);
       }
@@ -136,6 +171,17 @@ function handleMessage(raw: string): void {
     default:
       return;
   }
+}
+
+function handleMessage(raw: string): void {
+  let msg: ResourceMessage;
+  try {
+    msg = JSON.parse(raw) as ResourceMessage;
+  } catch {
+    return;
+  }
+
+  applyChange(msg);
 }
 
 function disconnect(): void {

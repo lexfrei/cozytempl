@@ -8,32 +8,39 @@ import (
 
 templ AppTableRows(tenant string, apps []k8s.Application) {
 	for _, app := range apps {
-		<tr>
-			<td>
-				<a href={ templ.SafeURL("/tenants/" + tenant + "/apps/" + app.Name) }
-					hx-get={ "/tenants/" + tenant + "/apps/" + app.Name }
-					hx-target="#main-content"
-					hx-push-url="true"
-					style="color: inherit; text-decoration: none; display: block;">
-					{ app.Name }
-				</a>
-			</td>
-			<td>{ app.Kind }</td>
-			<td>
-				@partial.StatusBadgeWithID(string(app.Status), "status-"+app.Name)
-			</td>
-			<td class="text-sm text-muted">{ formatTime(app.CreatedAt) }</td>
-			<td>
-				<button class="btn btn-sm btn-danger"
-					hx-delete={ "/tenants/" + tenant + "/apps/" + app.Name }
-					hx-confirm={ "Delete " + app.Kind + " '" + app.Name + "'? This cannot be undone." }
-					hx-target="closest tr"
-					hx-swap="outerHTML swap:500ms">
-					Delete
-				</button>
-			</td>
-		</tr>
+		@AppTableRow(tenant, app)
 	}
+}
+
+// AppTableRow is the server-side canonical rendering of a single app row.
+// The id is stable across rerenders so SSE messages and htmx swaps can
+// target the same DOM node regardless of how it arrived.
+templ AppTableRow(tenant string, app k8s.Application) {
+	<tr id={ "row-" + app.Name }>
+		<td>
+			<a href={ templ.SafeURL("/tenants/" + tenant + "/apps/" + app.Name) }
+				hx-get={ "/tenants/" + tenant + "/apps/" + app.Name }
+				hx-target="#main-content"
+				hx-push-url="true"
+				style="color: inherit; text-decoration: none; display: block;">
+				{ app.Name }
+			</a>
+		</td>
+		<td>{ app.Kind }</td>
+		<td>
+			@partial.StatusBadgeWithID(string(app.Status), "status-"+app.Name)
+		</td>
+		<td class="text-sm text-muted">{ formatTime(app.CreatedAt) }</td>
+		<td>
+			<button class="btn btn-sm btn-danger"
+				hx-delete={ "/tenants/" + tenant + "/apps/" + app.Name }
+				hx-confirm={ "Delete " + app.Kind + " '" + app.Name + "'? This cannot be undone." }
+				hx-target="closest tr"
+				hx-swap="delete swap:500ms">
+				Delete
+			</button>
+		</td>
+	</tr>
 }
 
 func formatTime(t time.Time) string {

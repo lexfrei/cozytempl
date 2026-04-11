@@ -4,31 +4,52 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/rest"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view/page"
 )
 
-// SSEHandler handles Server-Sent Events for real-time updates.
+// SSEHandler handles Server-Sent Events for real-time updates. It authorizes
+// each subscribe by doing an impersonated list against the requested tenant
+// namespace — without this check any authenticated user could watch any
+// tenant's app stream just by passing ?tenant= in the query string.
 type SSEHandler struct {
 	watcher *k8s.Watcher
 	log     *slog.Logger
+	baseCfg *rest.Config
 }
 
-// NewSSEHandler creates a new SSE handler.
-func NewSSEHandler(watcher *k8s.Watcher, log *slog.Logger) *SSEHandler {
-	return &SSEHandler{watcher: watcher, log: log}
+// NewSSEHandler creates a new SSE handler. baseCfg is used to build
+// impersonated clients for the per-request tenant access check. Passing nil
+// disables authorization and should only be used in tests.
+func NewSSEHandler(watcher *k8s.Watcher, baseCfg *rest.Config, log *slog.Logger) *SSEHandler {
+	return &SSEHandler{watcher: watcher, log: log, baseCfg: baseCfg}
 }
+
+// ErrTenantAccessDenied is returned when a user tries to subscribe to a
+// namespace they cannot list HelmReleases in.
+var ErrTenantAccessDenied = errors.New("tenant access denied")
 
 // sseMessage is the JSON payload delivered to browser EventSource clients.
-// Type is one of "added", "status", "removed".
-// Status is present for "status" and "added". HTML is present only for "added".
+// Op is one of "added", "modified", "removed". HTML is present for added and
+// modified (a fully rendered row); status is present when known. The client
+// runs a single upsert/delete reducer keyed by Name so all operations go
+// through the same code path.
+//
+// The legacy "type" field is also emitted for backwards compatibility with
+// clients that pre-date the unified message shape. It can be removed once
+// no old browsers are in flight.
 type sseMessage struct {
-	Type   string `json:"type"`
+	Op     string `json:"op"`
+	Type   string `json:"type"` // deprecated; mirrors Op
 	Name   string `json:"name"`
 	Status string `json:"status,omitempty"`
 	HTML   string `json:"html,omitempty"`
@@ -57,6 +78,17 @@ func (ssh *SSEHandler) Stream(writer http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Authorization: verify the user can actually list resources in this
+	// tenant namespace before subscribing. Otherwise any authenticated user
+	// could peek at any tenant's updates just by knowing the namespace.
+	authErr := ssh.authorizeTenant(req.Context(), usr.Username, usr.Groups, tenant)
+	if authErr != nil {
+		ssh.log.Warn("SSE subscribe denied", "user", usr.Username, "tenant", tenant, "error", authErr)
+		Error(writer, http.StatusForbidden, "tenant access denied")
+
+		return
+	}
+
 	writer.Header().Set("Content-Type", "text/event-stream")
 	writer.Header().Set("Cache-Control", "no-cache")
 	writer.Header().Set("Connection", "keep-alive")
@@ -77,6 +109,35 @@ func (ssh *SSEHandler) Stream(writer http.ResponseWriter, req *http.Request) {
 	ssh.pumpEvents(req.Context(), writer, flusher, tenant, events)
 
 	ssh.log.Info("SSE client disconnected", "tenant", tenant, "user", usr.Username)
+}
+
+// authorizeTenant returns nil if the impersonated user can list HelmReleases
+// in the tenant namespace. A List with limit=1 is used to keep the check
+// cheap and to surface the same RBAC error users would see in the UI.
+// Returns ErrTenantAccessDenied wrapped with the upstream error details.
+func (ssh *SSEHandler) authorizeTenant(
+	ctx context.Context,
+	username string,
+	groups []string,
+	tenant string,
+) error {
+	if ssh.baseCfg == nil {
+		return nil
+	}
+
+	client, err := k8s.NewImpersonatingClient(ssh.baseCfg, username, groups)
+	if err != nil {
+		return fmt.Errorf("building impersonating client: %w", err)
+	}
+
+	_, listErr := client.Resource(k8s.HelmReleaseGVR()).Namespace(tenant).List(ctx, metav1.ListOptions{
+		Limit: 1,
+	})
+	if listErr != nil {
+		return fmt.Errorf("%w: %s: %v", ErrTenantAccessDenied, tenant, listErr) //nolint:errorlint // wrap upstream error as details
+	}
+
+	return nil
 }
 
 func (ssh *SSEHandler) pumpEvents(
@@ -131,34 +192,42 @@ func (ssh *SSEHandler) writeEvent(
 	return true
 }
 
-// buildMessage converts a watcher event into a client SSE payload.
-// For Added events, renders a full table row via templ.
+// buildMessage converts a watcher event into a client SSE payload. Added and
+// modified events carry the fully rendered row HTML so the client can do a
+// uniform upsert; removed carries only the name. The client runs a single
+// reducer — no per-op handler fan-out.
 func (ssh *SSEHandler) buildMessage(ctx context.Context, tenant string, evt *k8s.WatchEvent) *sseMessage {
+	if evt.App.Name == "" {
+		// HelmReleases without the application.name label slip through if
+		// Cozystack's label selector is ever broadened. Ignore silently.
+		return nil
+	}
+
 	switch evt.Type {
-	case k8s.WatchEventAdded:
+	case k8s.WatchEventAdded, k8s.WatchEventModified:
+		operation := "added"
+		if evt.Type == k8s.WatchEventModified {
+			operation = "modified"
+		}
+
 		html, err := renderAppRow(ctx, tenant, &evt.App)
 		if err != nil {
-			ssh.log.Error("rendering row for added event", "name", evt.App.Name, "error", err)
+			ssh.log.Error("rendering row", "op", operation, "name", evt.App.Name, "error", err)
 
 			return nil
 		}
 
 		return &sseMessage{
-			Type:   "added",
+			Op:     operation,
+			Type:   operation,
 			Name:   evt.App.Name,
 			Status: string(evt.App.Status),
 			HTML:   html,
 		}
 
-	case k8s.WatchEventModified:
-		return &sseMessage{
-			Type:   "status",
-			Name:   evt.App.Name,
-			Status: string(evt.App.Status),
-		}
-
 	case k8s.WatchEventDeleted:
 		return &sseMessage{
+			Op:   "removed",
 			Type: "removed",
 			Name: evt.App.Name,
 		}
@@ -171,7 +240,7 @@ func (ssh *SSEHandler) buildMessage(ctx context.Context, tenant string, evt *k8s
 func renderAppRow(ctx context.Context, tenant string, app *k8s.Application) (string, error) {
 	var buf bytes.Buffer
 
-	err := page.AppTableRows(tenant, []k8s.Application{*app}).Render(ctx, &buf)
+	err := page.AppTableRow(tenant, *app).Render(ctx, &buf)
 	if err != nil {
 		return "", fmt.Errorf("rendering row: %w", err)
 	}
