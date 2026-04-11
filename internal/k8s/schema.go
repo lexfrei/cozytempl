@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 )
 
@@ -76,7 +77,12 @@ func (ssv *SchemaService) List(ctx context.Context, username string, groups []st
 	return schemas, nil
 }
 
-// Get returns the full schema for a specific application kind.
+// Get returns the full schema for a specific application kind. Lookup is
+// tolerant of the CRD naming irregularity (ApplicationDefinition names use
+// hyphens, e.g. "minecraft-server", while the Cozystack kind is camelCase
+// "MinecraftServer"): if the lowercase short-name lookup fails, we fall
+// back to listing every ApplicationDefinition and matching by
+// spec.application.kind. Results are cached either way.
 func (ssv *SchemaService) Get(ctx context.Context, username string, groups []string, kind string) (*AppSchema, error) {
 	ssv.mu.RLock()
 	entry, exists := ssv.cache[kind]
@@ -91,24 +97,61 @@ func (ssv *SchemaService) Get(ctx context.Context, username string, groups []str
 		return nil, err
 	}
 
-	// ApplicationDefinition name is the lowercase kind (e.g. "postgres", "kubernetes")
+	// Fast path: ApplicationDefinition name is the lowercase kind for
+	// single-word kinds (postgres, kubernetes, info, etc.).
 	defName := toLowerKind(kind)
 
 	obj, getErr := client.Resource(appDefGVR()).Get(ctx, defName, metav1.GetOptions{})
-	if getErr != nil {
-		return nil, fmt.Errorf("getting ApplicationDefinition %s: %w", defName, getErr)
+	if getErr == nil {
+		if parsed := appDefToSchema(obj); parsed != nil {
+			ssv.cacheSet(kind, parsed)
+
+			return parsed, nil
+		}
 	}
 
-	appSchema := appDefToSchema(obj)
-	if appSchema == nil {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidAppDef, defName)
+	// Fallback: scan the full list and match by spec.application.kind.
+	// Used for camelCase kinds whose ApplicationDefinition name is
+	// hyphenated (MinecraftServer -> minecraft-server).
+	parsed, findErr := ssv.findByKind(ctx, client, kind)
+	if findErr != nil {
+		return nil, findErr
 	}
 
+	ssv.cacheSet(kind, parsed)
+
+	return parsed, nil
+}
+
+// findByKind scans every ApplicationDefinition and returns the one whose
+// spec.application.kind matches the requested kind. Slower than a direct
+// Get by name but tolerates the hyphenated-vs-camelCase naming mismatch
+// in Cozystack's ApplicationDefinition resource names.
+func (ssv *SchemaService) findByKind(
+	ctx context.Context, client dynamic.Interface, kind string,
+) (*AppSchema, error) {
+	defList, listErr := client.Resource(appDefGVR()).List(ctx, metav1.ListOptions{})
+	if listErr != nil {
+		return nil, fmt.Errorf("listing ApplicationDefinitions: %w", listErr)
+	}
+
+	for idx := range defList.Items {
+		candidate := appDefToSchema(&defList.Items[idx])
+		if candidate != nil && candidate.Kind == kind {
+			return candidate, nil
+		}
+	}
+
+	return nil, fmt.Errorf("%w: kind %s", ErrInvalidAppDef, kind)
+}
+
+// cacheSet stores a schema under its Cozystack kind key. Takes the write
+// lock so concurrent Get calls that resolve the same kind don't thrash
+// the cache entry.
+func (ssv *SchemaService) cacheSet(kind string, parsed *AppSchema) {
 	ssv.mu.Lock()
-	ssv.cache[kind] = schemaCacheEntry{schema: appSchema, fetchedAt: time.Now()}
+	ssv.cache[kind] = schemaCacheEntry{schema: parsed, fetchedAt: time.Now()}
 	ssv.mu.Unlock()
-
-	return appSchema, nil
 }
 
 func appDefToSchema(obj *unstructured.Unstructured) *AppSchema {

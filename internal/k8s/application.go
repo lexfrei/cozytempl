@@ -127,6 +127,42 @@ func (asv *ApplicationService) Create(
 	return &app, nil
 }
 
+// GetSpec returns the raw spec map of an existing application CRD and
+// its resolved Kind, so the edit modal can pre-populate form fields and
+// coerce values to the right types. The kind is looked up from the
+// HelmRelease label selector — same path Update uses — so callers do
+// not need to supply it.
+//
+//nolint:gocritic // unnamedResult conflicts with nonamedreturns linter
+func (asv *ApplicationService) GetSpec(
+	ctx context.Context, username string, groups []string, tenant, name string,
+) (map[string]any, string, error) {
+	if !isValidLabelValue(name) {
+		return nil, "", fmt.Errorf("%w: invalid application name %q", ErrAppNotFound, name)
+	}
+
+	client, err := NewImpersonatingClient(asv.baseCfg, username, groups)
+	if err != nil {
+		return nil, "", err
+	}
+
+	kind, findErr := asv.findAppKind(ctx, client, tenant, name)
+	if findErr != nil {
+		return nil, "", findErr
+	}
+
+	gvr := appGVR(kind)
+
+	obj, getErr := client.Resource(gvr).Namespace(tenant).Get(ctx, name, metav1.GetOptions{})
+	if getErr != nil {
+		return nil, kind, fmt.Errorf("getting %s %s/%s: %w", kind, tenant, name, getErr)
+	}
+
+	spec, _, _ := unstructured.NestedMap(obj.Object, "spec")
+
+	return spec, kind, nil
+}
+
 // Update updates an application's spec via its Cozystack CRD.
 func (asv *ApplicationService) Update(
 	ctx context.Context, username string, groups []string, tenant, name string, req UpdateApplicationRequest,

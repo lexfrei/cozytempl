@@ -121,6 +121,74 @@ func extractFieldTypes(schema *k8s.AppSchema) map[string]string {
 	return types
 }
 
+// UpdateApp handles PUT /tenants/{tenant}/apps/{name} — merges form
+// fields into the existing application's spec. The request body is the
+// same schema-driven form used by create, minus the name + kind fields
+// which are fixed at creation time.
+func (pgh *PageHandler) UpdateApp(writer http.ResponseWriter, req *http.Request) {
+	usr := auth.UserFromContext(req.Context())
+	if usr == nil {
+		http.Error(writer, "unauthorized", http.StatusUnauthorized)
+
+		return
+	}
+
+	tenantNS := req.PathValue("tenant")
+	appName := req.PathValue("name")
+
+	req.Body = http.MaxBytesReader(writer, req.Body, maxFormBytes)
+
+	parseErr := req.ParseForm()
+	if parseErr != nil {
+		http.Error(writer, "bad request", http.StatusBadRequest)
+
+		return
+	}
+
+	pgh.doUpdateApp(writer, req, usr, tenantNS, appName)
+}
+
+// doUpdateApp is the UpdateApp work after form parsing. Split out so the
+// public handler stays under the function-length linter limit and the
+// error-branch plumbing reads cleanly.
+func (pgh *PageHandler) doUpdateApp(
+	writer http.ResponseWriter, req *http.Request, usr *auth.UserContext, tenantNS, appName string,
+) {
+	// Kind is looked up via the service, not supplied by the client, so
+	// the user cannot change it mid-edit.
+	_, kind, specErr := pgh.appSvc.GetSpec(req.Context(), usr.Username, usr.Groups, tenantNS, appName)
+	if specErr != nil {
+		pgh.log.Error("loading app for update", "tenant", tenantNS, "name", appName, "error", specErr)
+		pgh.renderErrorToast(writer, req,
+			"Failed to load "+appName+". It may not exist or you lack permission.")
+
+		return
+	}
+
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, kind)
+	if schemaErr != nil {
+		pgh.log.Error("loading schema for update", "kind", kind, "error", schemaErr)
+		pgh.renderErrorToast(writer, req, "Failed to load schema for "+kind)
+
+		return
+	}
+
+	newSpec := extractSpecFromForm(req, extractFieldTypes(schema))
+
+	_, err := pgh.appSvc.Update(req.Context(), usr.Username, usr.Groups, tenantNS, appName,
+		k8s.UpdateApplicationRequest{Spec: newSpec})
+	if err != nil {
+		pgh.log.Error("updating app", "tenant", tenantNS, "name", appName, "error", err)
+		pgh.renderErrorToast(writer, req, "Failed to update "+appName+". Check that you have permission.")
+
+		return
+	}
+
+	pgh.log.Info("app updated", "tenant", tenantNS, "name", appName, "kind", kind)
+	writer.Header().Set("Hx-Redirect", "/tenants/"+tenantNS)
+	writer.WriteHeader(http.StatusOK)
+}
+
 // DeleteApp handles DELETE to remove an application.
 func (pgh *PageHandler) DeleteApp(writer http.ResponseWriter, req *http.Request) {
 	usr := auth.UserFromContext(req.Context())

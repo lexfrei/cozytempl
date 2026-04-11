@@ -77,6 +77,54 @@ func (pgh *PageHandler) SchemaFieldsFragment(writer http.ResponseWriter, req *ht
 	}
 }
 
+// AppEditFragment renders the edit modal for a single application with
+// the form fields pre-populated from its current spec. Mirrors the
+// TenantEditFragment flow — schema + current spec are fetched via
+// impersonation so permission errors surface here, not on PUT.
+func (pgh *PageHandler) AppEditFragment(writer http.ResponseWriter, req *http.Request) {
+	usr := auth.UserFromContext(req.Context())
+	if usr == nil {
+		http.Error(writer, "unauthorized", http.StatusUnauthorized)
+
+		return
+	}
+
+	tenant := req.URL.Query().Get("tenant")
+	name := req.URL.Query().Get("name")
+
+	if tenant == "" || name == "" {
+		http.Error(writer, "tenant and name required", http.StatusBadRequest)
+
+		return
+	}
+
+	app, err := pgh.appSvc.Get(req.Context(), usr.Username, usr.Groups, tenant, name)
+	if err != nil {
+		pgh.log.Error("loading app for edit", "tenant", tenant, "name", name, "error", err)
+		http.Error(writer, "application not found", http.StatusNotFound)
+
+		return
+	}
+
+	currentSpec, _, specErr := pgh.appSvc.GetSpec(req.Context(), usr.Username, usr.Groups, tenant, name)
+	if specErr != nil {
+		pgh.log.Debug("loading app spec for edit", "tenant", tenant, "name", name, "error", specErr)
+	}
+
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, app.Kind)
+	if schemaErr != nil {
+		pgh.log.Debug("loading schema for app edit", "kind", app.Kind, "error", schemaErr)
+	}
+
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	writer.Header().Set("Cache-Control", "no-store")
+
+	renderErr := fragment.AppEditModal(tenant, *app, schema, currentSpec).Render(req.Context(), writer)
+	if renderErr != nil {
+		pgh.log.Error("rendering app edit modal", "error", renderErr)
+	}
+}
+
 // TenantEditFragment renders the edit modal for a single tenant, pre-
 // populating the form fields from the tenant's current spec so the user
 // edits in place.

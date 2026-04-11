@@ -1,0 +1,48 @@
+package fragment
+
+import (
+	"github.com/lexfrei/cozytempl/internal/k8s"
+)
+
+// AppEditModal renders the edit form for an existing application. The
+// schema-driven fields are pre-populated from the app's current spec so
+// the user edits in place instead of re-typing every value.
+templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, spec map[string]any) {
+	<div id="app-edit-modal" class="modal-backdrop" style="display: flex;">
+		<div class="modal">
+			<div class="modal-header">
+				<h2 class="modal-title">Edit { app.Name }</h2>
+				<button class="btn-icon" type="button"
+					onclick="document.getElementById('app-edit-modal').remove()">&times;</button>
+			</div>
+			<form hx-put={ "/tenants/" + tenant + "/apps/" + app.Name }
+				hx-target="#main-content"
+				hx-push-url="false">
+				<div class="form-group">
+					<label class="form-label">Type</label>
+					<input class="form-input" type="text" value={ app.Kind } disabled/>
+					<div class="form-hint">
+						Application type is immutable. Delete and recreate to change kind.
+					</div>
+				</div>
+				<div class="form-group">
+					<label class="form-label">Name</label>
+					<input class="form-input" type="text" value={ app.Name } disabled/>
+					<div class="form-hint">
+						Name is immutable. Rename via delete + recreate.
+					</div>
+				</div>
+				if schema != nil {
+					@SchemaFieldsWithValues(*schema, spec)
+				} else {
+					<p class="text-muted text-sm">No editable spec fields are exposed for this application.</p>
+				}
+				<div class="modal-footer">
+					<button type="button" class="btn"
+						onclick="document.getElementById('app-edit-modal').remove()">Cancel</button>
+					<button type="submit" class="btn btn-primary">Save</button>
+				</div>
+			</form>
+		</div>
+	</div>
+}
