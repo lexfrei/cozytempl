@@ -101,7 +101,7 @@ func (ssh *SSEHandler) Stream(writer http.ResponseWriter, req *http.Request) {
 
 	flusher.Flush()
 
-	events := ssh.watcher.Subscribe(tenant, usr.Username)
+	events := ssh.watcher.Subscribe(tenant)
 	defer ssh.watcher.Unsubscribe(events)
 
 	ssh.log.Info("SSE client connected", "tenant", tenant, "user", usr.Username)

@@ -43,6 +43,11 @@ func run() error {
 
 	cfg, err := config.Load()
 	if err != nil {
+		// Log before returning so the operator sees the specific failure
+		// reason in structured output, not just the generic "fatal" line
+		// main() prints when run() returns.
+		log.Error("loading configuration", "error", err)
+
 		return fmt.Errorf("loading config: %w", err)
 	}
 

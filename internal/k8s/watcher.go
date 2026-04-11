@@ -65,18 +65,25 @@ func (wat *Watcher) Start(ctx context.Context) error {
 	return nil
 }
 
-// Subscribe creates a new event channel for a tenant namespace.
-func (wat *Watcher) Subscribe(tenant, _ string) chan WatchEvent {
+// Subscribe creates a new event channel for a tenant namespace. The caller
+// is responsible for verifying the user has permission to watch events in
+// that namespace BEFORE subscribing — see SSEHandler.authorizeTenant. The
+// watcher itself runs as the service account so it can deliver events for
+// any namespace it is asked about, which is why the authz check must be
+// external.
+func (wat *Watcher) Subscribe(tenant string) chan WatchEvent {
 	eventChan := make(chan WatchEvent, eventChannelBuffer)
 
 	wat.mu.Lock()
 	defer wat.mu.Unlock()
 
-	if wat.subscribers[tenant] == nil {
-		wat.subscribers[tenant] = make(map[chan WatchEvent]struct{})
+	subs := wat.subscribers[tenant]
+	if subs == nil {
+		subs = make(map[chan WatchEvent]struct{})
+		wat.subscribers[tenant] = subs
 	}
 
-	wat.subscribers[tenant][eventChan] = struct{}{}
+	subs[eventChan] = struct{}{}
 
 	return eventChan
 }
