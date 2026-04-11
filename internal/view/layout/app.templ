@@ -1,21 +1,56 @@
 package layout
 
-import "github.com/lexfrei/cozytempl/internal/k8s"
-import "github.com/lexfrei/cozytempl/internal/view/partial"
+import (
+	"github.com/lexfrei/cozytempl/internal/k8s"
+	"github.com/lexfrei/cozytempl/internal/view/partial"
+)
 
-templ App(username string, tenants []k8s.Tenant, activePage string, activeTenant string) {
+// AppProps bundles everything the authenticated layout needs. Grouped
+// into a struct so new fields (e.g. DevMode for the auth-disabled
+// banner) don't ripple into every render call site.
+type AppProps struct {
+	Username     string
+	Tenants      []k8s.Tenant
+	ActivePage   string
+	ActiveTenant string
+	DevMode      bool
+}
+
+templ App(props AppProps) {
 	@Base("cozytempl") {
 		<!-- Toast container (OOB swap target) -->
 		<div id="toast-container" class="toast-container"></div>
 
+		if props.DevMode {
+			@devModeBanner()
+		}
+
 		<div class="app-layout">
-			@partial.Header(username)
+			@partial.Header(props.Username)
 			<div class="sidebar-overlay"></div>
-			@partial.Sidebar(tenants, activePage, activeTenant)
+			@partial.Sidebar(props.Tenants, props.ActivePage, props.ActiveTenant)
 
 			<main id="main-content" class="main-content">
 				{ children... }
 			</main>
 		</div>
 	}
+}
+
+// devModeBanner sits above the header whenever COZYTEMPL_DEV_MODE is
+// active. Bright colours and a link to the profile page so anyone who
+// accidentally hits a dev-mode instance immediately sees it and can
+// check what impersonated identity they are running as.
+templ devModeBanner() {
+	<div class="dev-mode-banner">
+		<span class="dev-mode-banner-label">DEV MODE</span>
+		<span>
+			Authentication is disabled. Every request is treated as
+			<code>dev-admin</code> with <code>system:masters</code>.
+		</span>
+		<a href="/profile"
+			hx-get="/profile"
+			hx-target="#main-content"
+			hx-push-url="true">View profile</a>
+	</div>
 }

@@ -72,7 +72,9 @@ func run() error {
 		log.Warn("failed to start watcher, SSE will be unavailable", "error", err)
 	}
 
-	pageHandler := handler.NewPageHandler(tenantSvc, appSvc, schemaSvc, usageSvc, eventSvc, logSvc, log)
+	pageHandler := handler.NewPageHandler(
+		tenantSvc, appSvc, schemaSvc, usageSvc, eventSvc, logSvc, cfg.DevMode, log,
+	)
 
 	routerCfg := &api.RouterConfig{
 		TenantHandler: api.NewTenantHandler(tenantSvc, log),

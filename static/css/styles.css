@@ -61,6 +61,73 @@ body {
   min-height: 100vh;
 }
 
+/* Dev mode banner — visible when COZYTEMPL_DEV_MODE=true.
+   Bright, high-contrast strip above the app layout so anyone who hits
+   a dev-mode instance (including through the shared Cloudflare tunnel)
+   sees immediately that authentication is disabled. The `:has()` rule
+   below subtracts the banner height from `.app-layout` so the grid
+   doesn't push the page past 100vh. */
+.dev-mode-banner {
+  background: repeating-linear-gradient(
+    135deg,
+    #f87171 0,
+    #f87171 18px,
+    #ef4444 18px,
+    #ef4444 36px
+  );
+  color: #1a0000;
+  padding: 10px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border-bottom: 2px solid #991b1b;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 50;
+}
+
+.dev-mode-banner-label {
+  background: #1a0000;
+  color: #fca5a5;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex: 0 0 auto;
+}
+
+.dev-mode-banner code {
+  background: rgba(26, 0, 0, 0.25);
+  color: #1a0000;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.dev-mode-banner a {
+  margin-left: auto;
+  color: #1a0000;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  flex: 0 0 auto;
+}
+
+.dev-mode-banner a:hover {
+  color: #000;
+  text-decoration-thickness: 2px;
+}
+
+body:has(.dev-mode-banner) .app-layout {
+  min-height: calc(100vh - 48px);
+}
+
 /* Header */
 .header {
   grid-column: 1 / -1;
@@ -1169,6 +1236,21 @@ tr[hx-get]:hover {
   .btn-sm {
     padding: 3px 8px;
     font-size: 0.75rem;
+  }
+
+  .dev-mode-banner {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 16px;
+    font-size: 0.82rem;
+  }
+
+  .dev-mode-banner a {
+    margin-left: 0;
+  }
+
+  body:has(.dev-mode-banner) .app-layout {
+    min-height: calc(100vh - 72px);
   }
 }
 

@@ -26,6 +26,10 @@ type PageHandler struct {
 	eventSvc  *k8s.EventService
 	logSvc    *k8s.LogService
 	log       *slog.Logger
+	// devMode drives the dev-mode banner at the top of every page.
+	// Set at construction time from config so the layout template
+	// does not need to reach into global state.
+	devMode bool
 }
 
 // NewPageHandler creates a new page handler.
@@ -36,6 +40,7 @@ func NewPageHandler(
 	usageSvc *k8s.UsageService,
 	eventSvc *k8s.EventService,
 	logSvc *k8s.LogService,
+	devMode bool,
 	log *slog.Logger,
 ) *PageHandler {
 	return &PageHandler{
@@ -45,6 +50,7 @@ func NewPageHandler(
 		usageSvc:  usageSvc,
 		eventSvc:  eventSvc,
 		logSvc:    logSvc,
+		devMode:   devMode,
 		log:       log,
 	}
 }
@@ -485,7 +491,13 @@ func (pgh *PageHandler) render(
 			renderErr = partial.SidebarOOB(tenants, activePage, activeTenant).Render(req.Context(), writer)
 		}
 	} else {
-		wrapped := layout.App(username, tenants, activePage, activeTenant)
+		wrapped := layout.App(layout.AppProps{
+			Username:     username,
+			Tenants:      tenants,
+			ActivePage:   activePage,
+			ActiveTenant: activeTenant,
+			DevMode:      pgh.devMode,
+		})
 		renderErr = wrapped.Render(templ.WithChildren(req.Context(), content), writer)
 	}
 
