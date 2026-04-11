@@ -1,4 +1,29 @@
 {{- if .Values.rbac.create -}}
+{{- /*
+  RBAC rendering is mode-aware:
+
+  - authMode=dev               → nothing. The dev process talks to
+                                  the apiserver via whatever
+                                  kubeconfig it finds; no cluster
+                                  role needed.
+  - authMode=impersonation-legacy → ClusterRole with cluster-wide
+                                  impersonate on users/groups/SAs,
+                                  bound to the main cozytempl SA.
+  - authMode=passthrough / byok → NO role for the main SA. The
+                                  main pod SA has zero permissions.
+                                  The watcher SA below is rendered
+                                  instead (subject to watcher.enabled).
+
+  The selfsubjectaccessreview grant that lived in every mode is
+  deliberately dropped: every authenticated user already has those
+  verbs via the stock system:basic-user role, and our explicit
+  grant was shadowing that without adding anything.
+*/ -}}
+{{- $mode := .Values.config.authMode | default "passthrough" -}}
+{{- if .Values.config.devMode -}}
+{{-   $mode = "dev" -}}
+{{- end -}}
+{{- if eq $mode "impersonation-legacy" }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -6,11 +31,10 @@ metadata:
   labels:
     {{- include "cozytempl.labels" . | nindent 4 }}
 rules:
-  # Impersonation: cozytempl hands every Kubernetes call back
-  # to the API server with the logged-in user's identity so k8s
-  # RBAC is the source of truth for what the user can do. The
-  # cozytempl SA needs the `impersonate` verb on users, groups
-  # and extras to proxy those credentials.
+  # Legacy impersonation path: cozytempl proxies every k8s call
+  # with Impersonate-User / Impersonate-Group headers equal to
+  # the logged-in user's identity. The API server then evaluates
+  # RBAC as that user. Deprecated in favour of passthrough.
   - apiGroups: [""]
     resources:
       - users
@@ -24,19 +48,6 @@ rules:
       - userextras/scopes
     verbs:
       - impersonate
-
-  # Self-subject review so the landing page can tell the user
-  # what they're allowed to see without us having to cache
-  # RBAC state. This is the only "read with the SA identity
-  # directly" call — everything else goes through the
-  # impersonation path above.
-  - apiGroups:
-      - authorization.k8s.io
-    resources:
-      - selfsubjectaccessreviews
-      - selfsubjectrulesreviews
-    verbs:
-      - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -52,4 +63,51 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "cozytempl.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- /*
+  Watcher SA: rendered in every non-dev mode. The HelmRelease
+  watcher runs inside the cozytempl pod (commit 4 wires it via
+  COZYTEMPL_WATCHER_KUBECONFIG). It needs list+watch on
+  helmreleases.helm.toolkit.fluxcd.io to feed the SSE stream.
+*/ -}}
+{{- if and (ne $mode "dev") .Values.watcher.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "cozytempl.fullname" . }}-watcher
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cozytempl.fullname" . }}-watcher
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - helm.toolkit.fluxcd.io
+    resources:
+      - helmreleases
+    verbs:
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cozytempl.fullname" . }}-watcher
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cozytempl.fullname" . }}-watcher
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cozytempl.fullname" . }}-watcher
+    namespace: {{ .Release.Namespace }}
+{{- end }}
 {{- end }}

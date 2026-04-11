@@ -9,7 +9,12 @@ tests:
   - it: creates a ServiceAccount when serviceAccount.create is true
     template: serviceaccount.yaml
     set:
-      config.devMode: true
+      config.authMode: passthrough
+      config.oidc.issuerURL: https://sso.example.com/realms/test
+      config.oidc.clientID: cozytempl
+      config.oidc.redirectURL: https://cozytempl.example.com/auth/callback
+      config.oidc.clientSecret: test
+      config.oidc.sessionSecret: testtesttesttesttesttesttesttest
     asserts:
       - isKind:
           of: ServiceAccount
@@ -26,15 +31,105 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: ClusterRole grants only impersonation and self-subject review
+  - it: passthrough mode renders NO impersonation role but DOES render the watcher SA + ClusterRole
     template: rbac.yaml
-    documentIndex: 0
     set:
+      config.authMode: passthrough
+      config.oidc.issuerURL: https://sso.example.com/realms/test
+      config.oidc.clientID: cozytempl
+      config.oidc.redirectURL: https://cozytempl.example.com/auth/callback
+      config.oidc.clientSecret: test
+      config.oidc.sessionSecret: testtesttesttesttesttesttesttest
+    asserts:
+      - hasDocuments:
+          count: 3
+      - documentIndex: 0
+        isKind:
+          of: ServiceAccount
+      - documentIndex: 0
+        equal:
+          path: metadata.name
+          value: cozytempl-watcher
+      - documentIndex: 1
+        isKind:
+          of: ClusterRole
+      - documentIndex: 1
+        equal:
+          path: metadata.name
+          value: cozytempl-watcher
+      - documentIndex: 1
+        contains:
+          path: rules
+          content:
+            apiGroups:
+              - helm.toolkit.fluxcd.io
+            resources:
+              - helmreleases
+            verbs:
+              - list
+              - watch
+      - documentIndex: 2
+        isKind:
+          of: ClusterRoleBinding
+      - documentIndex: 2
+        equal:
+          path: roleRef.name
+          value: cozytempl-watcher
+
+  - it: byok mode is shaped identically to passthrough for RBAC
+    template: rbac.yaml
+    set:
+      config.authMode: byok
+      config.oidc.sessionSecret: testtesttesttesttesttesttesttest
+    asserts:
+      - hasDocuments:
+          count: 3
+      - documentIndex: 0
+        isKind:
+          of: ServiceAccount
+      - documentIndex: 0
+        equal:
+          path: metadata.name
+          value: cozytempl-watcher
+
+  - it: dev mode renders zero RBAC documents
+    template: rbac.yaml
+    set:
+      config.authMode: dev
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: legacy devMode=true wins over authMode and renders zero RBAC documents
+    template: rbac.yaml
+    set:
+      config.authMode: passthrough
       config.devMode: true
     asserts:
-      - isKind:
+      - hasDocuments:
+          count: 0
+
+  - it: impersonation-legacy renders the main SA ClusterRole AND the watcher SA
+    template: rbac.yaml
+    set:
+      config.authMode: impersonation-legacy
+      config.oidc.issuerURL: https://sso.example.com/realms/test
+      config.oidc.clientID: cozytempl
+      config.oidc.redirectURL: https://cozytempl.example.com/auth/callback
+      config.oidc.clientSecret: test
+      config.oidc.sessionSecret: testtesttesttesttesttesttesttest
+    asserts:
+      - hasDocuments:
+          count: 5
+      - documentIndex: 0
+        isKind:
           of: ClusterRole
-      - contains:
+      - documentIndex: 0
+        equal:
+          path: metadata.name
+          value: cozytempl
+      - documentIndex: 0
+        contains:
           path: rules
           content:
             apiGroups: [""]
@@ -44,39 +139,44 @@ tests:
               - serviceaccounts
             verbs:
               - impersonate
-      - contains:
-          path: rules
-          content:
-            apiGroups:
-              - authorization.k8s.io
-            resources:
-              - selfsubjectaccessreviews
-              - selfsubjectrulesreviews
-            verbs:
-              - create
-
-  - it: ClusterRoleBinding ties the role to the ServiceAccount in the release namespace
-    template: rbac.yaml
-    documentIndex: 1
-    set:
-      config.devMode: true
-    asserts:
-      - isKind:
+      - documentIndex: 1
+        isKind:
           of: ClusterRoleBinding
-      - equal:
+      - documentIndex: 1
+        equal:
           path: roleRef.name
           value: cozytempl
-      - contains:
-          path: subjects
-          content:
-            kind: ServiceAccount
-            name: cozytempl
-            namespace: cozy-system
+      - documentIndex: 2
+        isKind:
+          of: ServiceAccount
+      - documentIndex: 2
+        equal:
+          path: metadata.name
+          value: cozytempl-watcher
 
-  - it: rbac.create=false suppresses both ClusterRole and ClusterRoleBinding
+  - it: watcher.enabled=false suppresses the watcher SA even in passthrough mode
     template: rbac.yaml
     set:
-      config.devMode: true
+      config.authMode: passthrough
+      config.oidc.issuerURL: https://sso.example.com/realms/test
+      config.oidc.clientID: cozytempl
+      config.oidc.redirectURL: https://cozytempl.example.com/auth/callback
+      config.oidc.clientSecret: test
+      config.oidc.sessionSecret: testtesttesttesttesttesttesttest
+      watcher.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: rbac.create=false suppresses everything
+    template: rbac.yaml
+    set:
+      config.authMode: impersonation-legacy
+      config.oidc.issuerURL: https://sso.example.com/realms/test
+      config.oidc.clientID: cozytempl
+      config.oidc.redirectURL: https://cozytempl.example.com/auth/callback
+      config.oidc.clientSecret: test
+      config.oidc.sessionSecret: testtesttesttesttesttesttesttest
       rbac.create: false
     asserts:
       - hasDocuments:

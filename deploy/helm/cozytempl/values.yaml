@@ -48,8 +48,30 @@ config:
   # setup; change only if you need to bind to a specific iface.
   listenAddr: ":8080"
 
+  # Authentication mode. One of:
+  #   passthrough          - OIDC ID token forwarded as Bearer to the
+  #                          Kubernetes API. The cozytempl pod SA has
+  #                          zero k8s RBAC. Recommended for new
+  #                          deployments against an OIDC-enabled
+  #                          API server.
+  #   byok                 - User uploads their own kubeconfig on
+  #                          first access. The uploaded kubeconfig
+  #                          lives encrypted in the session cookie.
+  #                          No OIDC, no IdP, no cluster RBAC on the
+  #                          cozytempl SA.
+  #   dev                  - Authentication disabled. Every request
+  #                          treated as dev-admin with system:masters.
+  #                          NEVER use in production.
+  #   impersonation-legacy - Legacy Impersonate-User / -Groups
+  #                          headers. The cozytempl SA needs
+  #                          cluster-wide impersonate permissions.
+  #                          Deprecated; migrate to passthrough.
+  authMode: passthrough
+
   # Enable dev mode — disables auth, treats every request as
   # dev-admin with system:masters. NEVER enable in production.
+  # Equivalent to authMode=dev and wins when both are set, preserved
+  # for backwards compatibility with older values files.
   devMode: false
 
   # OpenTelemetry tracing. Leave empty to disable tracing
@@ -65,9 +87,17 @@ config:
     otlpProtocol: ""  # "" (gRPC default) or "http/protobuf"
     serviceName: ""   # defaults to "cozytempl"
 
-  # OIDC configuration. Required when devMode is false.
+  # OIDC configuration. Required in passthrough and
+  # impersonation-legacy modes. BYOK and dev modes ignore it.
   oidc:
     issuerURL: ""       # e.g. https://keycloak.example.com/realms/cozystack
+    # Optional backend-only issuer URL. When set, cozytempl uses
+    # it for token endpoint / JWKS calls (typically a cluster-
+    # internal Keycloak service like
+    # http://keycloak.cozy-keycloak.svc:8080/realms/cozystack)
+    # while the user-facing issuer stays external. Saves latency
+    # on the refresh path and avoids ingress egress.
+    internalIssuerURL: ""
     clientID: ""        # e.g. cozytempl
     redirectURL: ""     # e.g. https://cozytempl.example.com/auth/callback
 
@@ -83,23 +113,36 @@ config:
   #   - session-secret
   existingSecret: ""
 
-# ServiceAccount + ClusterRole. Cozytempl impersonates the
-# logged-in user for every Kubernetes call, which requires the
-# system:auth-delegator and impersonate verbs on users, groups,
-# and serviceaccounts. Scope is cluster-wide by design — there
-# is no way to do per-tenant impersonation with a namespaced
-# Role.
+# ServiceAccount + ClusterRole. RBAC shape depends on authMode:
+#   passthrough / byok:    main SA has no k8s permissions at all,
+#                          and a separate watcher SA with list+watch
+#                          on helmreleases runs the HelmRelease
+#                          watcher (used by the SSE event stream).
+#   impersonation-legacy:  main SA keeps cluster-wide impersonate
+#                          rights; watcher SA is still created for
+#                          belt-and-suspenders.
+#   dev:                   no ClusterRole / ClusterRoleBinding are
+#                          rendered; the local kubeconfig drives
+#                          identity.
 serviceAccount:
   create: true
   name: ""  # Defaults to the chart fullname.
   annotations: {}
 
 rbac:
-  # Create the ClusterRole + ClusterRoleBinding that grants the
-  # ServiceAccount permission to impersonate users/groups and
-  # review their access via SelfSubjectAccessReview. Disable only
-  # if you are wiring up RBAC externally.
+  # Render ClusterRole / ClusterRoleBinding / watcher SA according
+  # to the active authMode. Disable only if you are wiring RBAC
+  # externally (e.g. via a policy controller that watches the
+  # ServiceAccount and materialises the right role).
   create: true
+
+# HelmRelease watcher. In passthrough and byok modes the main
+# cozytempl SA has zero k8s permissions, so the watcher runs
+# under its own narrow SA (cozytempl-watcher) that only has
+# list+watch on helmreleases.helm.toolkit.fluxcd.io. Automatically
+# enabled whenever authMode != "dev".
+watcher:
+  enabled: true
 
 # Pod security context. Non-root by default — the container
 # image is built with USER 65532:65532 so fsGroup is not

@@ -42,11 +42,13 @@ spec:
               protocol: TCP
           env:
             # Env var names match what internal/config/config.go
-            # actually reads: everything except DEV_MODE is
-            # unprefixed, and DEV_MODE specifically carries the
-            # COZYTEMPL_ prefix because it's the explicit opt-in.
+            # actually reads. COZYTEMPL_AUTH_MODE is the new
+            # primary knob; COZYTEMPL_DEV_MODE is preserved so
+            # older values files keep working.
             - name: LISTEN_ADDR
               value: {{ .Values.config.listenAddr | quote }}
+            - name: COZYTEMPL_AUTH_MODE
+              value: {{ .Values.config.authMode | default "passthrough" | quote }}
             - name: COZYTEMPL_DEV_MODE
               value: {{ .Values.config.devMode | quote }}
             {{- if .Values.config.tracing }}
@@ -63,9 +65,17 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- end }}
-            {{- if not .Values.config.devMode }}
+            {{- $mode := .Values.config.authMode | default "passthrough" }}
+            {{- if .Values.config.devMode }}
+            {{- $mode = "dev" }}
+            {{- end }}
+            {{- if or (eq $mode "passthrough") (eq $mode "impersonation-legacy") }}
             - name: OIDC_ISSUER_URL
               value: {{ .Values.config.oidc.issuerURL | quote }}
+            {{- with .Values.config.oidc.internalIssuerURL }}
+            - name: OIDC_INTERNAL_ISSUER_URL
+              value: {{ . | quote }}
+            {{- end }}
             - name: OIDC_CLIENT_ID
               value: {{ .Values.config.oidc.clientID | quote }}
             - name: OIDC_REDIRECT_URL
@@ -75,6 +85,12 @@ spec:
                 secretKeyRef:
                   name: {{ include "cozytempl.secretName" . }}
                   key: oidc-client-secret
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cozytempl.secretName" . }}
+                  key: session-secret
+            {{- else if eq $mode "byok" }}
             - name: SESSION_SECRET
               valueFrom:
                 secretKeyRef:

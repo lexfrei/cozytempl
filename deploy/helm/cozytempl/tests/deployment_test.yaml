@@ -59,6 +59,68 @@ tests:
           content:
             name: OIDC_ISSUER_URL
 
+  - it: passthrough mode exposes COZYTEMPL_AUTH_MODE
+    template: deployment.yaml
+    set:
+      config.authMode: passthrough
+      config.oidc.issuerURL: https://sso.example.com
+      config.oidc.clientID: cozytempl
+      config.oidc.redirectURL: https://cozy.example.com/auth/callback
+      config.oidc.clientSecret: secret-client
+      config.oidc.sessionSecret: VERYSECURESECRET32BYTESATLEASTOK
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: COZYTEMPL_AUTH_MODE
+            value: passthrough
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OIDC_ISSUER_URL
+            value: https://sso.example.com
+
+  - it: internalIssuerURL flips in when set
+    template: deployment.yaml
+    set:
+      config.authMode: passthrough
+      config.oidc.issuerURL: https://sso.example.com
+      config.oidc.internalIssuerURL: http://keycloak.cozy-keycloak.svc:8080/realms/cozystack
+      config.oidc.clientID: cozytempl
+      config.oidc.redirectURL: https://cozy.example.com/auth/callback
+      config.oidc.clientSecret: secret-client
+      config.oidc.sessionSecret: VERYSECURESECRET32BYTESATLEASTOK
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OIDC_INTERNAL_ISSUER_URL
+            value: http://keycloak.cozy-keycloak.svc:8080/realms/cozystack
+
+  - it: byok mode does not render OIDC env vars but keeps SESSION_SECRET
+    template: deployment.yaml
+    set:
+      config.authMode: byok
+      config.oidc.sessionSecret: VERYSECURESECRET32BYTESATLEASTOK
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: COZYTEMPL_AUTH_MODE
+            value: byok
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OIDC_ISSUER_URL
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SESSION_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: cozytempl
+                key: session-secret
+
   - it: prod mode adds all OIDC env vars
     template: deployment.yaml
     set:

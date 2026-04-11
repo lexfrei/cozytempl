@@ -4,7 +4,7 @@
   "description": "Schema enforced by helm install --dry-run and IDE validators. Every field in values.yaml must have a matching rule here so a typo fails fast instead of rendering a silently-wrong Deployment.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["image", "replicaCount", "service", "config", "serviceAccount", "rbac"],
+  "required": ["image", "replicaCount", "service", "config", "serviceAccount", "rbac", "watcher"],
   "properties": {
     "image": {
       "type": "object",
@@ -79,15 +79,24 @@
           "pattern": "^:[0-9]+$|^[0-9A-Za-z._-]+:[0-9]+$",
           "description": "Address the server binds to. Default ':8080' binds all interfaces on port 8080."
         },
+        "authMode": {
+          "type": "string",
+          "enum": ["passthrough", "byok", "dev", "impersonation-legacy"],
+          "description": "Authentication mode. Passthrough forwards OIDC ID tokens to the k8s API; byok uses a per-user uploaded kubeconfig; dev disables auth; impersonation-legacy uses Impersonate headers."
+        },
         "devMode": {
           "type": "boolean",
-          "description": "Disables authentication. NEVER enable in production; the visible DEV MODE banner is a last-ditch warning, not a security control."
+          "description": "Legacy opt-in for dev mode. Equivalent to authMode=dev and wins when both are set. NEVER enable in production."
         },
         "oidc": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "issuerURL": { "type": "string" },
+            "internalIssuerURL": {
+              "type": "string",
+              "description": "Optional backend-only issuer URL for token endpoint / JWKS calls. Leave empty to reuse issuerURL for both user-facing redirects and backend token exchange."
+            },
             "clientID": { "type": "string" },
             "redirectURL": { "type": "string" },
             "clientSecret": { "type": "string" },
@@ -142,7 +151,18 @@
       "properties": {
         "create": {
           "type": "boolean",
-          "description": "Create the ClusterRole + ClusterRoleBinding that grants impersonation. Disabling leaves the SA with no k8s API access at all; only turn off if you are wiring RBAC externally."
+          "description": "Render ClusterRole / ClusterRoleBinding / watcher SA according to the active authMode. Disable only if RBAC is wired externally."
+        }
+      }
+    },
+    "watcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Render the cozytempl-watcher ServiceAccount and narrow ClusterRole (list+watch on helmreleases). Automatically skipped in dev mode."
         }
       }
     },
