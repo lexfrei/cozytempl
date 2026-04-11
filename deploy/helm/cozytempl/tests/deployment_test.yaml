@@ -1,0 +1,177 @@
+suite: Deployment
+templates:
+  # secret.yaml is rendered alongside deployment.yaml because the
+  # Deployment's pod-template annotation uses
+  # `include .../secret.yaml | sha256sum` to roll pods when the
+  # Secret content changes. Every test below scopes assertions
+  # via `template: deployment.yaml` so the Secret object is
+  # rendered but not asserted against here.
+  - deployment.yaml
+  - secret.yaml
+release:
+  name: cozytempl
+  namespace: cozy-system
+tests:
+  - it: renders a Deployment named after the release + chart
+    template: deployment.yaml
+    set:
+      config.devMode: true
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: metadata.name
+          value: cozytempl
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: cozytempl
+
+  - it: keeps replicas overridable
+    template: deployment.yaml
+    set:
+      config.devMode: true
+      replicaCount: 3
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+
+  - it: dev mode produces only LISTEN_ADDR + COZYTEMPL_DEV_MODE env
+    template: deployment.yaml
+    set:
+      config.devMode: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: COZYTEMPL_DEV_MODE
+            value: "true"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: LISTEN_ADDR
+            value: ":8080"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OIDC_ISSUER_URL
+
+  - it: prod mode adds all OIDC env vars
+    template: deployment.yaml
+    set:
+      config.devMode: false
+      config.oidc.issuerURL: https://sso.example.com
+      config.oidc.clientID: cozytempl
+      config.oidc.redirectURL: https://cozy.example.com/auth/callback
+      config.oidc.clientSecret: secret-client
+      config.oidc.sessionSecret: VERYSECURESECRET32BYTESATLEASTOK
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OIDC_ISSUER_URL
+            value: https://sso.example.com
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OIDC_CLIENT_ID
+            value: cozytempl
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OIDC_REDIRECT_URL
+            value: https://cozy.example.com/auth/callback
+
+  - it: prod mode reads OIDC_CLIENT_SECRET from the rendered Secret
+    template: deployment.yaml
+    set:
+      config.devMode: false
+      config.oidc.issuerURL: https://sso.example.com
+      config.oidc.clientID: cozytempl
+      config.oidc.redirectURL: https://cozy.example.com/auth/callback
+      config.oidc.clientSecret: secret-client
+      config.oidc.sessionSecret: VERYSECURESECRET32BYTESATLEASTOK
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OIDC_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: cozytempl
+                key: oidc-client-secret
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SESSION_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: cozytempl
+                key: session-secret
+
+  - it: existingSecret is used instead of the chart-rendered one
+    template: deployment.yaml
+    set:
+      config.devMode: false
+      config.oidc.issuerURL: https://sso.example.com
+      config.oidc.clientID: cozytempl
+      config.oidc.redirectURL: https://cozy.example.com/auth/callback
+      config.existingSecret: my-external-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OIDC_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: my-external-secret
+                key: oidc-client-secret
+
+  - it: container runs non-root with a read-only root filesystem
+    template: deployment.yaml
+    set:
+      config.devMode: true
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 65532
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          content: ALL
+
+  - it: probes point at unauthenticated health endpoints
+    template: deployment.yaml
+    set:
+      config.devMode: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /readyz
+
+  - it: checksum annotation is present so config changes roll pods
+    template: deployment.yaml
+    set:
+      config.devMode: false
+      config.oidc.issuerURL: https://sso.example.com
+      config.oidc.clientID: cozytempl
+      config.oidc.redirectURL: https://cozy.example.com/auth/callback
+      config.oidc.clientSecret: one
+      config.oidc.sessionSecret: VERYSECURESECRET32BYTESATLEASTOK
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/config"]

@@ -1,0 +1,46 @@
+suite: Service
+templates:
+  - service.yaml
+release:
+  name: cozytempl
+  namespace: cozy-system
+tests:
+  - it: renders a ClusterIP Service on port 8080 by default
+    set:
+      config.devMode: true
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports[0].port
+          value: 8080
+      - equal:
+          path: spec.ports[0].targetPort
+          value: http
+
+  - it: honours service.type override for NodePort
+    set:
+      config.devMode: true
+      service.type: NodePort
+      service.port: 30080
+    asserts:
+      - equal:
+          path: spec.type
+          value: NodePort
+      - equal:
+          path: spec.ports[0].port
+          value: 30080
+
+  - it: selector matches the Deployment label set
+    set:
+      config.devMode: true
+    asserts:
+      - equal:
+          path: spec.selector["app.kubernetes.io/name"]
+          value: cozytempl
+      - equal:
+          path: spec.selector["app.kubernetes.io/instance"]
+          value: cozytempl

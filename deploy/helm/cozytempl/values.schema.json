@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cozytempl Helm values",
+  "description": "Schema enforced by helm install --dry-run and IDE validators. Every field in values.yaml must have a matching rule here so a typo fails fast instead of rendering a silently-wrong Deployment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["image", "replicaCount", "service", "config", "serviceAccount", "rbac"],
+  "properties": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "pullPolicy"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Container image repository (e.g. ghcr.io/lexfrei/cozytempl)."
+        },
+        "tag": {
+          "type": "string",
+          "description": "Image tag. Empty string falls back to Chart.appVersion."
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        }
+      }
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Number of cozytempl replicas. Sessions are cookie-stored, so horizontal scaling works without sticky sessions."
+    },
+    "nameOverride": {
+      "type": "string",
+      "description": "Override the chart name used in generated resource names."
+    },
+    "fullnameOverride": {
+      "type": "string",
+      "description": "Override the fully qualified release-prefixed resource name."
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "port"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "description": "Container resource requests and limits. Freeform to accept any valid k8s resource map."
+    },
+    "probes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["liveness", "readiness"],
+      "properties": {
+        "liveness": { "$ref": "#/$defs/probe" },
+        "readiness": { "$ref": "#/$defs/probe" }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["listenAddr", "devMode", "oidc"],
+      "properties": {
+        "listenAddr": {
+          "type": "string",
+          "pattern": "^:[0-9]+$|^[0-9A-Za-z._-]+:[0-9]+$",
+          "description": "Address the server binds to. Default ':8080' binds all interfaces on port 8080."
+        },
+        "devMode": {
+          "type": "boolean",
+          "description": "Disables authentication. NEVER enable in production; the visible DEV MODE banner is a last-ditch warning, not a security control."
+        },
+        "oidc": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "issuerURL": { "type": "string" },
+            "clientID": { "type": "string" },
+            "redirectURL": { "type": "string" },
+            "clientSecret": { "type": "string" },
+            "sessionSecret": {
+              "type": "string",
+              "description": "32+ random bytes. Generate with `openssl rand -base64 32`. Required when devMode is false and existingSecret is unset."
+            }
+          }
+        },
+        "existingSecret": {
+          "type": "string",
+          "description": "Name of an existing Secret holding keys `oidc-client-secret` and `session-secret`. If set, the chart skips creating its own Secret."
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["create"],
+      "properties": {
+        "create": { "type": "boolean" },
+        "name": { "type": "string" },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "rbac": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["create"],
+      "properties": {
+        "create": {
+          "type": "boolean",
+          "description": "Create the ClusterRole + ClusterRoleBinding that grants impersonation. Disabling leaves the SA with no k8s API access at all; only turn off if you are wiring RBAC externally."
+        }
+      }
+    },
+    "podSecurityContext": {
+      "type": "object",
+      "description": "Pod-level securityContext, passed through verbatim."
+    },
+    "containerSecurityContext": {
+      "type": "object",
+      "description": "Container-level securityContext, passed through verbatim."
+    },
+    "commonLabels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "commonAnnotations": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "nodeSelector": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "tolerations": {
+      "type": "array"
+    },
+    "affinity": {
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "initialDelaySeconds", "periodSeconds"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "initialDelaySeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "periodSeconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

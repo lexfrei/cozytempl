@@ -1,4 +1,4 @@
-.PHONY: generate build test dev lint clean install-tools ts
+.PHONY: generate build test dev lint clean install-tools ts helm-test
 
 # Generate templ output
 generate:
@@ -9,9 +9,16 @@ ts:
 	esbuild static/ts/main.ts --bundle --outfile=static/dist/bundle.js --minify --sourcemap
 
 # Run all tests. Exclude node_modules because one npm package ships a stray
-# Go file that Go tooling would otherwise pick up.
+# Go file that Go tooling would otherwise pick up. Also runs the Helm chart
+# unit tests if the helm-unittest plugin is installed — silently skipped
+# otherwise so CI that doesn't have it yet stays green.
 test: generate
 	go test ./cmd/... ./internal/... ./static/... -count=1 -race
+	@helm plugin list 2>/dev/null | grep -q unittest && helm unittest deploy/helm/cozytempl || echo "helm-unittest plugin not installed; skipping chart tests"
+
+# Run just the Helm chart unit tests.
+helm-test:
+	helm unittest deploy/helm/cozytempl
 
 # Run linters (Go + TypeScript). Same scope as test — avoid scanning
 # node_modules for Go code. govulncheck runs against the Go module
@@ -40,4 +47,5 @@ install-tools:
 	go install github.com/a-h/templ/cmd/templ@latest
 	go install github.com/air-verse/air@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
+	helm plugin install https://github.com/helm-unittest/helm-unittest 2>/dev/null || true
 	npm install --save-dev eslint @typescript-eslint/eslint-plugin @typescript-eslint/parser typescript
