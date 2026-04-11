@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/k8s"
@@ -222,6 +223,9 @@ func (pgh *PageHandler) renderErrorToast(writer http.ResponseWriter, req *http.R
 }
 
 // extractSpecFromForm pulls known schema fields out of the submitted form.
+// Dot-path keys ("backup.enabled", "backup.schedule") are un-flattened
+// into nested maps so the CRD sees {backup: {enabled: true, schedule:
+// "..."}} instead of two string keys with dots in them.
 // Always returns a non-nil map so downstream CRD validation that expects a
 // spec object succeeds even when the user submits only name + kind.
 func extractSpecFromForm(req *http.Request, fieldTypes map[string]string) map[string]any {
@@ -236,10 +240,35 @@ func extractSpecFromForm(req *http.Request, fieldTypes map[string]string) map[st
 			continue
 		}
 
-		spec[key] = convertValue(values[0], fieldTypes[key])
+		setNestedSpec(spec, key, convertValue(values[0], fieldTypes[key]))
 	}
 
 	return spec
+}
+
+// setNestedSpec assigns a value at a dot-path inside a map, creating
+// intermediate sub-maps as needed. "backup.enabled" → spec["backup"]
+// ["enabled"]. A non-dotted key assigns at the top level. If an
+// intermediate key already holds a non-map value, setNestedSpec leaves
+// it alone — the form cannot silently overwrite a scalar with a map.
+func setNestedSpec(spec map[string]any, key string, value any) {
+	parts := strings.Split(key, ".")
+
+	cur := spec
+
+	for idx := range len(parts) - 1 {
+		part := parts[idx]
+
+		child, ok := cur[part].(map[string]any)
+		if !ok {
+			child = map[string]any{}
+			cur[part] = child
+		}
+
+		cur = child
+	}
+
+	cur[parts[len(parts)-1]] = value
 }
 
 func convertValue(raw, fieldType string) any {

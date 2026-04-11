@@ -2,8 +2,17 @@ package fragment
 
 import (
 	"fmt"
+	"sort"
+	"strings"
+
 	"github.com/lexfrei/cozytempl/internal/k8s"
 )
+
+// maxNestedDepth caps how deep we recurse into object schemas. Two
+// levels covers everything we see in practice (Postgres.backup.*,
+// MinecraftServer.backup.*, Kafka.broker.*) without trying to flatten
+// 4-level cluster specs that really belong in a YAML editor.
+const maxNestedDepth = 2
 
 // SchemaFields renders form fields dynamically from a JSON Schema.
 // For edit flows use SchemaFieldsWithValues to pre-populate the form.
@@ -14,10 +23,18 @@ templ SchemaFields(schema k8s.AppSchema) {
 // SchemaFieldsWithValues is the variant used by edit flows: the values
 // map overrides the schema-level default so the form opens displaying
 // whatever the user previously submitted. A nil values map is equivalent
-// to SchemaFields.
+// to SchemaFields. Nested object properties are recursively flattened
+// into dot-path form-field names ("backup.enabled", "backup.schedule"),
+// up to maxNestedDepth, and grouped by their top-level key so the user
+// sees a visual hierarchy.
 templ SchemaFieldsWithValues(schema k8s.AppSchema, values map[string]any) {
-	if props := extractPropertiesWithValues(schema, values); len(props) > 0 {
-		for _, field := range props {
+	for _, group := range groupFields(extractPropertiesWithValues(schema, values)) {
+		if group.Label != "" {
+			<div class="form-hint" style="margin-top: 16px; font-weight: 600; color: var(--color-text);">
+				{ group.Label }
+			</div>
+		}
+		for _, field := range group.Fields {
 			<div class="form-group">
 				<label class="form-label">
 					{ field.Title }
@@ -54,7 +71,9 @@ templ renderField(field SchemaField) {
 	}
 }
 
-// SchemaField is a flattened form field descriptor.
+// SchemaField is a flattened form field descriptor. Key is the dot-path
+// used in the form name (e.g. "backup.enabled"); Title is the
+// human-readable label shown in the form.
 type SchemaField struct {
 	Key         string
 	Title       string
@@ -65,10 +84,53 @@ type SchemaField struct {
 	Required    bool
 }
 
-// extractPropertiesWithValues flattens the top-level JSON Schema properties
-// into form fields. When values is non-nil, a matching key replaces the
-// schema default — used by edit flows to show the current spec. Nested
-// object / array types are skipped: too complex for a simple HTML form.
+// FieldGroup is a visual grouping of fields under a common nested
+// parent (backup.*, postgresql.*). Label is empty for top-level
+// scalars so they render without a subheading.
+type FieldGroup struct {
+	Label  string
+	Fields []SchemaField
+}
+
+// groupFields clusters a flat field list by the first component of
+// its dot-path. Top-level scalars end up in an unnamed group at the
+// top; nested fields follow in alphabetical group order.
+func groupFields(fields []SchemaField) []FieldGroup {
+	var top FieldGroup
+
+	nested := map[string][]SchemaField{}
+
+	for _, f := range fields {
+		parts := strings.SplitN(f.Key, ".", 2) //nolint:mnd // dot-path split
+		if len(parts) == 1 {
+			top.Fields = append(top.Fields, f)
+			continue
+		}
+		nested[parts[0]] = append(nested[parts[0]], f)
+	}
+
+	var keys []string
+	for k := range nested {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	out := make([]FieldGroup, 0, 1+len(keys))
+	if len(top.Fields) > 0 {
+		out = append(out, top)
+	}
+	for _, k := range keys {
+		out = append(out, FieldGroup{Label: k, Fields: nested[k]})
+	}
+
+	return out
+}
+
+// extractPropertiesWithValues walks the JSON Schema and emits a flat
+// list of SchemaField entries. Object properties are recursed into up
+// to maxNestedDepth, producing dot-path names; arrays and deeper
+// objects are skipped. When values is non-nil, its keys override the
+// per-field schema default.
 func extractPropertiesWithValues(schema k8s.AppSchema, values map[string]any) []SchemaField {
 	if schema.JSONSchema == nil {
 		return nil
@@ -79,67 +141,131 @@ func extractPropertiesWithValues(schema k8s.AppSchema, values map[string]any) []
 		return nil
 	}
 
+	return walkProperties(obj, values, "", 0)
+}
+
+// walkProperties recursively flattens a JSON Schema `properties` map
+// into SchemaField entries, descending into `type: object` children
+// up to the depth cap. prefix is the dot-path accumulated so far
+// (empty at the root).
+func walkProperties(obj, values map[string]any, prefix string, depth int) []SchemaField {
 	rawProps, ok := obj["properties"].(map[string]any)
 	if !ok {
 		return nil
 	}
 
-	rawRequired, _ := obj["required"].([]any)
-	requiredSet := make(map[string]bool, len(rawRequired))
+	requiredSet := extractRequired(obj)
 
-	for _, r := range rawRequired {
-		if s, ok := r.(string); ok {
-			requiredSet[s] = true
-		}
+	var fields []SchemaField
+
+	keys := make([]string, 0, len(rawProps))
+	for k := range rawProps {
+		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 
-	fields := make([]SchemaField, 0, len(rawProps))
-
-	for key, raw := range rawProps {
-		prop, ok := raw.(map[string]any)
+	for _, key := range keys {
+		prop, ok := rawProps[key].(map[string]any)
 		if !ok {
 			continue
 		}
 
+		fullKey := key
+		if prefix != "" {
+			fullKey = prefix + "." + key
+		}
+
 		fieldType, _ := prop["type"].(string)
-		if fieldType == "object" || fieldType == "array" {
+
+		// Recurse into nested objects up to the depth cap.
+		if fieldType == "object" {
+			if depth >= maxNestedDepth-1 {
+				continue
+			}
+
+			childValues := nestedStringMap(values, key)
+			fields = append(fields, walkProperties(prop, childValues, fullKey, depth+1)...)
+
 			continue
 		}
 
-		field := SchemaField{
-			Key:      key,
-			Title:    key,
-			Type:     fieldType,
-			Required: requiredSet[key],
+		// Skip arrays — no sensible inline HTML form representation.
+		if fieldType == "array" {
+			continue
 		}
 
-		if title, ok := prop["title"].(string); ok && title != "" {
-			field.Title = title
-		}
-
-		if desc, ok := prop["description"].(string); ok {
-			field.Description = desc
-		}
-
-		if def, exists := prop["default"]; exists {
-			field.Default = fmt.Sprint(def)
-		}
-
-		// Override with the current saved value when editing.
-		if current, exists := values[key]; exists {
-			field.Default = fmt.Sprint(current)
-		}
-
-		if rawEnum, ok := prop["enum"].([]any); ok {
-			for _, e := range rawEnum {
-				if s, ok := e.(string); ok {
-					field.Enum = append(field.Enum, s)
-				}
-			}
-		}
-
-		fields = append(fields, field)
+		fields = append(fields, buildField(prop, fullKey, key, fieldType, requiredSet[key], values))
 	}
 
 	return fields
+}
+
+// buildField turns one property definition + current value lookup
+// into a SchemaField ready for rendering.
+func buildField(prop map[string]any, fullKey, key, fieldType string, required bool, values map[string]any) SchemaField {
+	field := SchemaField{
+		Key:      fullKey,
+		Title:    key,
+		Type:     fieldType,
+		Required: required,
+	}
+
+	if title, ok := prop["title"].(string); ok && title != "" {
+		field.Title = title
+	}
+
+	if desc, ok := prop["description"].(string); ok {
+		field.Description = desc
+	}
+
+	if def, exists := prop["default"]; exists {
+		field.Default = fmt.Sprint(def)
+	}
+
+	if current, exists := values[key]; exists {
+		if _, isMap := current.(map[string]any); !isMap {
+			field.Default = fmt.Sprint(current)
+		}
+	}
+
+	if rawEnum, ok := prop["enum"].([]any); ok {
+		for _, e := range rawEnum {
+			if s, ok := e.(string); ok {
+				field.Enum = append(field.Enum, s)
+			}
+		}
+	}
+
+	return field
+}
+
+// extractRequired returns the set of required property names from a
+// JSON Schema object.
+func extractRequired(obj map[string]any) map[string]bool {
+	rawRequired, _ := obj["required"].([]any)
+	set := make(map[string]bool, len(rawRequired))
+
+	for _, r := range rawRequired {
+		if s, ok := r.(string); ok {
+			set[s] = true
+		}
+	}
+
+	return set
+}
+
+// nestedStringMap returns values[key] if it is itself a map. Used to
+// descend into the current spec in parallel with the schema recursion
+// so nested form defaults show live values.
+func nestedStringMap(values map[string]any, key string) map[string]any {
+	if values == nil {
+		return nil
+	}
+
+	child, ok := values[key].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	return child
 }

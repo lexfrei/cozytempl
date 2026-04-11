@@ -250,6 +250,9 @@ func (pgh *PageHandler) DeleteTenant(writer http.ResponseWriter, req *http.Reque
 }
 
 // extractTenantSpec pulls schema-driven fields out of the tenant form.
+// Dot-path keys ("backup.enabled") are un-flattened into nested maps
+// via setNestedSpec, mirroring the app-create/update path so nested
+// schema fields round-trip correctly.
 // Always returns a non-nil map so the CRD validation path does not need
 // to special-case empty objects.
 func extractTenantSpec(req *http.Request, fieldTypes map[string]string) map[string]any {
@@ -264,7 +267,7 @@ func extractTenantSpec(req *http.Request, fieldTypes map[string]string) map[stri
 			continue
 		}
 
-		spec[key] = convertValue(values[0], fieldTypes[key])
+		setNestedSpec(spec, key, convertValue(values[0], fieldTypes[key]))
 	}
 
 	return spec
