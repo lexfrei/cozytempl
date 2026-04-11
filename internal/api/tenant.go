@@ -72,7 +72,7 @@ func (tnh *TenantHandler) Create(writer http.ResponseWriter, req *http.Request) 
 
 	var body k8s.CreateTenantRequest
 
-	err := DecodeJSON(req, &body)
+	err := DecodeJSON(writer, req, &body)
 	if err != nil {
 		Error(writer, http.StatusBadRequest, "invalid request body")
 

@@ -77,7 +77,7 @@ func (aph *ApplicationHandler) Create(writer http.ResponseWriter, req *http.Requ
 
 	var body k8s.CreateApplicationRequest
 
-	err := DecodeJSON(req, &body)
+	err := DecodeJSON(writer, req, &body)
 	if err != nil {
 		Error(writer, http.StatusBadRequest, "invalid request body")
 
@@ -109,7 +109,7 @@ func (aph *ApplicationHandler) Update(writer http.ResponseWriter, req *http.Requ
 
 	var body k8s.UpdateApplicationRequest
 
-	err := DecodeJSON(req, &body)
+	err := DecodeJSON(writer, req, &body)
 	if err != nil {
 		Error(writer, http.StatusBadRequest, "invalid request body")
 

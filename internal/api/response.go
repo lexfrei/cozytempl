@@ -9,6 +9,11 @@ import (
 	"net/http"
 )
 
+// maxJSONBodyBytes is the hard cap on any JSON request body accepted by
+// the API layer. Matches the form body limit in the handler package and
+// protects against memory-exhaustion DoS from very large payloads.
+const maxJSONBodyBytes = 1 << 20 // 1 MiB
+
 // ErrEmptyBody is returned when the request body is nil.
 var ErrEmptyBody = errors.New("empty request body")
 
@@ -34,11 +39,17 @@ func Error(writer http.ResponseWriter, status int, msg string) {
 	}
 }
 
-// DecodeJSON reads and decodes a JSON request body into dst.
-func DecodeJSON(req *http.Request, dst any) error {
+// DecodeJSON reads and decodes a JSON request body into dst. The body is
+// wrapped in http.MaxBytesReader so an attacker can't exhaust memory by
+// sending a gigabyte of JSON. Passing writer is required — MaxBytesReader
+// needs it so the server can set the right response headers when the
+// limit is hit.
+func DecodeJSON(writer http.ResponseWriter, req *http.Request, dst any) error {
 	if req.Body == nil {
 		return ErrEmptyBody
 	}
+
+	req.Body = http.MaxBytesReader(writer, req.Body, maxJSONBodyBytes)
 
 	decoder := json.NewDecoder(req.Body)
 	decoder.DisallowUnknownFields()
