@@ -96,6 +96,21 @@ type SSEEvent struct {
 	Data any    `json:"data"`
 }
 
+// ResourceQuotaEntry is one row of a namespace's aggregated ResourceQuota
+// state, flattened across all ResourceQuota objects in the namespace.
+type ResourceQuotaEntry struct {
+	// QuotaName is the metadata.name of the ResourceQuota this row came
+	// from — useful when a namespace has multiple quotas.
+	QuotaName string `json:"quotaName"`
+	// Resource is the resource key, e.g. "requests.cpu", "pods",
+	// "limits.memory".
+	Resource string `json:"resource"`
+	// Hard is the configured limit as a K8s quantity string.
+	Hard string `json:"hard"`
+	// Used is the current usage as a K8s quantity string.
+	Used string `json:"used"`
+}
+
 // Event is a simplified view of a core/v1 Event rendered for the UI.
 type Event struct {
 	Type      string    `json:"type"` // Normal / Warning

@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,6 +49,74 @@ func PVCGVR() schema.GroupVersionResource {
 // PodMetricsGVR returns the GVR for metrics.k8s.io/v1beta1 pods.
 func PodMetricsGVR() schema.GroupVersionResource {
 	return schema.GroupVersionResource{Group: "metrics.k8s.io", Version: "v1beta1", Resource: "pods"}
+}
+
+// ResourceQuotaGVR returns the GVR for core/v1 ResourceQuota.
+func ResourceQuotaGVR() schema.GroupVersionResource {
+	return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "resourcequotas"}
+}
+
+// ListQuotas returns a flattened view of every ResourceQuota in the
+// namespace, one row per (quotaName, resource) pair with hard limit +
+// current usage. Empty slice if no quotas are configured, nil on an
+// RBAC-denied read — callers should treat that as "not shown" rather
+// than a hard error.
+func (usv *UsageService) ListQuotas(
+	ctx context.Context, username string, groups []string, namespace string,
+) ([]ResourceQuotaEntry, error) {
+	if namespace == "" {
+		return nil, ErrNamespaceRequired
+	}
+
+	client, err := NewImpersonatingClient(usv.baseCfg, username, groups)
+	if err != nil {
+		return nil, err
+	}
+
+	quotaList, listErr := client.Resource(ResourceQuotaGVR()).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	if listErr != nil {
+		return nil, fmt.Errorf("listing resourcequotas in %s: %w", namespace, listErr)
+	}
+
+	var out []ResourceQuotaEntry
+
+	for idx := range quotaList.Items {
+		out = append(out, flattenQuota(&quotaList.Items[idx])...)
+	}
+
+	return out, nil
+}
+
+// flattenQuota walks one ResourceQuota and emits one entry per
+// (resource, hard, used) triple. Resources present in `hard` but
+// missing in `used` get an empty Used string so the UI can render
+// "—" or similar.
+func flattenQuota(obj *unstructured.Unstructured) []ResourceQuotaEntry {
+	hard, _, _ := unstructured.NestedStringMap(obj.Object, "spec", "hard")
+	if len(hard) == 0 {
+		// Older quotas may carry .status.hard only; fall back.
+		hard, _, _ = unstructured.NestedStringMap(obj.Object, "status", "hard")
+	}
+
+	used, _, _ := unstructured.NestedStringMap(obj.Object, "status", "used")
+	name := obj.GetName()
+
+	entries := make([]ResourceQuotaEntry, 0, len(hard))
+
+	for resource, hardVal := range hard {
+		entries = append(entries, ResourceQuotaEntry{
+			QuotaName: name,
+			Resource:  resource,
+			Hard:      hardVal,
+			Used:      used[resource],
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Resource < entries[j].Resource
+	})
+
+	return entries
 }
 
 // Collect returns usage stats for a single tenant namespace.

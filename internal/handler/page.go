@@ -346,9 +346,15 @@ func (pgh *PageHandler) buildTenantPageData(
 		pgh.log.Debug("collecting tenant usage", "tenant", tenantNS, "error", usageErr)
 	}
 
+	quotas, quotaErr := pgh.usageSvc.ListQuotas(req.Context(), usr.Username, usr.Groups, tenantNS)
+	if quotaErr != nil {
+		pgh.log.Debug("listing tenant quotas", "tenant", tenantNS, "error", quotaErr)
+	}
+
 	return view.TenantPageData{
 		Tenant:     *tenant,
 		Usage:      usage,
+		Quotas:     quotas,
 		Children:   children,
 		Apps:       apps,
 		Schemas:    schemas,

@@ -53,6 +53,9 @@ templ Tenant(data view.TenantPageData) {
 	</div>
 	<!-- Resources card: top-of-page summary of what this tenant consumes. -->
 	@tenantResources(data.Usage)
+	if len(data.Quotas) > 0 {
+		@tenantQuotas(data.Quotas)
+	}
 	if len(data.Children) > 0 {
 		<div class="card mb-4">
 			<div class="card-header">
@@ -310,4 +313,47 @@ func memRealCaption(usage k8s.TenantUsage) string {
 		return ""
 	}
 	return "real " + k8s.FormatMem(usage.MemUsageMi)
+}
+
+// tenantQuotas renders a table of ResourceQuota entries for a namespace.
+// Only rendered when len(entries) > 0 so tenants without a configured
+// quota don't see an empty section. Each row is (quota name, resource,
+// used / hard). Empty Used cells render as "—" so it's obvious the
+// quota exists but has no tracked usage for that particular resource.
+templ tenantQuotas(entries []k8s.ResourceQuotaEntry) {
+	<div class="card mb-4">
+		<div class="card-header">
+			<div class="card-title">Quotas</div>
+			<span class="text-sm text-muted">{ fmt.Sprint(len(entries)) } limits</span>
+		</div>
+		<div class="table-container">
+			<table>
+				<thead>
+					<tr>
+						<th>Quota</th>
+						<th>Resource</th>
+						<th>Used</th>
+						<th>Hard</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, e := range entries {
+						<tr>
+							<td class="text-sm text-muted">{ e.QuotaName }</td>
+							<td class="text-mono text-sm">{ e.Resource }</td>
+							<td>{ usedOrDash(e.Used) }</td>
+							<td>{ e.Hard }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
+func usedOrDash(used string) string {
+	if used == "" {
+		return "—"
+	}
+	return used
 }
