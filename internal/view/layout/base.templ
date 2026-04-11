@@ -1,10 +1,25 @@
 package layout
 
-import "github.com/lexfrei/cozytempl/static"
+import (
+	"github.com/lexfrei/cozytempl/internal/i18n"
+	"github.com/lexfrei/cozytempl/static"
+)
 
-templ Base(title string) {
+// htmlLang returns the BCP 47 tag for the active request locale so
+// the <html lang> attribute reflects what the user actually sees.
+// Client-side code (the command palette in particular) reads
+// document.documentElement.lang to pick its string table.
+func htmlLang(loc *i18n.Localizer) string {
+	if loc == nil {
+		return "en"
+	}
+
+	return loc.Tag().String()
+}
+
+templ Base(title string, loc *i18n.Localizer) {
 	<!DOCTYPE html>
-	<html lang="en">
+	<html lang={ htmlLang(loc) }>
 	<head>
 		<meta charset="UTF-8"/>
 		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>

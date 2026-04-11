@@ -24,7 +24,7 @@ type AppProps struct {
 }
 
 templ App(props AppProps) {
-	@Base("cozytempl") {
+	@Base("cozytempl", props.Localizer) {
 		<!-- Toast container. aria-live=polite announces toasts to
 		     assistive tech without interrupting; role=status is the
 		     matching AT-friendly role. OOB swap target id stays
