@@ -31,6 +31,7 @@ type TenantPageData struct {
 	Children   []k8s.Tenant // Direct child tenants, filtered to those visible to the user.
 	Apps       []k8s.Application
 	Schemas    []k8s.AppSchema
+	Events     []k8s.Event // Recent k8s events in the tenant's workload namespace.
 	Query      string
 	KindFilter string
 	SortBy     string

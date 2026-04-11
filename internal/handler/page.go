@@ -129,11 +129,22 @@ func (pgh *PageHandler) TenantPage(writer http.ResponseWriter, req *http.Request
 		}
 	}
 
+	// Recent namespace events feed the audit / activity card. Errors are
+	// tolerated — if the user lacks events-list permission, the card
+	// simply shows an empty state.
+	events, evtErr := pgh.eventSvc.ListInNamespace(
+		req.Context(), usr.Username, usr.Groups, tenantNS, tenantEventLimit,
+	)
+	if evtErr != nil {
+		pgh.log.Debug("listing tenant events", "tenant", tenantNS, "error", evtErr)
+	}
+
 	data := view.TenantPageData{
 		Tenant:     *tenant,
 		Children:   children,
 		Apps:       apps,
 		Schemas:    schemas,
+		Events:     events,
 		Query:      req.URL.Query().Get("q"),
 		KindFilter: req.URL.Query().Get("kind"),
 		SortBy:     req.URL.Query().Get("sort"),
@@ -202,6 +213,11 @@ func (pgh *PageHandler) AppDetailPage(writer http.ResponseWriter, req *http.Requ
 
 // appEventLimit caps the number of events shown on a single tab.
 const appEventLimit = 50
+
+// tenantEventLimit caps the number of events shown on the tenant page
+// activity card. A smaller number than appEventLimit keeps the page
+// scannable rather than burying the application table.
+const tenantEventLimit = 15
 
 // ProfilePage renders the current user's identity details.
 func (pgh *PageHandler) ProfilePage(writer http.ResponseWriter, req *http.Request) {

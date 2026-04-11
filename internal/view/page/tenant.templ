@@ -49,6 +49,44 @@ templ Tenant(data view.TenantPageData) {
 			</button>
 		</div>
 	</div>
+	if len(data.Events) > 0 {
+		<div class="card mb-4">
+			<div class="card-header">
+				<div class="card-title">Recent activity</div>
+				<span class="text-sm text-muted">{ fmt.Sprint(len(data.Events)) } events</span>
+			</div>
+			<div class="table-container">
+				<table>
+					<thead>
+						<tr>
+							<th>Type</th>
+							<th>Reason</th>
+							<th>Object</th>
+							<th>Message</th>
+							<th>Last seen</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, evt := range data.Events {
+							<tr>
+								<td>
+									if evt.Type == "Warning" {
+										<span class="badge badge-failed">{ evt.Type }</span>
+									} else {
+										<span class="badge badge-ready">{ evt.Type }</span>
+									}
+								</td>
+								<td class="text-mono text-sm">{ evt.Reason }</td>
+								<td class="text-sm text-muted">{ evt.Object }</td>
+								<td class="text-sm">{ evt.Message }</td>
+								<td class="text-sm text-muted">{ formatTime(evt.LastSeen) }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	}
 	if len(data.Children) > 0 {
 		<div class="card mb-4">
 			<div class="card-header">
