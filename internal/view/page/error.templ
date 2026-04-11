@@ -1,0 +1,57 @@
+package page
+
+// ErrorPage is the branded 404/403/500 screen. The layout is
+// intentionally minimal — a big status code, a one-line title, a
+// short human explanation, and a single "get me out of here" button
+// — so it reads cleanly whether swapped into #main-content via htmx
+// or delivered as a full page from an unauthed/direct navigation.
+//
+// Pass BackLabel/BackURL empty to suppress the button. The usual
+// choice is {"Back to dashboard", "/"}.
+templ ErrorPage(status int, statusText, title, detail, backLabel, backURL string) {
+	<div class="error-page">
+		<div class="error-status">{ errorStatusString(status) }</div>
+		<div class="error-status-text">{ statusText }</div>
+		<h1 class="error-title">{ title }</h1>
+		if detail != "" {
+			<p class="error-detail">{ detail }</p>
+		}
+		if backURL != "" {
+			<a class="btn btn-primary"
+				href={ templ.SafeURL(backURL) }
+				hx-get={ backURL }
+				hx-target="#main-content"
+				hx-push-url="true">
+				{ backLabel }
+			</a>
+		}
+	</div>
+}
+
+// errorStatusString renders the numeric status code as a string
+// without pulling in fmt just for this one spot. Keeping it as a
+// function lets tests exercise the mapping without touching the
+// templ compiler.
+func errorStatusString(status int) string {
+	// Only the codes we actually emit. Anything else falls through
+	// to a plain decimal rendering via fmt.Sprint in the handler.
+	switch status {
+	case 400:
+		return "400"
+	case 401:
+		return "401"
+	case 403:
+		return "403"
+	case 404:
+		return "404"
+	case 409:
+		return "409"
+	case 500:
+		return "500"
+	case 502:
+		return "502"
+	case 503:
+		return "503"
+	}
+	return "???"
+}

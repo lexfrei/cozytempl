@@ -115,7 +115,9 @@ func (pgh *PageHandler) TenantPage(writer http.ResponseWriter, req *http.Request
 	tenant, err := pgh.tenantSvc.Get(req.Context(), usr.Username, usr.Groups, tenantNS)
 	if err != nil {
 		pgh.log.Error("getting tenant", "tenant", tenantNS, "error", err)
-		http.Error(writer, "tenant not found", http.StatusNotFound)
+		pgh.renderError(writer, req, usr.Username, tenants, http.StatusNotFound,
+			"Tenant not found",
+			"The tenant '"+tenantNS+"' either does not exist or you do not have permission to view it.")
 
 		return
 	}
@@ -154,7 +156,10 @@ func (pgh *PageHandler) AppDetailPage(writer http.ResponseWriter, req *http.Requ
 	app, err := pgh.appSvc.Get(req.Context(), usr.Username, usr.Groups, tenantNS, appName)
 	if err != nil {
 		pgh.log.Error("getting app", "tenant", tenantNS, "app", appName, "error", err)
-		http.Error(writer, "application not found", http.StatusNotFound)
+		pgh.renderError(writer, req, usr.Username, tenants, http.StatusNotFound,
+			"Application not found",
+			"The application '"+appName+"' in tenant '"+tenantNS+
+				"' either does not exist or you do not have permission to view it.")
 
 		return
 	}
@@ -468,6 +473,47 @@ func (pgh *PageHandler) aggregateApps(
 	}
 
 	return allApps
+}
+
+// renderError writes a branded error page instead of plain-text
+// http.Error. Htmx navigation to a missing resource (typed URL,
+// stale link, deleted app) used to land on a text/plain "tenant not
+// found" body that blew through the layout; now it swaps the error
+// template into #main-content and keeps the header/sidebar intact.
+// Non-htmx direct hits get the full layout wrap, same as render().
+func (pgh *PageHandler) renderError(
+	writer http.ResponseWriter,
+	req *http.Request,
+	username string,
+	tenants []k8s.Tenant,
+	status int,
+	title string,
+	detail string,
+) {
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	writer.WriteHeader(status)
+
+	statusText := http.StatusText(status)
+	content := page.ErrorPage(status, statusText, title, detail, "Back to dashboard", "/")
+
+	var renderErr error
+
+	if req.Header.Get("Hx-Request") != "" {
+		renderErr = content.Render(req.Context(), writer)
+	} else {
+		wrapped := layout.App(layout.AppProps{
+			Username:     username,
+			Tenants:      tenants,
+			ActivePage:   "",
+			ActiveTenant: "",
+			DevMode:      pgh.devMode,
+		})
+		renderErr = wrapped.Render(templ.WithChildren(req.Context(), content), writer)
+	}
+
+	if renderErr != nil {
+		pgh.log.Error("rendering error page", "error", renderErr)
+	}
 }
 
 // render handles full page vs htmx partial rendering.

@@ -969,6 +969,52 @@ tr[hx-get]:hover {
   margin-bottom: 4px;
 }
 
+/* Error pages (404 / 403 / 500). Rendered by page/error.templ into
+   main-content so htmx in-app navigation to a missing resource lands
+   on a branded screen instead of a plain-text http.Error body. */
+.error-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 60px 24px;
+  min-height: 60vh;
+}
+
+.error-status {
+  font-family: var(--font-mono);
+  font-size: 5rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-primary);
+  letter-spacing: -0.02em;
+}
+
+.error-status-text {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--color-text-muted);
+  margin-top: 8px;
+  margin-bottom: 24px;
+}
+
+.error-title {
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 12px;
+}
+
+.error-detail {
+  color: var(--color-text-secondary);
+  max-width: 480px;
+  margin-bottom: 24px;
+  line-height: 1.5;
+}
+
 /* Connection info */
 .connection-info {
   font-family: var(--font-mono);
