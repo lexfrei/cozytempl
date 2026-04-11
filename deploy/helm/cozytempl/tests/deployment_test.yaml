@@ -175,3 +175,44 @@ tests:
     asserts:
       - exists:
           path: spec.template.metadata.annotations["checksum/config"]
+
+  - it: tracing disabled by default — no OTEL_* env vars rendered
+    template: deployment.yaml
+    set:
+      config.devMode: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+
+  - it: tracing endpoint flips in when configured
+    template: deployment.yaml
+    set:
+      config.devMode: true
+      config.tracing.otlpEndpoint: tempo.observability:4317
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OTEL_EXPORTER_OTLP_ENDPOINT
+            value: tempo.observability:4317
+
+  - it: tracing protocol + service name can be overridden
+    template: deployment.yaml
+    set:
+      config.devMode: true
+      config.tracing.otlpEndpoint: http://tempo:4318
+      config.tracing.otlpProtocol: http/protobuf
+      config.tracing.serviceName: cozytempl-prod
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OTEL_EXPORTER_OTLP_PROTOCOL
+            value: http/protobuf
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OTEL_SERVICE_NAME
+            value: cozytempl-prod

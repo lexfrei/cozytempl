@@ -49,6 +49,20 @@ spec:
               value: {{ .Values.config.listenAddr | quote }}
             - name: COZYTEMPL_DEV_MODE
               value: {{ .Values.config.devMode | quote }}
+            {{- if .Values.config.tracing }}
+            {{- with .Values.config.tracing.otlpEndpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.tracing.otlpProtocol }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.tracing.serviceName }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
             {{- if not .Values.config.devMode }}
             - name: OIDC_ISSUER_URL
               value: {{ .Values.config.oidc.issuerURL | quote }}

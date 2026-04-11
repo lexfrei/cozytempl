@@ -52,6 +52,19 @@ config:
   # dev-admin with system:masters. NEVER enable in production.
   devMode: false
 
+  # OpenTelemetry tracing. Leave empty to disable tracing
+  # entirely (the global TracerProvider stays at its zero-cost
+  # default). Set otlpEndpoint to your collector and cozytempl
+  # will emit one span per HTTP request plus span.context
+  # propagation to impersonated k8s calls.
+  #
+  # The exporter defaults to gRPC OTLP. Set otlpProtocol to
+  # "http/protobuf" to use the HTTP-over-protobuf variant.
+  tracing:
+    otlpEndpoint: ""  # e.g. tempo.observability:4317 (gRPC) or http://tempo:4318 (HTTP)
+    otlpProtocol: ""  # "" (gRPC default) or "http/protobuf"
+    serviceName: ""   # defaults to "cozytempl"
+
   # OIDC configuration. Required when devMode is false.
   oidc:
     issuerURL: ""       # e.g. https://keycloak.example.com/realms/cozystack

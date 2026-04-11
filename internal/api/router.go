@@ -10,6 +10,7 @@ import (
 
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/handler"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // requestTimeout caps how long a single non-SSE handler may spend reading
@@ -154,17 +155,22 @@ func Router(cfg *RouterConfig) http.Handler {
 	mux.Handle("DELETE /", protect(pageMux))
 
 	// Middleware order matters. Outer → inner:
+	//   otelhttp:            wraps every request in an
+	//                        OpenTelemetry span and honours incoming
+	//                        W3C TraceContext. Runs outermost so the
+	//                        span covers the full request lifetime,
+	//                        including auth, rate limiting and
+	//                        handler work. Zero-cost if tracing is
+	//                        not configured — the global TracerProvider
+	//                        stays at its default no-op.
 	//   withRequestID:       mints/reads the correlation ID and
 	//                        injects it into the request context.
-	//                        MUST be outermost so every downstream
-	//                        middleware, including withAccessLog,
-	//                        sees the ID when reading the context.
+	//                        MUST be outside withAccessLog so the log
+	//                        line carries the ID.
 	//   withMetrics:         Prometheus counters/histograms/gauge.
 	//                        Wraps the response writer to capture
 	//                        the final status, so it must sit
-	//                        outside withSecurityHeaders (which
-	//                        only calls Header().Set — no impact on
-	//                        status code capture) and outside the
+	//                        outside withSecurityHeaders and the
 	//                        mux itself.
 	//   withAccessLog:       emits one structured log line per
 	//                        completed request, including request_id
@@ -172,12 +178,15 @@ func Router(cfg *RouterConfig) http.Handler {
 	//   withSecurityHeaders: sets CSP/HSTS/etc on every response,
 	//                        including error pages and 404s.
 	//   withRequestTimeout:  caps handler execution (bypassed for SSE).
-	return withRequestID(
-		withMetrics(
-			withAccessLog(cfg.Log,
-				withSecurityHeaders(withRequestTimeout(mux)),
+	return otelhttp.NewHandler(
+		withRequestID(
+			withMetrics(
+				withAccessLog(cfg.Log,
+					withSecurityHeaders(withRequestTimeout(mux)),
+				),
 			),
 		),
+		"cozytempl",
 	)
 }
 

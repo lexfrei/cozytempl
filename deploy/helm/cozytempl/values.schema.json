@@ -100,6 +100,25 @@
         "existingSecret": {
           "type": "string",
           "description": "Name of an existing Secret holding keys `oidc-client-secret` and `session-secret`. If set, the chart skips creating its own Secret."
+        },
+        "tracing": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "OpenTelemetry tracing configuration. Leave otlpEndpoint empty to disable tracing entirely; the global TracerProvider stays at its zero-cost default.",
+          "properties": {
+            "otlpEndpoint": {
+              "type": "string",
+              "description": "OTLP collector endpoint, e.g. tempo.observability:4317 (gRPC) or http://tempo:4318 (HTTP)."
+            },
+            "otlpProtocol": {
+              "type": "string",
+              "enum": ["", "grpc", "http/protobuf"]
+            },
+            "serviceName": {
+              "type": "string",
+              "description": "service.name attribute on spans. Defaults to 'cozytempl' when empty."
+            }
+          }
         }
       }
     },

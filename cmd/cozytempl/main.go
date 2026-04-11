@@ -18,6 +18,7 @@ import (
 	"github.com/lexfrei/cozytempl/internal/config"
 	"github.com/lexfrei/cozytempl/internal/handler"
 	"github.com/lexfrei/cozytempl/internal/k8s"
+	"github.com/lexfrei/cozytempl/internal/tracing"
 	"github.com/lexfrei/cozytempl/static"
 
 	"k8s.io/client-go/rest"
@@ -54,6 +55,24 @@ func run() error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// OpenTelemetry is opt-in: if OTEL_EXPORTER_OTLP_ENDPOINT is
+	// unset, tracing.Init returns a no-op and the global tracer
+	// provider stays at its zero-cost default. No config means no
+	// span pipeline overhead — only operators who actually wire a
+	// collector pay for the spans they read.
+	tracingShutdown, err := tracing.Init(ctx)
+	if err != nil {
+		log.Error("initialising tracing", "error", err)
+
+		return fmt.Errorf("initialising tracing: %w", err)
+	}
+
+	defer func() {
+		if shutdownErr := tracingShutdown(context.Background()); shutdownErr != nil {
+			log.Error("tracing shutdown", "error", shutdownErr)
+		}
+	}()
 
 	k8sCfg, err := loadKubeConfig()
 	if err != nil {

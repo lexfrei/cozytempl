@@ -196,6 +196,27 @@ Forward pod logs to Loki / ELK / CloudWatch / wherever your compliance team keep
 
 Every request mints a UUID (or honours a validated upstream `X-Request-ID`) and echoes it in both the response header and every log line. Grep a single request out of the log stream with `jq -c 'select(.request_id == "<id>")'`.
 
+### Tracing (OpenTelemetry)
+
+Opt-in. When `OTEL_EXPORTER_OTLP_ENDPOINT` is set, cozytempl wraps every HTTP request in a span via `otelhttp`, installs W3C TraceContext + Baggage propagators, and exports spans to the configured OTLP collector. When the env var is empty, the global TracerProvider stays at its zero-cost no-op default — operators who don't run a collector pay nothing for the span pipeline.
+
+Supported env vars (standard OTel SDK, no cozytempl-specific flags):
+
+| Variable | Description |
+| --- | --- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Collector host:port or URL. Empty disables tracing. |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` (default) or `http/protobuf`. |
+| `OTEL_SERVICE_NAME` | `service.name` attribute on every span. Defaults to `cozytempl`. |
+| `OTEL_RESOURCE_ATTRIBUTES` | Extra comma-separated resource attributes. |
+
+The Helm chart exposes this under `config.tracing.otlpEndpoint`, `config.tracing.otlpProtocol`, and `config.tracing.serviceName`. Example with Tempo:
+
+```bash
+helm upgrade cozytempl deploy/helm/cozytempl \
+  --set config.tracing.otlpEndpoint=tempo.observability:4317 \
+  --set config.tracing.serviceName=cozytempl-prod
+```
+
 ## Development
 
 ```bash
