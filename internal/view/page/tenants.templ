@@ -15,6 +15,59 @@ func parentDisplay(parent string) string {
 	return strings.TrimPrefix(parent, tenantNSPrefix)
 }
 
+// parentOption is a flattened entry for the create-tenant parent
+// dropdown. Label already includes the depth prefix ("— demo").
+type parentOption struct {
+	Namespace string
+	Label     string
+}
+
+// parentOptions builds the create-form parent selector in hierarchical
+// order: root first, then its direct children, then grandchildren, each
+// row prefixed with a dash per depth level so the user can see the
+// tree structure at a glance. Root tenants whose name is just "root"
+// are labelled so users don't confuse them with the literal string.
+func parentOptions(tenants []view.TenantWithUsage) []parentOption {
+	// Build a parent→children map keyed by workload namespace.
+	children := map[string][]view.TenantWithUsage{}
+
+	var roots []view.TenantWithUsage
+
+	for idx := range tenants {
+		t := tenants[idx]
+		if t.Tenant.Parent == "" || t.Tenant.Parent == t.Tenant.Namespace {
+			roots = append(roots, t)
+		} else {
+			children[t.Tenant.Parent] = append(children[t.Tenant.Parent], t)
+		}
+	}
+
+	var out []parentOption
+
+	var walk func(t view.TenantWithUsage, depth int)
+	walk = func(t view.TenantWithUsage, depth int) {
+		prefix := ""
+		if depth > 0 {
+			prefix = strings.Repeat("— ", depth)
+		}
+
+		out = append(out, parentOption{
+			Namespace: t.Tenant.Namespace,
+			Label:     prefix + t.Tenant.DisplayName,
+		})
+
+		for _, child := range children[t.Tenant.Namespace] {
+			walk(child, depth+1)
+		}
+	}
+
+	for _, root := range roots {
+		walk(root, 0)
+	}
+
+	return out
+}
+
 templ Tenants(data view.TenantsPageData) {
 	<!-- Edit-modal slot: htmx-swapped with the tenant-edit fragment. -->
 	<div id="tenant-edit-slot"></div>
@@ -67,17 +120,26 @@ templ Tenants(data view.TenantsPageData) {
 				hx-push-url="false">
 				<div class="form-group">
 					<label class="form-label">Name</label>
-					<input class="form-input" type="text" name="name" required placeholder="my-tenant" pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"/>
-					<div class="form-hint">Lowercase letters, numbers and hyphens. Prefix <code>tenant-</code> is added automatically.</div>
+					<input class="form-input" type="text" name="name" required
+						placeholder="my-tenant"
+						pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"
+						oninput="document.getElementById('tenant-ns-preview').textContent = this.value ? 'tenant-' + this.value : 'tenant-...'"/>
+					<div class="form-hint">
+						Lowercase letters, numbers and hyphens. Workload namespace will be
+						<code id="tenant-ns-preview">tenant-...</code>
+					</div>
 				</div>
 				<div class="form-group">
 					<label class="form-label">Parent</label>
 					<select class="form-select" name="parent">
-						for _, item := range data.Tenants {
-							<option value={ item.Tenant.Namespace }>{ item.Tenant.DisplayName }</option>
+						for _, opt := range parentOptions(data.Tenants) {
+							<option value={ opt.Namespace }>{ opt.Label }</option>
 						}
 					</select>
-					<div class="form-hint">Parent tenant namespace. New tenant is nested under it.</div>
+					<div class="form-hint">
+						Parent tenant. The new tenant is nested inside its workload
+						namespace. Depth is shown with leading dashes.
+					</div>
 				</div>
 				if data.TenantSchema != nil {
 					@fragment.SchemaFields(*data.TenantSchema)

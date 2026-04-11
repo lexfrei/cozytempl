@@ -119,6 +119,10 @@ templ Tenant(data view.TenantPageData) {
 			<option value="kind" selected?={ data.SortBy == "kind" }>Type</option>
 			<option value="status" selected?={ data.SortBy == "status" }>Status</option>
 		</select>
+		<!-- Clear filters: always visible so the user has a stable
+		     affordance. clearAppFilters() lives in main.ts and resets
+		     the q/kind/sort inputs then asks htmx to refetch. -->
+		<button type="button" class="btn btn-sm" onclick="clearAppFilters()">Clear</button>
 	</div>
 
 	<!-- App table -->

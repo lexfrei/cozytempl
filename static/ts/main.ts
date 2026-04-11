@@ -9,12 +9,36 @@ declare global {
   interface Window {
     openModal: (id: string) => void;
     closeModal: (id: string) => void;
+    clearAppFilters: () => void;
     __cozytemplInitialized: boolean;
   }
 }
 window.openModal = openModal;
 window.closeModal = closeModal;
+window.clearAppFilters = clearAppFilters;
 window.__cozytemplInitialized = false;
+
+// clearAppFilters resets the q/kind/sort inputs on the tenant detail
+// page and re-issues the fragment fetch via htmx. Called by the Clear
+// button inlined in tenant.templ — server-side conditional visibility
+// is not an option because filter changes go through fragment swaps
+// and don't re-render the button.
+function clearAppFilters(): void {
+  const q = document.querySelector<HTMLInputElement>('input[name="q"]');
+  const kind = document.querySelector<HTMLSelectElement>('select[name="kind"]');
+  const sort = document.querySelector<HTMLSelectElement>('select[name="sort"]');
+
+  if (q) q.value = "";
+  if (kind) kind.value = "";
+  if (sort) sort.value = "name";
+
+  // Trigger the htmx refetch by firing the same event the inputs
+  // would fire themselves. Use keyup on q so the "keyup changed"
+  // trigger fires (with its 300ms delay smoothed out by empty value
+  // == previous value no-op).
+  q?.dispatchEvent(new Event("keyup", { bubbles: true }));
+  kind?.dispatchEvent(new Event("change", { bubbles: true }));
+}
 
 // Forms inside a modal should reset after a successful submission so that
 // reopening the modal presents a blank form instead of stale values. The
