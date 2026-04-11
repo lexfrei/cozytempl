@@ -41,6 +41,10 @@ type AppDetailData struct {
 	App    k8s.Application
 	Tenant string
 	Tab    string
+	// Events is populated only when the Events tab is active. Empty on
+	// other tabs so the JSON/HTML rendering does not lug a big slice
+	// around for every navigation.
+	Events []k8s.Event
 }
 
 // MarketplaceData holds data for the marketplace page.

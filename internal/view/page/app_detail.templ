@@ -2,6 +2,8 @@ package page
 
 import (
 	"encoding/json"
+	"fmt"
+
 	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
@@ -22,6 +24,7 @@ templ AppDetail(data view.AppDetailData) {
 		@detailTab("Overview", "overview", data)
 		@detailTab("Connection", "connection", data)
 		@detailTab("Conditions", "conditions", data)
+		@detailTab("Events", "events", data)
 		@detailTab("Values", "values", data)
 	</div>
 
@@ -32,6 +35,8 @@ templ AppDetail(data view.AppDetailData) {
 				@connectionTab(data)
 			case "conditions":
 				@conditionsTab(data)
+			case "events":
+				@eventsTab(data)
 			case "values":
 				@valuesTab(data)
 			default:
@@ -116,6 +121,50 @@ templ conditionsTab(data view.AppDetailData) {
 			</table>
 		</div>
 	</div>
+}
+
+templ eventsTab(data view.AppDetailData) {
+	if len(data.Events) == 0 {
+		<div class="empty-state">
+			<div class="empty-state-title">No events</div>
+			<p class="text-muted">Kubernetes has no recent events for this application, or you lack permission to view them.</p>
+		</div>
+	} else {
+		<div class="card">
+			<div class="table-container">
+				<table>
+					<thead>
+						<tr>
+							<th>Type</th>
+							<th>Reason</th>
+							<th>Message</th>
+							<th>Source</th>
+							<th>Count</th>
+							<th>Last seen</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, evt := range data.Events {
+							<tr>
+								<td>
+									if evt.Type == "Warning" {
+										<span class="badge badge-failed">{ evt.Type }</span>
+									} else {
+										<span class="badge badge-ready">{ evt.Type }</span>
+									}
+								</td>
+								<td class="text-mono text-sm">{ evt.Reason }</td>
+								<td class="text-sm">{ evt.Message }</td>
+								<td class="text-sm text-muted">{ evt.Source }</td>
+								<td class="text-sm">{ fmt.Sprint(evt.Count) }</td>
+								<td class="text-sm text-muted">{ formatTime(evt.LastSeen) }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	}
 }
 
 templ valuesTab(data view.AppDetailData) {

@@ -95,3 +95,15 @@ type SSEEvent struct {
 	Name string `json:"name"`
 	Data any    `json:"data"`
 }
+
+// Event is a simplified view of a core/v1 Event rendered for the UI.
+type Event struct {
+	Type      string    `json:"type"` // Normal / Warning
+	Reason    string    `json:"reason"`
+	Message   string    `json:"message"`
+	Source    string    `json:"source"`
+	Object    string    `json:"object"` // involvedObject kind/name
+	Count     int64     `json:"count"`
+	FirstSeen time.Time `json:"firstSeen"`
+	LastSeen  time.Time `json:"lastSeen"`
+}

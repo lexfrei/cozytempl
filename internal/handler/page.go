@@ -23,6 +23,7 @@ type PageHandler struct {
 	appSvc    *k8s.ApplicationService
 	schemaSvc *k8s.SchemaService
 	usageSvc  *k8s.UsageService
+	eventSvc  *k8s.EventService
 	log       *slog.Logger
 }
 
@@ -32,6 +33,7 @@ func NewPageHandler(
 	appSvc *k8s.ApplicationService,
 	schemaSvc *k8s.SchemaService,
 	usageSvc *k8s.UsageService,
+	eventSvc *k8s.EventService,
 	log *slog.Logger,
 ) *PageHandler {
 	return &PageHandler{
@@ -39,6 +41,7 @@ func NewPageHandler(
 		appSvc:    appSvc,
 		schemaSvc: schemaSvc,
 		usageSvc:  usageSvc,
+		eventSvc:  eventSvc,
 		log:       log,
 	}
 }
@@ -175,15 +178,30 @@ func (pgh *PageHandler) AppDetailPage(writer http.ResponseWriter, req *http.Requ
 		return
 	}
 
+	// Events tab reads Kubernetes core/v1 Events filtered to the app's
+	// involvedObject name. Errors are non-fatal — the tab renders as
+	// empty with a log entry.
+	var events []k8s.Event
+	if tab == "events" {
+		events, err = pgh.eventSvc.ListForObject(req.Context(), usr.Username, usr.Groups, tenantNS, appName, appEventLimit)
+		if err != nil {
+			pgh.log.Debug("listing app events", "tenant", tenantNS, "app", appName, "error", err)
+		}
+	}
+
 	data := view.AppDetailData{
 		App:    *app,
 		Tenant: tenantNS,
 		Tab:    tab,
+		Events: events,
 	}
 
 	content := page.AppDetail(data)
 	pgh.render(writer, req, usr.Username, tenants, "appDetail", tenantNS, content)
 }
+
+// appEventLimit caps the number of events shown on a single tab.
+const appEventLimit = 50
 
 // ProfilePage renders the current user's identity details.
 func (pgh *PageHandler) ProfilePage(writer http.ResponseWriter, req *http.Request) {
