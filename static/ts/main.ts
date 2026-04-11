@@ -177,6 +177,23 @@ function initBurger(): void {
   });
 }
 
+// initSubmitOnChange wires controls tagged with
+// data-action="submit-on-change" so that a change event on the
+// control submits its enclosing <form>. The language switcher in
+// internal/view/partial/header.templ uses this so the <select>
+// can trigger a full-page POST to /lang without an inline
+// onchange handler — inline handlers are blocked by the project
+// CSP (script-src 'self', no 'unsafe-inline').
+function initSubmitOnChange(): void {
+  document.addEventListener("change", (evt) => {
+    const target = evt.target as HTMLElement | null;
+    if (!target || target.dataset.action !== "submit-on-change") return;
+
+    const form = (target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).form;
+    if (form) form.submit();
+  });
+}
+
 function initAll(): void {
   initThemeToggle();
   initHtmxFeedback();
@@ -190,6 +207,7 @@ function initAll(): void {
   initSSE();
   initReveal();
   initCommandPalette();
+  initSubmitOnChange();
   window.__cozytemplInitialized = true;
 }
 

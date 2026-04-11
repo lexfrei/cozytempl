@@ -49,14 +49,17 @@ templ Header(username string, loc *i18n.Localizer) {
 }
 
 // LanguageSwitcher renders a small dropdown form that POSTs the
-// chosen locale to /lang. Pure HTML, no JavaScript — the form
-// relies on the browser submitting the <select> as a form value.
-// Using a full-page POST rather than htmx because a language
-// change needs the whole UI re-rendered, not a fragment swap.
+// chosen locale to /lang. The <select> is wired to submit its
+// parent form on change via a data-action hook in main.ts —
+// we CANNOT use inline onchange because the project CSP is
+// script-src 'self' (no 'unsafe-inline'), so the browser would
+// silently drop any inline handler. Using a full-page POST rather
+// than htmx because a language change needs the whole UI
+// re-rendered, not a fragment swap.
 templ LanguageSwitcher(loc *i18n.Localizer) {
 	<form method="POST" action="/lang" class="lang-switcher" role="group" aria-label={ T(loc, "lang.label") }>
 		<label class="sr-only" for="lang-select">{ T(loc, "lang.label") }</label>
-		<select id="lang-select" name="lang" class="lang-select" onchange="this.form.submit()">
+		<select id="lang-select" name="lang" class="lang-select" data-action="submit-on-change">
 			for _, tag := range localeOptions() {
 				<option value={ tag } selected?={ loc != nil && loc.Tag().String() == tag }>
 					{ T(loc, "lang." + tag) }
