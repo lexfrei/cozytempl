@@ -1,0 +1,13 @@
+# Artifact Hub repository metadata
+# See: https://artifacthub.io/docs/topics/repositories/helm-charts/#oci-support
+#
+# The repositoryID is a fresh UUID generated for cozytempl; it will be
+# claimed when the chart is registered on Artifact Hub. Until then
+# nothing references this file, but the release pipeline pushes it
+# under the `artifacthub.io` tag on the OCI registry regardless so
+# the metadata is in place the moment Artifact Hub discovery runs.
+
+repositoryID: c5f2e8a0-8c6f-4a3e-9d1b-b3b0f8e7a4d1
+owners:
+  - name: Aleksei Sviridkin
+    email: f@lex.la
