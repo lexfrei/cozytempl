@@ -118,8 +118,12 @@ func (pgh *PageHandler) CreateTenant(writer http.ResponseWriter, req *http.Reque
 		Spec:   spec,
 	})
 	if err != nil {
+		// Log full error context for operators; user-facing message is
+		// generic to avoid leaking details of parent tenants the user
+		// cannot see or RBAC policy.
 		pgh.log.Error("creating tenant", "name", form.Name, "error", err)
-		pgh.renderErrorToast(writer, req, "Failed to create tenant: "+err.Error())
+		pgh.renderErrorToast(writer, req,
+			"Failed to create tenant. Check that the name is unique and you have permission under the parent.")
 
 		return
 	}
@@ -197,7 +201,7 @@ func (pgh *PageHandler) UpdateTenant(writer http.ResponseWriter, req *http.Reque
 	}
 
 	spec := pgh.tenantSpec(req, usr)
-	if spec == nil {
+	if len(spec) == 0 {
 		pgh.renderErrorToast(writer, req, "Nothing to update: no form fields recognized against the tenant schema")
 
 		return
@@ -206,7 +210,7 @@ func (pgh *PageHandler) UpdateTenant(writer http.ResponseWriter, req *http.Reque
 	_, err := pgh.tenantSvc.Update(req.Context(), usr.Username, usr.Groups, namespace, name, spec)
 	if err != nil {
 		pgh.log.Error("updating tenant", "ns", namespace, "name", name, "error", err)
-		pgh.renderErrorToast(writer, req, "Failed to update tenant: "+err.Error())
+		pgh.renderErrorToast(writer, req, "Failed to update tenant. Check that you have permission to modify its spec.")
 
 		return
 	}
@@ -244,7 +248,7 @@ func (pgh *PageHandler) DeleteTenant(writer http.ResponseWriter, req *http.Reque
 		}
 
 		pgh.log.Error("deleting tenant", "ns", namespace, "name", name, "error", err)
-		pgh.renderErrorToast(writer, req, "Failed to delete tenant: "+err.Error())
+		pgh.renderErrorToast(writer, req, "Failed to delete tenant. Check that you have permission and that no other workload depends on it.")
 
 		return
 	}
@@ -253,6 +257,9 @@ func (pgh *PageHandler) DeleteTenant(writer http.ResponseWriter, req *http.Reque
 	writer.WriteHeader(http.StatusOK)
 }
 
+// extractTenantSpec pulls schema-driven fields out of the tenant form.
+// Always returns a non-nil map so the CRD validation path does not need
+// to special-case empty objects.
 func extractTenantSpec(req *http.Request, fieldTypes map[string]string) map[string]any {
 	spec := map[string]any{}
 
@@ -266,10 +273,6 @@ func extractTenantSpec(req *http.Request, fieldTypes map[string]string) map[stri
 		}
 
 		spec[key] = convertValue(values[0], fieldTypes[key])
-	}
-
-	if len(spec) == 0 {
-		return nil
 	}
 
 	return spec

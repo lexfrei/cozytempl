@@ -47,7 +47,7 @@ func (asv *ApplicationService) List(
 
 	// Also list HelmReleases with the cozystack label as a unified view
 	hrList, err := client.Resource(HelmReleaseGVR()).Namespace(tenant).List(ctx, metav1.ListOptions{
-		LabelSelector: "apps.cozystack.io/application.kind",
+		LabelSelector: cozyAppKindLabel,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing applications in %s: %w", tenant, err)
@@ -67,6 +67,10 @@ func (asv *ApplicationService) List(
 func (asv *ApplicationService) Get(
 	ctx context.Context, username string, groups []string, tenant, name string,
 ) (*Application, error) {
+	if !isValidLabelValue(name) {
+		return nil, fmt.Errorf("%w: invalid application name %q", ErrAppNotFound, name)
+	}
+
 	client, err := NewImpersonatingClient(asv.baseCfg, username, groups)
 	if err != nil {
 		return nil, err
@@ -74,7 +78,7 @@ func (asv *ApplicationService) Get(
 
 	// First try to find it as a HelmRelease (the canonical view with status)
 	hrList, err := client.Resource(HelmReleaseGVR()).Namespace(tenant).List(ctx, metav1.ListOptions{
-		LabelSelector: "apps.cozystack.io/application.name=" + name,
+		LabelSelector: cozyAppNameLabel + "=" + name,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("getting application %s/%s: %w", tenant, name, err)
@@ -85,7 +89,7 @@ func (asv *ApplicationService) Get(
 	}
 
 	app := helmReleaseToApplication(&hrList.Items[0], tenant)
-	app.ConnectionInfo = asv.getConnectionInfo(ctx, client, tenant, name, app.Kind)
+	app.ConnectionInfo = asv.getConnectionInfo(ctx, client, username, groups, tenant, name, app.Kind)
 
 	return &app, nil
 }
@@ -187,8 +191,12 @@ func (asv *ApplicationService) Delete(
 func (asv *ApplicationService) findAppKind(
 	ctx context.Context, client dynamic.Interface, tenant, name string,
 ) (string, error) {
+	if !isValidLabelValue(name) {
+		return "", fmt.Errorf("%w: invalid application name %q", ErrAppNotFound, name)
+	}
+
 	hrList, err := client.Resource(HelmReleaseGVR()).Namespace(tenant).List(ctx, metav1.ListOptions{
-		LabelSelector: "apps.cozystack.io/application.name=" + name,
+		LabelSelector: cozyAppNameLabel + "=" + name,
 	})
 	if err != nil {
 		return "", fmt.Errorf("finding application kind: %w", err)
@@ -200,16 +208,18 @@ func (asv *ApplicationService) findAppKind(
 
 	labels := hrList.Items[0].GetLabels()
 
-	return labels["apps.cozystack.io/application.kind"], nil
+	return labels[cozyAppKindLabel], nil
 }
 
 func (asv *ApplicationService) getConnectionInfo(
-	ctx context.Context, client dynamic.Interface, tenant, name, kind string,
+	ctx context.Context, client dynamic.Interface, username string, groups []string, tenant, name, kind string,
 ) map[string]string {
 	result := make(map[string]string)
 
-	// Try templates from ApplicationDefinition
-	appDef, err := asv.schemaSvc.Get(ctx, "dev-admin", []string{"system:masters"}, kind)
+	// Fetch the ApplicationDefinition as the requesting user, not as the
+	// baked-in dev-admin — otherwise anyone who could hit GetConnectionInfo
+	// could read ApplicationDefinition metadata outside their RBAC scope.
+	appDef, err := asv.schemaSvc.Get(ctx, username, groups, kind)
 	if err == nil {
 		for _, tmpl := range appDef.SecretTemplates {
 			secretName := strings.ReplaceAll(tmpl, "{{ .name }}", name)
@@ -294,8 +304,15 @@ func readSecretInto(ctx context.Context, client dynamic.Interface, tenant, secre
 
 func helmReleaseToApplication(obj *unstructured.Unstructured, tenant string) Application {
 	labels := obj.GetLabels()
-	kind := labels["apps.cozystack.io/application.kind"]
-	name := labels["apps.cozystack.io/application.name"]
+	if labels == nil {
+		// HelmReleases missing Cozystack labels are not apps we care about;
+		// return a zero-value Application so callers can filter (see the
+		// empty-name guard in sse.buildMessage).
+		return Application{Tenant: tenant}
+	}
+
+	kind := labels[cozyAppKindLabel]
+	name := labels[cozyAppNameLabel]
 
 	status := extractStatus(obj)
 	conditions := extractConditions(obj)

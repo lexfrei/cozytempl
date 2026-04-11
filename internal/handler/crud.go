@@ -74,8 +74,12 @@ func (pgh *PageHandler) doCreateApp(
 
 	_, err := pgh.appSvc.Create(req.Context(), usr.Username, usr.Groups, tenantNS, createReq)
 	if err != nil {
+		// Log full error context server-side; show the user a generic
+		// message so Kubernetes RBAC denials don't leak resource names
+		// or tenant metadata of things they can't see.
 		pgh.log.Error("creating app", "tenant", tenantNS, "name", appName, "error", err)
-		pgh.renderErrorToast(writer, req, "Failed to create "+appName+": "+err.Error())
+		pgh.renderErrorToast(writer, req,
+			"Failed to create "+appName+". Check that the name is unique and you have permission.")
 
 		return
 	}
@@ -155,6 +159,9 @@ func (pgh *PageHandler) renderErrorToast(writer http.ResponseWriter, req *http.R
 	}
 }
 
+// extractSpecFromForm pulls known schema fields out of the submitted form.
+// Always returns a non-nil map so downstream CRD validation that expects a
+// spec object succeeds even when the user submits only name + kind.
 func extractSpecFromForm(req *http.Request, fieldTypes map[string]string) map[string]any {
 	spec := map[string]any{}
 
@@ -168,10 +175,6 @@ func extractSpecFromForm(req *http.Request, fieldTypes map[string]string) map[st
 		}
 
 		spec[key] = convertValue(values[0], fieldTypes[key])
-	}
-
-	if len(spec) == 0 {
-		return nil
 	}
 
 	return spec

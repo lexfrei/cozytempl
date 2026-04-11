@@ -79,7 +79,7 @@ func (tsv *TenantService) List(ctx context.Context, username string, groups []st
 
 	for idx := range tenants {
 		hrList, listErr := client.Resource(hrGVR).Namespace(tenants[idx].Namespace).List(ctx, metav1.ListOptions{
-			LabelSelector: "apps.cozystack.io/application.kind",
+			LabelSelector: cozyAppKindLabel,
 		})
 		if listErr == nil {
 			tenants[idx].AppCount = len(hrList.Items)
@@ -124,7 +124,7 @@ func (tsv *TenantService) Get(ctx context.Context, username string, groups []str
 	tenant.ChildCount = len(tenant.Children)
 
 	hrList, listErr := client.Resource(HelmReleaseGVR()).Namespace(tenant.Namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "apps.cozystack.io/application.kind",
+		LabelSelector: cozyAppKindLabel,
 	})
 	if listErr == nil {
 		tenant.AppCount = len(hrList.Items)

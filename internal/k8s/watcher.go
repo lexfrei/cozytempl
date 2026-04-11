@@ -16,7 +16,7 @@ import (
 const (
 	eventChannelBuffer  = 100
 	watchReconnectDelay = 2 * time.Second
-	watchLabelSelector  = "apps.cozystack.io/application.kind"
+	watchLabelSelector  = cozyAppKindLabel
 )
 
 // WatchEventType matches a subset of watch.EventType useful for SSE fan-out.

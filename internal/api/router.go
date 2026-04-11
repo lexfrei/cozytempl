@@ -24,6 +24,37 @@ type RouterConfig struct {
 	DevUsername   string
 }
 
+// contentSecurityPolicy is the CSP header applied to every response. It
+// allows the two external origins actually used by the page — unpkg for
+// htmx, Google Fonts for Inter — plus self for everything else, and
+// blocks frame embedding entirely (clickjacking defense).
+const contentSecurityPolicy = "default-src 'self'; " +
+	"script-src 'self' https://unpkg.com; " +
+	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+	"font-src 'self' https://fonts.gstatic.com; " +
+	"img-src 'self' data:; " +
+	"connect-src 'self'; " +
+	"frame-ancestors 'none'; " +
+	"base-uri 'self'; " +
+	"form-action 'self'"
+
+// withSecurityHeaders attaches a set of conservative headers to every
+// response. This is a small wrapper around http.Handler so the headers
+// apply uniformly across API, page, and static routes without per-handler
+// boilerplate.
+func withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		h := writer.Header()
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+
+		next.ServeHTTP(writer, req)
+	})
+}
+
 // Router creates the HTTP route mux with all API and static routes.
 func Router(cfg *RouterConfig) http.Handler {
 	mux := http.NewServeMux()
@@ -59,9 +90,10 @@ func Router(cfg *RouterConfig) http.Handler {
 
 	mux.Handle("GET /", protect(pageMux))
 	mux.Handle("POST /", protect(pageMux))
+	mux.Handle("PUT /", protect(pageMux))
 	mux.Handle("DELETE /", protect(pageMux))
 
-	return mux
+	return withSecurityHeaders(mux)
 }
 
 func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {

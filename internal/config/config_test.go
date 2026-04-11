@@ -28,6 +28,7 @@ func TestLoad_AllRequiredSet(t *testing.T) {
 
 func TestLoad_DevMode(t *testing.T) {
 	clearEnvVars(t)
+	t.Setenv("COZYTEMPL_DEV_MODE", "true")
 
 	cfg, err := Load()
 	if err != nil {
@@ -35,7 +36,40 @@ func TestLoad_DevMode(t *testing.T) {
 	}
 
 	if !cfg.DevMode {
-		t.Error("DevMode should be true when OIDC vars are not set")
+		t.Error("DevMode should be true when COZYTEMPL_DEV_MODE=true is set")
+	}
+
+	if cfg.SessionSecret == "" || cfg.SessionSecret == devSessionSecretPlaceholder {
+		t.Error("dev mode should generate a random session secret, got placeholder or empty")
+	}
+}
+
+func TestLoad_DevModeRequiresOptIn(t *testing.T) {
+	clearEnvVars(t)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when OIDC_ISSUER_URL is unset without COZYTEMPL_DEV_MODE opt-in")
+	}
+}
+
+func TestLoad_ProductionRejectsPlaceholderSecret(t *testing.T) {
+	setRequiredEnvVars(t)
+	t.Setenv("SESSION_SECRET", devSessionSecretPlaceholder)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when production mode uses placeholder SESSION_SECRET")
+	}
+}
+
+func TestLoad_ProductionRequiresSessionSecret(t *testing.T) {
+	setRequiredEnvVars(t)
+	t.Setenv("SESSION_SECRET", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when production mode has empty SESSION_SECRET")
 	}
 }
 
