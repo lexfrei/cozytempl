@@ -125,24 +125,27 @@ func TestConvertValueTypes(t *testing.T) {
 	}
 }
 
-// TestValidTenantName locks in the DNS-1123 label rule: lowercase, digits,
-// hyphens, not starting/ending with hyphen, under 63 chars. The check runs
-// on every tenant create.
+// TestValidTenantName locks in cozystack 1.2's stricter tenant-name
+// rule: lowercase alphanumerics only, starting with a letter, no
+// dashes — because the downstream Helm chart composes release names
+// as "tenant-<name>" and rejects any further dashes in the result.
+// The function also enforces maxTenantNameLength to keep the final
+// namespace under the DNS-1123 63-char limit.
 func TestValidTenantName(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]bool{
 		"":                      false, // empty
 		"valid":                 true,
-		"also-valid-123":        true,
+		"also123":               true,
 		"UPPERCASE":             false,
 		"has_underscore":        false,
-		"-leads":                false,
-		"trails-":               false,
+		"has-dash":              false, // rejected by cozystack 1.2 chart
+		"1leading":              false, // must start with a letter
 		"has.dot":               false,
 		"foo,injection=x":       false, // label-selector injection guard
-		strings.Repeat("a", 63): true,
-		strings.Repeat("a", 64): false,
+		strings.Repeat("a", 56): true,  // exact cap
+		strings.Repeat("a", 57): false, // over cap
 	}
 
 	for name, want := range cases {
@@ -153,8 +156,10 @@ func TestValidTenantName(t *testing.T) {
 }
 
 // TestExtractFieldTypes walks a fake JSON schema and pulls out property
-// types. Non-object schemas and missing properties return an empty map
-// (not nil) so callers can always do a map lookup.
+// types, including the one-level-deep recursion into nested object
+// properties. Deep (level 2+) objects and arrays are skipped to match
+// the form renderer's depth cap — both walkers must produce the same
+// set of form fields.
 func TestExtractFieldTypes(t *testing.T) {
 	t.Parallel()
 
@@ -165,7 +170,14 @@ func TestExtractFieldTypes(t *testing.T) {
 				"replicas": map[string]any{"type": "integer"},
 				"tls":      map[string]any{"type": "boolean"},
 				"host":     map[string]any{"type": "string"},
-				"nested":   map[string]any{"type": "object"}, // recorded as "object"
+				"backup": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"enabled":  map[string]any{"type": "boolean"},
+						"schedule": map[string]any{"type": "string"},
+					},
+				},
+				"tags": map[string]any{"type": "array"}, // skipped
 			},
 		},
 	}
@@ -173,16 +185,24 @@ func TestExtractFieldTypes(t *testing.T) {
 	got := extractFieldTypes(schema)
 
 	want := map[string]string{
-		"replicas": "integer",
-		"tls":      "boolean",
-		"host":     "string",
-		"nested":   "object",
+		"replicas":        "integer",
+		"tls":             "boolean",
+		"host":            "string",
+		"backup.enabled":  "boolean",
+		"backup.schedule": "string",
 	}
 
 	for key, val := range want {
 		if got[key] != val {
 			t.Errorf("extractFieldTypes[%q] = %q, want %q", key, got[key], val)
 		}
+	}
+
+	if _, present := got["tags"]; present {
+		t.Errorf("extractFieldTypes should skip array types, got %q", got["tags"])
+	}
+	if _, present := got["backup"]; present {
+		t.Errorf("extractFieldTypes should not emit the nested object itself, only its leaves")
 	}
 }
 

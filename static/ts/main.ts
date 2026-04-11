@@ -84,17 +84,25 @@ function clearAppFilters(): void {
   kind?.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-// Forms inside a modal should reset after a successful submission so that
-// reopening the modal presents a blank form instead of stale values. The
-// server signals success via HX-Redirect, which htmx handles BEFORE the
-// form is reset — we listen on htmx:afterRequest for any 2xx response on
-// a form that lives under .modal-backdrop and clear it. Error responses
-// are left alone so the user can fix the input and retry.
+// Forms inside a modal should reset after a successful CREATE / UPDATE so
+// that reopening the modal presents a blank form instead of stale values.
+// The trigger is narrow on purpose:
+//   * only POST / PUT / DELETE (mutations) — a kind-select change in the
+//     create form fires a GET /fragments/schema-fields and must NOT reset
+//     the form because that would also wipe the newly-chosen kind
+//   * only 2xx responses — error responses keep the input so the user can
+//     fix and retry
+//   * only when the triggering element is itself inside a .modal-backdrop
+//     form — unrelated htmx calls elsewhere on the page must not touch it
 function initFormReset(): void {
   document.body.addEventListener("htmx:afterRequest", (evt) => {
     const detail = (evt as CustomEvent).detail ?? {};
     const xhr = detail.xhr as XMLHttpRequest | undefined;
     if (!xhr || xhr.status < 200 || xhr.status >= 300) return;
+
+    // Only treat mutations as "finished, clear the form".
+    const verb: string | undefined = detail.requestConfig?.verb;
+    if (verb !== "post" && verb !== "put" && verb !== "delete") return;
 
     const elt = detail.elt as HTMLElement | undefined;
     if (!elt) return;

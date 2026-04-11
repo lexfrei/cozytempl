@@ -14,21 +14,37 @@ import (
 const (
 	tenantSchemaKind = "Tenant"
 
-	// maxDNS1123LabelLength matches the Kubernetes limit for object names.
-	maxDNS1123LabelLength = 63
+	// maxTenantNameLength is the hard cap on the user-visible tenant
+	// name. The workload namespace prefixes it with "tenant-" (7 chars)
+	// and needs to stay under DNS-1123's 63-char limit, so we allow 56
+	// characters for the name itself.
+	maxTenantNameLength = 56
 )
 
-// dns1123LabelRegex matches RFC 1123 labels: lowercase alphanumerics and
-// hyphens, starting and ending with alphanumeric, up to 63 chars.
-var dns1123LabelRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+// tenantNameRegex enforces cozystack 1.2's stricter rule: the Helm
+// release name for a Tenant is "tenant-<name>", and the chart template
+// rejects anything that contains a dash in <name> because it would
+// produce more than one dash in the final release name. The message
+// from the chart is literally:
+//
+//	The release name should start with "tenant-" and should not
+//	contain any other dashes
+//
+// So the user-visible name must be lowercase alphanumerics only, not
+// starting with a digit (so the resulting K8s namespace stays a valid
+// DNS-1123 label even after the prefix is added).
+var tenantNameRegex = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
 
-// validTenantName reports whether s is a valid Kubernetes DNS-1123 label.
+// validTenantName reports whether s is a valid cozystack tenant name.
+// This is stricter than DNS-1123: no dashes allowed, because the
+// downstream Helm chart composes release names by prepending "tenant-"
+// and refuses any further dashes.
 func validTenantName(s string) bool {
-	if s == "" || len(s) > maxDNS1123LabelLength {
+	if s == "" || len(s) > maxTenantNameLength {
 		return false
 	}
 
-	return dns1123LabelRegex.MatchString(s)
+	return tenantNameRegex.MatchString(s)
 }
 
 // TenantsPage renders the tenant management page: list + create form.
@@ -95,7 +111,9 @@ func (pgh *PageHandler) CreateTenant(writer http.ResponseWriter, req *http.Reque
 	}
 
 	if !validTenantName(form.Name) {
-		pgh.renderErrorToast(writer, req, "Invalid name: must be lowercase DNS label (letters, digits, hyphens)")
+		pgh.renderErrorToast(writer, req,
+			"Invalid name: lowercase letters and digits only, starting with a letter. "+
+				"No dashes — Cozystack's Helm chart rejects them.")
 
 		return
 	}
@@ -249,6 +267,16 @@ func (pgh *PageHandler) DeleteTenant(writer http.ResponseWriter, req *http.Reque
 	writer.WriteHeader(http.StatusOK)
 }
 
+// isReservedTenantFormKey reports whether a form key should be skipped
+// when building the tenant spec. The tenant name, the chosen parent
+// namespace, and the "ns" query-string param used by Update/Delete to
+// disambiguate sibling tenants must not leak into spec — ParseForm
+// merges query and body into req.Form, so the query param lands
+// alongside the real form fields.
+func isReservedTenantFormKey(key string) bool {
+	return key == formFieldName || key == "parent" || key == "ns"
+}
+
 // extractTenantSpec pulls schema-driven fields out of the tenant form.
 // Dot-path keys ("backup.enabled") are un-flattened into nested maps
 // via setNestedSpec, mirroring the app-create/update path so nested
@@ -259,7 +287,7 @@ func extractTenantSpec(req *http.Request, fieldTypes map[string]string) map[stri
 	spec := map[string]any{}
 
 	for key, values := range req.Form {
-		if key == formFieldName || key == "parent" {
+		if isReservedTenantFormKey(key) {
 			continue
 		}
 

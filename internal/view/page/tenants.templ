@@ -122,11 +122,12 @@ templ Tenants(data view.TenantsPageData) {
 				<div class="form-group">
 					<label class="form-label">Name</label>
 					<input class="form-input" type="text" name="name" required
-						placeholder="my-tenant"
-						pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"
+						placeholder="mytenant"
+						pattern="[a-z][a-z0-9]*"
+						title="Lowercase letters and digits only, starting with a letter. No dashes — Cozystack's Helm chart rejects them."
 						data-ns-preview="tenant-ns-preview"/>
 					<div class="form-hint">
-						Lowercase letters, numbers and hyphens. Workload namespace will be
+						Lowercase letters and digits only, no dashes. Workload namespace will be
 						<code id="tenant-ns-preview">tenant-...</code>
 					</div>
 				</div>

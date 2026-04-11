@@ -208,6 +208,13 @@ func (tsv *TenantService) GetSpec(
 	return spec, nil
 }
 
+// reservedTenantSpecKeys are never legitimate spec fields. They appear in
+// stored tenants if an earlier buggy build leaked query/path params into
+// the spec via ParseForm, so Update scrubs them on every save.
+//
+//nolint:gochecknoglobals // small read-only set
+var reservedTenantSpecKeys = []string{"ns", "parent", "name"}
+
 // Update merges the given spec fields into an existing Tenant CR. The caller
 // specifies the parent namespace (where the CR lives, i.e. metadata.namespace)
 // because two tenants can share the same leaf name under different parents,
@@ -238,6 +245,12 @@ func (tsv *TenantService) Update(
 	existing, _, _ := unstructured.NestedMap(obj.Object, "spec")
 	if existing == nil {
 		existing = map[string]any{}
+	}
+
+	// Scrub reserved keys first so earlier bugs that leaked query params
+	// into the spec get cleaned up the next time the user saves.
+	for _, key := range reservedTenantSpecKeys {
+		delete(existing, key)
 	}
 
 	maps.Copy(existing, spec)

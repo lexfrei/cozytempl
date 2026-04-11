@@ -89,6 +89,12 @@ func (pgh *PageHandler) doCreateApp(
 	writer.WriteHeader(http.StatusCreated)
 }
 
+// extractFieldTypes walks the JSON schema and returns a map from
+// dot-path field key to JSON-schema type. Mirrors the recursive
+// walker in view/fragment/schema_fields.templ so the coercion in
+// convertValue() matches the form field rendered to the user —
+// without it, nested integer / boolean fields would submit as raw
+// strings and the downstream CRD would reject them.
 func extractFieldTypes(schema *k8s.AppSchema) map[string]string {
 	types := map[string]string{}
 
@@ -101,23 +107,56 @@ func extractFieldTypes(schema *k8s.AppSchema) map[string]string {
 		return types
 	}
 
-	props, ok := obj["properties"].(map[string]any)
+	walkFieldTypes(obj, "", 0, types)
+
+	return types
+}
+
+// maxFieldTypeDepth matches the schema-field walker in the view
+// layer. Kept in the handler package to avoid a cross-package import
+// just for a constant.
+const maxFieldTypeDepth = 2
+
+// walkFieldTypes recursively flattens a JSON Schema `properties` map
+// into dot-path → type entries. Object children are descended into
+// up to maxFieldTypeDepth; arrays and deeper objects are skipped,
+// which matches the form renderer so every form field has a
+// matching entry in the map.
+func walkFieldTypes(obj map[string]any, prefix string, depth int, out map[string]string) {
+	rawProps, ok := obj["properties"].(map[string]any)
 	if !ok {
-		return types
+		return
 	}
 
-	for key, raw := range props {
+	for key, raw := range rawProps {
 		prop, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
 
-		if t, ok := prop["type"].(string); ok {
-			types[key] = t
+		fullKey := key
+		if prefix != "" {
+			fullKey = prefix + "." + key
 		}
-	}
 
-	return types
+		fieldType, _ := prop["type"].(string)
+
+		if fieldType == "object" {
+			if depth >= maxFieldTypeDepth-1 {
+				continue
+			}
+
+			walkFieldTypes(prop, fullKey, depth+1, out)
+
+			continue
+		}
+
+		if fieldType == "array" {
+			continue
+		}
+
+		out[fullKey] = fieldType
+	}
 }
 
 // UpdateApp handles PUT /tenants/{tenant}/apps/{name} — merges form
