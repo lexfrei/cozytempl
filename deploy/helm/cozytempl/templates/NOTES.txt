@@ -1,0 +1,38 @@
+cozytempl {{ .Chart.AppVersion }} has been deployed to namespace
+{{ .Release.Namespace }} as release {{ .Release.Name }}.
+
+{{- if .Values.config.devMode }}
+
+WARNING: dev mode is enabled. Authentication is disabled and
+every request is treated as dev-admin with system:masters. This
+is ONLY safe on a local cluster you control. Never expose the
+Service beyond a private network with this flag on.
+{{- end }}
+
+To reach the UI from outside the cluster, port-forward to your
+workstation:
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "cozytempl.fullname" . }} 8080:{{ .Values.service.port }}
+
+Then open http://localhost:8080.
+
+Next steps:
+
+1. Wire up an Ingress or Gateway resource that terminates TLS
+   and points at svc/{{ include "cozytempl.fullname" . }} on
+   port {{ .Values.service.port }}. OIDC redirectURL must match
+   the external hostname you chose.
+
+2. If you haven't already, provision a Keycloak realm or other
+   OIDC provider with a client whose clientID matches
+   .Values.config.oidc.clientID and whose redirect URI matches
+   .Values.config.oidc.redirectURL.
+
+3. Check the pod is healthy and talking to the k8s API:
+
+     kubectl --namespace {{ .Release.Namespace }} logs -l app.kubernetes.io/name={{ include "cozytempl.name" . }}
+
+4. Scrape /metrics with Prometheus if you want the built-in
+   histograms. The endpoint is unauthenticated and intended to
+   be protected at the network layer (NetworkPolicy, service
+   mesh, or a scraper sidecar).

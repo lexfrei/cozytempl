@@ -1,0 +1,17 @@
+apiVersion: v2
+name: cozytempl
+description: A Helm chart for cozytempl — the Cozystack management UI
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/lexfrei/cozytempl
+sources:
+  - https://github.com/lexfrei/cozytempl
+maintainers:
+  - name: Aleksei Sviridkin
+    email: f@lex.la
+keywords:
+  - cozystack
+  - kubernetes
+  - ui
+  - dashboard

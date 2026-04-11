@@ -1,0 +1,55 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cozytempl.fullname" . }}
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+rules:
+  # Impersonation: cozytempl hands every Kubernetes call back
+  # to the API server with the logged-in user's identity so k8s
+  # RBAC is the source of truth for what the user can do. The
+  # cozytempl SA needs the `impersonate` verb on users, groups
+  # and extras to proxy those credentials.
+  - apiGroups: [""]
+    resources:
+      - users
+      - groups
+      - serviceaccounts
+    verbs:
+      - impersonate
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - userextras/scopes
+    verbs:
+      - impersonate
+
+  # Self-subject review so the landing page can tell the user
+  # what they're allowed to see without us having to cache
+  # RBAC state. This is the only "read with the SA identity
+  # directly" call — everything else goes through the
+  # impersonation path above.
+  - apiGroups:
+      - authorization.k8s.io
+    resources:
+      - selfsubjectaccessreviews
+      - selfsubjectrulesreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cozytempl.fullname" . }}
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cozytempl.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cozytempl.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

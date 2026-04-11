@@ -1,0 +1,117 @@
+# cozytempl Helm chart values.
+
+# Container image.
+image:
+  repository: ghcr.io/lexfrei/cozytempl
+  tag: ""  # Defaults to Chart.appVersion if left empty.
+  pullPolicy: IfNotPresent
+
+# Number of cozytempl replicas. One is plenty for a small homelab
+# setup; a real MSP deployment will want 2+ for rolling updates.
+replicaCount: 1
+
+# Service resource exposing the pod. ClusterIP is the default
+# because ingress is expected to be handled by a separate
+# Ingress/Gateway resource the operator already manages.
+service:
+  type: ClusterIP
+  port: 8080
+
+# Container resource requests and limits. Cozytempl is a thin
+# proxy over the k8s API so the defaults are modest; raise the
+# memory limit if you see OOM on a 10k-app cluster before
+# pagination lands.
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Probes. Cozytempl serves /healthz and /readyz unconditionally
+# (no auth) so kubelet can hit them without credentials.
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 2
+    periodSeconds: 5
+
+# Runtime configuration. Every field maps 1:1 to a COZYTEMPL_*
+# env var in the Deployment.
+config:
+  # Listening address. 0.0.0.0:8080 is the normal pod-network
+  # setup; change only if you need to bind to a specific iface.
+  listenAddr: ":8080"
+
+  # Enable dev mode — disables auth, treats every request as
+  # dev-admin with system:masters. NEVER enable in production.
+  devMode: false
+
+  # OIDC configuration. Required when devMode is false.
+  oidc:
+    issuerURL: ""       # e.g. https://keycloak.example.com/realms/cozystack
+    clientID: ""        # e.g. cozytempl
+    redirectURL: ""     # e.g. https://cozytempl.example.com/auth/callback
+
+    # clientSecret and sessionSecret go into a Secret. See
+    # existingSecret below to reuse a secret managed outside
+    # this chart.
+    clientSecret: ""
+    sessionSecret: ""   # 32+ random bytes; `openssl rand -base64 32`
+
+  # If set, the chart reads clientSecret and sessionSecret from
+  # this existing Secret instead of creating its own. Keys:
+  #   - oidc-client-secret
+  #   - session-secret
+  existingSecret: ""
+
+# ServiceAccount + ClusterRole. Cozytempl impersonates the
+# logged-in user for every Kubernetes call, which requires the
+# system:auth-delegator and impersonate verbs on users, groups,
+# and serviceaccounts. Scope is cluster-wide by design — there
+# is no way to do per-tenant impersonation with a namespaced
+# Role.
+serviceAccount:
+  create: true
+  name: ""  # Defaults to the chart fullname.
+  annotations: {}
+
+rbac:
+  # Create the ClusterRole + ClusterRoleBinding that grants the
+  # ServiceAccount permission to impersonate users/groups and
+  # review their access via SelfSubjectAccessReview. Disable only
+  # if you are wiring up RBAC externally.
+  create: true
+
+# Pod security context. Non-root by default — the container
+# image is built with USER 65532:65532 so fsGroup is not
+# required.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Arbitrary additional labels and annotations.
+commonLabels: {}
+commonAnnotations: {}
+
+# nodeSelector / tolerations / affinity. Empty = schedule
+# anywhere the defaults allow. Helpful to pin cozytempl to a
+# control-plane-adjacent node pool on large MSP clusters.
+nodeSelector: {}
+tolerations: []
+affinity: {}
