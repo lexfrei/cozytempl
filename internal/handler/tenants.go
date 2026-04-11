@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 
+	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view"
@@ -111,6 +112,8 @@ func (pgh *PageHandler) CreateTenant(writer http.ResponseWriter, req *http.Reque
 	}
 
 	if !validTenantName(form.Name) {
+		pgh.recordAudit(req, usr, audit.ActionTenantCreate, form.Name, form.Parent,
+			audit.OutcomeDenied, map[string]any{"reason": "invalid_name"})
 		pgh.renderErrorToast(writer, req,
 			"Invalid name: lowercase letters and digits only, starting with a letter. "+
 				"No dashes — Cozystack's Helm chart rejects them.")
@@ -119,6 +122,8 @@ func (pgh *PageHandler) CreateTenant(writer http.ResponseWriter, req *http.Reque
 	}
 
 	if k8s.IsRootTenant(form.Name) {
+		pgh.recordAudit(req, usr, audit.ActionTenantCreate, form.Name, form.Parent,
+			audit.OutcomeDenied, map[string]any{"reason": "reserved_name"})
 		pgh.renderErrorToast(writer, req, "Cannot create tenant named 'root' — reserved")
 
 		return
@@ -136,6 +141,8 @@ func (pgh *PageHandler) CreateTenant(writer http.ResponseWriter, req *http.Reque
 		// generic to avoid leaking details of parent tenants the user
 		// cannot see or RBAC policy.
 		pgh.log.Error("creating tenant", "name", form.Name, "error", err)
+		pgh.recordAudit(req, usr, audit.ActionTenantCreate, form.Name, form.Parent,
+			audit.OutcomeError, map[string]any{"error": err.Error()})
 		pgh.renderErrorToast(writer, req,
 			"Failed to create tenant. Check that the name is unique and you have permission under the parent.")
 
@@ -143,6 +150,8 @@ func (pgh *PageHandler) CreateTenant(writer http.ResponseWriter, req *http.Reque
 	}
 
 	pgh.log.Info("tenant created", "name", form.Name, "parent", form.Parent)
+	pgh.recordAudit(req, usr, audit.ActionTenantCreate, form.Name, form.Parent,
+		audit.OutcomeSuccess, nil)
 	pgh.emitSuccessToast(writer, req, "Tenant created: "+form.Name)
 	// Re-render the tenants list so the new row shows up and the
 	// create modal closes with a fresh (closed) template.
@@ -242,6 +251,8 @@ func (pgh *PageHandler) doUpdateTenant(
 	if err != nil {
 		if errors.Is(err, k8s.ErrConflict) {
 			pgh.log.Info("conflict updating tenant", "ns", namespace, "name", name)
+			pgh.recordAudit(req, usr, audit.ActionTenantUpdate, name, namespace,
+				audit.OutcomeError, map[string]any{"reason": "conflict"})
 			pgh.renderErrorToast(writer, req,
 				"Another user modified this tenant while you were editing. Please reload and try again.")
 
@@ -249,12 +260,16 @@ func (pgh *PageHandler) doUpdateTenant(
 		}
 
 		pgh.log.Error("updating tenant", "ns", namespace, "name", name, "error", err)
+		pgh.recordAudit(req, usr, audit.ActionTenantUpdate, name, namespace,
+			audit.OutcomeError, map[string]any{"error": err.Error()})
 		pgh.renderErrorToast(writer, req, "Failed to update tenant. Check that you have permission to modify its spec.")
 
 		return
 	}
 
 	pgh.log.Info("tenant updated", "ns", namespace, "name", name, "keys", len(spec))
+	pgh.recordAudit(req, usr, audit.ActionTenantUpdate, name, namespace, audit.OutcomeSuccess,
+		map[string]any{"keys": len(spec)})
 	pgh.emitSuccessToast(writer, req, "Tenant updated: "+name)
 	pgh.TenantsPage(writer, req)
 }
@@ -279,18 +294,24 @@ func (pgh *PageHandler) DeleteTenant(writer http.ResponseWriter, req *http.Reque
 	err := pgh.tenantSvc.Delete(req.Context(), usr.Username, usr.Groups, namespace, name)
 	if err != nil {
 		if errors.Is(err, k8s.ErrProtectedTenant) {
+			pgh.recordAudit(req, usr, audit.ActionTenantDelete, name, namespace,
+				audit.OutcomeDenied, map[string]any{"reason": "protected_tenant"})
 			pgh.renderErrorToast(writer, req, "Root tenant is protected and cannot be deleted")
 
 			return
 		}
 
 		pgh.log.Error("deleting tenant", "ns", namespace, "name", name, "error", err)
+		pgh.recordAudit(req, usr, audit.ActionTenantDelete, name, namespace,
+			audit.OutcomeError, map[string]any{"error": err.Error()})
 		pgh.renderErrorToast(writer, req, "Failed to delete tenant. Check that you have permission and that no other workload depends on it.")
 
 		return
 	}
 
 	pgh.log.Info("tenant deleted", "ns", namespace, "name", name)
+	pgh.recordAudit(req, usr, audit.ActionTenantDelete, name, namespace,
+		audit.OutcomeSuccess, nil)
 	// Delete is hx-swap="delete swap:500ms" — the row disappears
 	// client-side regardless of the response body. Toast only; no
 	// re-render so the row-delete animation plays cleanly.

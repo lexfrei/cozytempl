@@ -1,19 +1,14 @@
 package api
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"regexp"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lexfrei/cozytempl/internal/audit"
 )
-
-// requestIDKey is the private context key for the per-request ID.
-// Declaring a dedicated empty-struct type makes it impossible for any
-// other package to collide with our key, even accidentally.
-type requestIDKey struct{}
 
 // maxInboundRequestIDLength caps the length of a client-supplied
 // X-Request-ID. We accept trace IDs coming from an upstream proxy
@@ -28,25 +23,14 @@ const maxInboundRequestIDLength = 64
 // a request ID and wind up in the access log.
 var inboundRequestIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
-// RequestIDFromContext returns the correlation ID attached to the
-// request by withRequestID, or an empty string if the context is
-// not from an incoming HTTP request.
-func RequestIDFromContext(ctx context.Context) string {
-	if requestID, ok := ctx.Value(requestIDKey{}).(string); ok {
-		return requestID
-	}
-
-	return ""
-}
-
 // withRequestID attaches a correlation ID to every incoming request.
 // If the client (or an upstream proxy) already set an X-Request-ID
 // header with a sane value, we honour it so distributed traces
 // stitch together across hops; otherwise we mint a fresh UUID.
-// The ID is echoed in the response header, stored on the request
-// context, and — when logAccess is wired — emitted as an access-log
-// field so grep'ing `request_id=<x>` finds every log line from the
-// same request.
+// The ID is echoed in the response header and stored on the request
+// context via audit.ContextWithRequestID so both the HTTP access
+// log and any audit events from the handler chain share the same
+// correlation value.
 func withRequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
 		requestID := req.Header.Get("X-Request-ID")
@@ -56,7 +40,7 @@ func withRequestID(next http.Handler) http.Handler {
 
 		writer.Header().Set("X-Request-ID", requestID)
 
-		ctx := context.WithValue(req.Context(), requestIDKey{}, requestID)
+		ctx := audit.ContextWithRequestID(req.Context(), requestID)
 		next.ServeHTTP(writer, req.WithContext(ctx))
 	})
 }
@@ -99,7 +83,7 @@ func withAccessLog(log *slog.Logger, next http.Handler) http.Handler {
 		next.ServeHTTP(recorder, req)
 
 		log.LogAttrs(req.Context(), slog.LevelInfo, "http",
-			slog.String("request_id", RequestIDFromContext(req.Context())),
+			slog.String("request_id", audit.RequestIDFromContext(req.Context())),
 			slog.String("method", req.Method),
 			slog.String("path", req.URL.Path),
 			slog.Int("status", recorder.status),

@@ -106,6 +106,9 @@ linters:
           - revive
           - gochecknoglobals
           - exhaustruct
+          - err113
+          - goconst
+          - noinlineerr
         path: _test\.go
       - linters:
           - gochecknoglobals

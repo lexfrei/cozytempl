@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lexfrei/cozytempl/internal/api"
+	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/config"
 	"github.com/lexfrei/cozytempl/internal/handler"
@@ -72,9 +73,23 @@ func run() error {
 		log.Warn("failed to start watcher, SSE will be unavailable", "error", err)
 	}
 
-	pageHandler := handler.NewPageHandler(
-		tenantSvc, appSvc, schemaSvc, usageSvc, eventSvc, logSvc, cfg.DevMode, log,
-	)
+	// Audit events share the same JSON log stream as everything
+	// else. Pod logs are the append-only store; forward them to
+	// Loki / ELK for long-term retention. Swap in a Kafka producer
+	// here if the deployment eventually needs a dedicated sink.
+	auditLog := audit.NewSlogLogger(log)
+
+	pageHandler := handler.NewPageHandler(handler.PageHandlerDeps{
+		TenantSvc: tenantSvc,
+		AppSvc:    appSvc,
+		SchemaSvc: schemaSvc,
+		UsageSvc:  usageSvc,
+		EventSvc:  eventSvc,
+		LogSvc:    logSvc,
+		Audit:     auditLog,
+		DevMode:   cfg.DevMode,
+		Log:       log,
+	})
 
 	routerCfg := &api.RouterConfig{
 		TenantHandler: api.NewTenantHandler(tenantSvc, log),

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view/partial"
@@ -74,6 +75,8 @@ func (pgh *PageHandler) CreateApp(writer http.ResponseWriter, req *http.Request)
 	}
 
 	if !validAppName(appName) {
+		pgh.recordAudit(req, usr, audit.ActionAppCreate, appName, tenantNS,
+			audit.OutcomeDenied, map[string]any{"reason": "invalid_name", "kind": appKind})
 		pgh.renderErrorToast(writer, req,
 			"Invalid name: lowercase letters, digits and hyphens only, must "+
 				"start and end with a letter or digit, max 53 characters.")
@@ -113,6 +116,8 @@ func (pgh *PageHandler) doCreateApp(
 		// message so Kubernetes RBAC denials don't leak resource names
 		// or tenant metadata of things they can't see.
 		pgh.log.Error("creating app", "tenant", tenantNS, "name", appName, "error", err)
+		pgh.recordAudit(req, usr, audit.ActionAppCreate, appName, tenantNS,
+			audit.OutcomeError, map[string]any{"kind": appKind, "error": err.Error()})
 		pgh.renderErrorToast(writer, req,
 			"Failed to create "+appName+". Check that the name is unique and you have permission.")
 
@@ -120,6 +125,8 @@ func (pgh *PageHandler) doCreateApp(
 	}
 
 	pgh.log.Info("app created", "tenant", tenantNS, "name", appName, "kind", appKind)
+	pgh.recordAudit(req, usr, audit.ActionAppCreate, appName, tenantNS,
+		audit.OutcomeSuccess, map[string]any{"kind": appKind})
 	pgh.emitSuccessToast(writer, req, "Application created: "+appName)
 	// Re-render the tenant page so the new row appears in the app table
 	// and the create modal closes (it's inside the tenant template, so
@@ -264,6 +271,8 @@ func (pgh *PageHandler) doUpdateApp(
 	if err != nil {
 		if errors.Is(err, k8s.ErrConflict) {
 			pgh.log.Info("conflict updating app", "tenant", tenantNS, "name", appName)
+			pgh.recordAudit(req, usr, audit.ActionAppUpdate, appName, tenantNS,
+				audit.OutcomeError, map[string]any{"reason": "conflict", "kind": kind})
 			pgh.renderErrorToast(writer, req,
 				"Another user modified "+appName+" while you were editing. Please reload and try again.")
 
@@ -271,12 +280,16 @@ func (pgh *PageHandler) doUpdateApp(
 		}
 
 		pgh.log.Error("updating app", "tenant", tenantNS, "name", appName, "error", err)
+		pgh.recordAudit(req, usr, audit.ActionAppUpdate, appName, tenantNS,
+			audit.OutcomeError, map[string]any{"kind": kind, "error": err.Error()})
 		pgh.renderErrorToast(writer, req, "Failed to update "+appName+". Check that you have permission.")
 
 		return
 	}
 
 	pgh.log.Info("app updated", "tenant", tenantNS, "name", appName, "kind", kind)
+	pgh.recordAudit(req, usr, audit.ActionAppUpdate, appName, tenantNS,
+		audit.OutcomeSuccess, map[string]any{"kind": kind, "keys": len(newSpec)})
 	pgh.emitSuccessToast(writer, req, "Application updated: "+appName)
 	// Re-render so the changed spec values show up immediately in the
 	// app row and the edit slot collapses.
@@ -296,12 +309,16 @@ func (pgh *PageHandler) DeleteApp(writer http.ResponseWriter, req *http.Request)
 	err := pgh.appSvc.Delete(req.Context(), usr.Username, usr.Groups, tenantNS, appName)
 	if err != nil {
 		pgh.log.Error("deleting app", "tenant", tenantNS, "name", appName, "error", err)
+		pgh.recordAudit(req, usr, audit.ActionAppDelete, appName, tenantNS,
+			audit.OutcomeError, map[string]any{"error": err.Error()})
 		pgh.renderErrorToast(writer, req, "Failed to delete "+appName)
 
 		return
 	}
 
 	pgh.log.Info("app deleted", "tenant", tenantNS, "name", appName)
+	pgh.recordAudit(req, usr, audit.ActionAppDelete, appName, tenantNS,
+		audit.OutcomeSuccess, nil)
 	// Delete is hx-swap="delete swap:500ms" so the triggering row is
 	// removed client-side regardless of the response body. Sending
 	// *only* an OOB toast keeps the row-delete animation intact while

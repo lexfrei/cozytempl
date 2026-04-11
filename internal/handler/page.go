@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/a-h/templ"
+	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view"
@@ -26,32 +27,52 @@ type PageHandler struct {
 	eventSvc  *k8s.EventService
 	logSvc    *k8s.LogService
 	log       *slog.Logger
+	// auditLog receives structured events for every mutation and
+	// secret-view action the handler performs. nil is not allowed;
+	// NewPageHandler substitutes a NopLogger if the caller forgets
+	// so the rest of the code can deref without a guard.
+	auditLog audit.Logger
 	// devMode drives the dev-mode banner at the top of every page.
 	// Set at construction time from config so the layout template
 	// does not need to reach into global state.
 	devMode bool
 }
 
+// PageHandlerDeps groups the constructor arguments. Grew past the
+// positional-arg sweet spot once auditLog joined the party; a
+// struct keeps the call site readable and future additions
+// non-breaking.
+type PageHandlerDeps struct {
+	TenantSvc *k8s.TenantService
+	AppSvc    *k8s.ApplicationService
+	SchemaSvc *k8s.SchemaService
+	UsageSvc  *k8s.UsageService
+	EventSvc  *k8s.EventService
+	LogSvc    *k8s.LogService
+	Audit     audit.Logger
+	Log       *slog.Logger
+	DevMode   bool
+}
+
 // NewPageHandler creates a new page handler.
-func NewPageHandler(
-	tenantSvc *k8s.TenantService,
-	appSvc *k8s.ApplicationService,
-	schemaSvc *k8s.SchemaService,
-	usageSvc *k8s.UsageService,
-	eventSvc *k8s.EventService,
-	logSvc *k8s.LogService,
-	devMode bool,
-	log *slog.Logger,
-) *PageHandler {
+//
+//nolint:gocritic // hugeParam: PageHandlerDeps is a one-shot constructor arg; copying once at startup is fine
+func NewPageHandler(deps PageHandlerDeps) *PageHandler {
+	auditLog := deps.Audit
+	if auditLog == nil {
+		auditLog = audit.NopLogger{}
+	}
+
 	return &PageHandler{
-		tenantSvc: tenantSvc,
-		appSvc:    appSvc,
-		schemaSvc: schemaSvc,
-		usageSvc:  usageSvc,
-		eventSvc:  eventSvc,
-		logSvc:    logSvc,
-		devMode:   devMode,
-		log:       log,
+		tenantSvc: deps.TenantSvc,
+		appSvc:    deps.AppSvc,
+		schemaSvc: deps.SchemaSvc,
+		usageSvc:  deps.UsageSvc,
+		eventSvc:  deps.EventSvc,
+		logSvc:    deps.LogSvc,
+		auditLog:  auditLog,
+		devMode:   deps.DevMode,
+		log:       deps.Log,
 	}
 }
 
@@ -162,6 +183,16 @@ func (pgh *PageHandler) AppDetailPage(writer http.ResponseWriter, req *http.Requ
 				"' either does not exist or you do not have permission to view it.")
 
 		return
+	}
+
+	// Audit the connection-tab view — the rendered HTML embeds
+	// database passwords and API tokens pulled from tenant secrets.
+	// "Who looked at the postgres password at 14:02" is the single
+	// most common SOC2 / compliance question and the audit trail
+	// needs to answer it.
+	if tab == "connection" {
+		pgh.recordAudit(req, usr, audit.ActionConnectionView, appName, tenantNS,
+			audit.OutcomeSuccess, map[string]any{"kind": app.Kind})
 	}
 
 	data := pgh.buildAppDetailData(req, usr, tenantNS, appName, app, tab)
@@ -473,6 +504,32 @@ func (pgh *PageHandler) aggregateApps(
 	}
 
 	return allApps
+}
+
+// recordAudit is the ergonomic shorthand handlers use to emit an
+// audit event. It pulls the correlation ID out of the request
+// context, fills in actor/groups from the auth middleware, and
+// delegates to the wired Logger. Keeping this in one place means
+// adding a new field to Event only requires editing this helper
+// instead of every call site.
+func (pgh *PageHandler) recordAudit(
+	req *http.Request,
+	usr *auth.UserContext,
+	action audit.Action,
+	resource, tenant string,
+	outcome audit.Outcome,
+	details map[string]any,
+) {
+	pgh.auditLog.Record(req.Context(), &audit.Event{
+		RequestID: audit.RequestIDFromContext(req.Context()),
+		Actor:     usr.Username,
+		Groups:    usr.Groups,
+		Action:    action,
+		Resource:  resource,
+		Tenant:    tenant,
+		Outcome:   outcome,
+		Details:   details,
+	})
 }
 
 // renderError writes a branded error page instead of plain-text
