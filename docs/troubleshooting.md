@@ -56,13 +56,13 @@ You or someone else wrote to the same resource between the moment you opened the
 
 ## SSE never connects / live updates don't fire
 
-The HelmRelease watcher is cluster-scoped and runs in a background goroutine per cozytempl pod. If it fails to start (RBAC, API version mismatch, etc.) the `/api/events` endpoint is disabled and the server logs:
+The HelmRelease watcher runs in a background goroutine under a dedicated `cozytempl-watcher` ServiceAccount. If it fails to start (RBAC, API version mismatch, network issue) the `/api/events` endpoint is disabled and the server logs:
 
 ```text
 failed to start watcher, SSE will be unavailable
 ```
 
-**Fix**: the cozytempl ServiceAccount needs `watch` on `helmreleases.helm.toolkit.fluxcd.io` at the cluster scope. The Helm chart's default ClusterRole doesn't grant this (only impersonation is cluster-scoped) — add a second ClusterRole if your deployment wants live updates:
+**Fix**: the `cozytempl-watcher` SA needs `list,watch` on `helmreleases.helm.toolkit.fluxcd.io` at the cluster scope. The Helm chart's `rbac.create: true` (default) renders this automatically in every mode except `dev`. If you turned off `watcher.enabled` or set `rbac.create: false`, re-enable them or provision the role yourself:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -72,8 +72,58 @@ metadata:
 rules:
   - apiGroups: ["helm.toolkit.fluxcd.io"]
     resources: ["helmreleases"]
-    verbs: ["watch", "list"]
+    verbs: ["list", "watch"]
 ```
+
+## Is the SSE stream supposed to reconnect periodically?
+
+Yes, by design. cozytempl caps every SSE connection at 60 minutes. When the cap fires, the handler returns cleanly, the browser's `EventSource` sees the connection close and reconnects automatically with `Last-Event-ID`. The new request re-runs `RequireAuth`, which refreshes the OIDC ID token if it is close to expiring, and the watcher's ring buffer replays any events that fired during the momentary disconnect. You should not see any missed updates.
+
+If the reconnect itself fails (browser stuck in "connecting" for more than a few seconds, UI live-updates stop), check:
+
+1. The pod logs for `SSE subscribe denied` — the user's RBAC changed.
+2. The pod logs for `oidc refresh failed; clearing session` — the user's Keycloak session or refresh token was revoked and they need to log in again.
+3. The ingress path timeout. Some proxies close idle long-lived connections below 60 minutes; set a longer `proxy_read_timeout` (nginx) or equivalent.
+
+## Passthrough mode, but every k8s call returns `Unauthorized`
+
+The API server is not configured to accept the issuer your ID token comes from. See the migration guide's [verification section](migrating-to-passthrough-auth.md#1-verify-the-k8s-api-server-is-oidc-configured) for the exact apiserver flags to check.
+
+Other possibilities:
+
+- The `aud` claim on cozytempl's ID token does not contain `kubernetes`. Check the Keycloak `cozytempl` client's audience mapper (migration guide step 2).
+- A sidecar proxy or ingress is stripping `Authorization` headers before the request reaches cozytempl's upstream connection. Check the proxy config.
+- The ID token has expired and the refresh loop failed silently. Look for `oidc refresh failed` in the pod logs.
+
+## BYOK: "kubeconfig upload rejected: exec plugins not supported"
+
+Your kubeconfig's current-context user is configured with an `exec` block (typically `aws-iam-authenticator`, `gke-gcloud-auth-plugin`, or similar). Exec plugins require an interactive shell cozytempl cannot provide.
+
+**Fix**: generate a static bearer token and reference it directly.
+
+```bash
+# GKE
+gcloud container clusters get-credentials <cluster> --region <region>
+TOKEN=$(kubectl create token my-user --duration=24h)
+# Then hand-edit ~/.kube/config so the user block reads:
+#   user:
+#     token: <TOKEN>
+# instead of the exec plugin.
+```
+
+Then re-upload.
+
+## BYOK: "kubeconfig too large"
+
+The upload limit is 32 KB (set by cookie-storage constraints). Strip unused contexts, clusters and users:
+
+```bash
+kubectl config view --minify --flatten \
+  --context=<current-context> \
+  > /tmp/minimal-kubeconfig.yaml
+```
+
+Upload the minimal file instead of your whole `~/.kube/config`.
 
 ## "Showing the first 500 applications" banner on the tenant page
 
@@ -83,9 +133,9 @@ The tenant you're looking at has more than 500 applications, which is the curren
 
 ## Dev mode banner visible on production
 
-You shipped `COZYTEMPL_DEV_MODE=true` to a real deployment. This is dangerous — auth is disabled, every request is `dev-admin` with `system:masters`, and nothing gates API access to the cluster.
+You shipped `COZYTEMPL_AUTH_MODE=dev` (or the legacy `COZYTEMPL_DEV_MODE=true`) to a real deployment. This is dangerous — auth is disabled, every request is `dev-admin` with `system:masters`, and nothing gates API access to the cluster.
 
-**Fix immediately**: set `COZYTEMPL_DEV_MODE=false` (or unset), restart the pod, and audit the logs between the moment dev mode went live and now:
+**Fix immediately**: set `COZYTEMPL_AUTH_MODE=passthrough` (or `impersonation-legacy` if your apiserver isn't OIDC-configured), unset `COZYTEMPL_DEV_MODE`, restart the pod, and audit the logs between the moment dev mode went live and now:
 
 ```bash
 kubectl --namespace cozy-system logs deploy/cozytempl --since=24h | jq 'select(.msg == "audit")'

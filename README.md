@@ -13,22 +13,27 @@ Go + [templ](https://templ.guide/) + [htmx](https://htmx.org/) + ~22 KB of bundl
 # Use this on a cluster you control locally.
 helm install cozytempl deploy/helm/cozytempl \
   --namespace cozy-system --create-namespace \
-  --set config.devMode=true
+  --set config.authMode=dev
 
 kubectl --namespace cozy-system port-forward svc/cozytempl 8080:8080
 open http://localhost:8080
 ```
 
 ```bash
-# Production: wire OIDC and generate a real session secret.
+# Production (recommended: passthrough). OIDC ID tokens are forwarded
+# directly to the Kubernetes API; cozytempl itself holds no cluster
+# permissions. Requires an OIDC-configured API server.
 helm install cozytempl deploy/helm/cozytempl \
   --namespace cozy-system --create-namespace \
+  --set config.authMode=passthrough \
   --set config.oidc.issuerURL=https://keycloak.example.com/realms/cozystack \
   --set config.oidc.clientID=cozytempl \
   --set config.oidc.redirectURL=https://cozy.example.com/auth/callback \
   --set config.oidc.clientSecret="$(pass show kc/cozytempl/client-secret)" \
   --set config.oidc.sessionSecret="$(openssl rand -base64 32)"
 ```
+
+See [`docs/auth-architecture.md`](docs/auth-architecture.md) for a threat-model breakdown of all four auth modes and [`docs/migrating-to-passthrough-auth.md`](docs/migrating-to-passthrough-auth.md) for the upgrade path from the legacy impersonation model.
 
 The chart has its own [README](deploy/helm/cozytempl/README.md) with a full values reference, a `values.schema.json` that catches typos at `helm install --dry-run` time, and a `helm-unittest` suite (`make helm-test`).
 
@@ -74,9 +79,9 @@ Go HTTP Server
 Kubernetes API (dynamic client, user impersonation on every call)
 ```
 
-- **Backend**: thin impersonated proxy to Kubernetes. Every call uses `Impersonate-User` / `Impersonate-Group` headers so the API server enforces RBAC as the real user, not the service account running cozytempl.
+- **Backend**: thin credential forwarder to the Kubernetes API. In the recommended `passthrough` mode the user's OIDC ID token is used as a Bearer credential on every k8s call, and the cozytempl pod's ServiceAccount has zero cluster permissions — a compromise of the cozytempl process cannot impersonate anyone. See [`docs/auth-architecture.md`](docs/auth-architecture.md) for the per-mode threat model.
 - **Frontend**: server-rendered templ pages. htmx wires navigation and mutations. A small TypeScript bundle drives the top progress bar, modal lifecycle, clipboard copy, toast dismissal, the unified SSE resource-change reducer, and the click-to-reveal auto-hide timer.
-- **Auth**: OIDC (Keycloak / Dex / etc.) with encrypted cookie sessions in production; an explicit `COZYTEMPL_DEV_MODE=true` opt-in disables auth. Dev mode is never silently activated.
+- **Auth**: four modes selected via `COZYTEMPL_AUTH_MODE`. `passthrough` (default) forwards the OIDC ID token as a Bearer; `byok` lets the user upload a kubeconfig stored encrypted in the session cookie; `impersonation-legacy` keeps the old Impersonate-headers model (deprecated); `dev` disables auth entirely and prints a loud banner. OIDC ID tokens are refreshed automatically shortly before they expire.
 - **Real-time**: Server-Sent Events for HelmRelease changes. The server emits a unified `{op, name, html}` message; the client runs one upsert/delete reducer keyed by a stable `row-{name}` id, so create / update / delete go through the same DOM path regardless of whether htmx or SSE triggers the change.
 - **Deployment**: single static binary, distroless container, all CSS + TS bundle + fonts embedded via `go:embed` with a SHA-256 cache-busting query string. The Helm chart is the canonical install path.
 
@@ -107,7 +112,10 @@ Kubernetes API (dynamic client, user impersonation on every call)
 
 ### Security
 
-- Every Kubernetes call uses user impersonation, so browser-visible data respects cluster RBAC.
+- **Four auth modes**: `passthrough` (OIDC ID token → Bearer, cozytempl SA has zero RBAC), `byok` (user uploads a kubeconfig, stored encrypted in the session cookie), `impersonation-legacy` (Impersonate headers, deprecated), `dev` (no auth, loud banner). Threat model in [`docs/auth-architecture.md`](docs/auth-architecture.md); migration steps in [`docs/migrating-to-passthrough-auth.md`](docs/migrating-to-passthrough-auth.md).
+- **Automatic OIDC refresh** in passthrough mode. The middleware transparently refreshes the ID token within 60 seconds of expiry, long SSE connections are capped at 60 minutes so reconnect picks up a fresh token, and a revoked refresh token logs the user out on the next request.
+- **Watcher SA split**: the HelmRelease watcher used by the SSE stream runs under a dedicated `cozytempl-watcher` ServiceAccount with only `list,watch` on `helmreleases.helm.toolkit.fluxcd.io`. In passthrough and byok modes this is the only k8s RBAC the chart installs.
+- Every Kubernetes call uses user-scoped credentials, so browser-visible data respects cluster RBAC.
 - Strict CSP (`default-src 'self'`, `script-src 'self'`, `object-src 'none'`, `frame-src 'none'`, `frame-ancestors 'none'`, `base-uri 'self'`, `form-action 'self'`). No third-party origins — htmx and Inter are bundled locally.
 - HSTS with a 2-year max-age, `includeSubDomains`, `preload`.
 - Session cookie is `HttpOnly`, `Secure`, `SameSite=Lax` — the Lax setting is the documented CSRF defense, no per-form tokens needed.
@@ -142,27 +150,32 @@ All configuration is via environment variables. The Helm chart exposes the same 
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `OIDC_ISSUER_URL` | prod only | | OIDC discovery URL (e.g. Keycloak realm) |
-| `OIDC_CLIENT_ID` | prod only | | OAuth2 client ID |
-| `OIDC_CLIENT_SECRET` | prod only | | OAuth2 client secret |
-| `OIDC_REDIRECT_URL` | prod only | | Callback URL (`https://host/auth/callback`) |
-| `SESSION_SECRET` | prod only | | 32+ random bytes; `openssl rand -base64 32` |
-| `COZYTEMPL_DEV_MODE` | no | `false` | Set to `true` to bypass OIDC and run as `dev-admin` + `system:masters`. Fails startup if OIDC is unset and this is not `true`. |
+| `COZYTEMPL_AUTH_MODE` | no | `passthrough` when OIDC is set, else error | One of `passthrough`, `byok`, `dev`, `impersonation-legacy`. See [`docs/auth-architecture.md`](docs/auth-architecture.md). |
+| `OIDC_ISSUER_URL` | passthrough / legacy | | OIDC discovery URL (e.g. Keycloak realm) |
+| `OIDC_INTERNAL_ISSUER_URL` | no | `OIDC_ISSUER_URL` | Backend-only issuer URL for token exchange / JWKS. Typically a cluster-internal Keycloak service (`http://keycloak.cozy-keycloak.svc:8080/realms/cozystack`); the user-facing redirect keeps `OIDC_ISSUER_URL`. |
+| `OIDC_CLIENT_ID` | passthrough / legacy | | OAuth2 client ID |
+| `OIDC_CLIENT_SECRET` | passthrough / legacy | | OAuth2 client secret |
+| `OIDC_REDIRECT_URL` | passthrough / legacy | | Callback URL (`https://host/auth/callback`) |
+| `SESSION_SECRET` | every mode except `dev` | | 32+ random bytes; `openssl rand -base64 32` |
+| `COZYTEMPL_DEV_MODE` | no | `false` | Legacy opt-in for `dev` mode. Equivalent to `COZYTEMPL_AUTH_MODE=dev` and wins when both are set. |
+| `COZYTEMPL_WATCHER_KUBECONFIG` | no | unset | Path to a kubeconfig the HelmRelease watcher uses. Unset means the watcher reuses the primary kubeconfig; the Helm chart sets this to the projected token of the `cozytempl-watcher` ServiceAccount. |
 | `LISTEN_ADDR` | no | `:8080` | HTTP listen address |
 | `LOG_LEVEL` | no | `info` | Log level (`debug`, `info`, `warn`, `error`) |
 
 ## RBAC
 
-cozytempl runs with a ServiceAccount bound to a ClusterRole that grants **only**:
+RBAC shape depends on the active `authMode`:
 
-- `impersonate` on `users`, `groups`, `serviceaccounts`, and `authentication.k8s.io/userextras`.
-- `create` on `authorization.k8s.io/selfsubjectaccessreviews` and `selfsubjectrulesreviews`.
+| Mode | Main cozytempl SA | Watcher SA |
+| --- | --- | --- |
+| `passthrough` | No ClusterRole. The OIDC ID token is the only credential k8s sees. | `list`, `watch` on `helmreleases.helm.toolkit.fluxcd.io` only. |
+| `byok` | No ClusterRole. The uploaded kubeconfig is the only credential. | Same narrow list+watch as passthrough. |
+| `impersonation-legacy` | `impersonate` on `users`, `groups`, `serviceaccounts`, `userextras/scopes`. Deprecated. | Same narrow list+watch (belt and suspenders). |
+| `dev` | None. The process uses whatever local kubeconfig it loads. | Not rendered. |
 
-Every Kubernetes call cozytempl makes is then impersonated as the logged-in user, so cluster RBAC is the **source of truth** for what the user can see and do. cozytempl cannot grant access the underlying user doesn't already have.
+In passthrough and byok modes, **a compromise of the cozytempl process cannot impersonate any user** — there is no ambient k8s authority to escalate through. The operator must ensure their OIDC-mapped users already have RBAC on the cozystack CRDs (`apps.cozystack.io`, `cozystack.io`), on `helm.toolkit.fluxcd.io/helmreleases`, and on the `tenant-*` namespaces they should see. Same wiring as `kubectl --as` or kubectl with OIDC auth-provider.
 
-In practice this means your OIDC-mapped users need RBAC on the cozystack CRDs (`apps.cozystack.io`, `cozystack.io`), on `helm.toolkit.fluxcd.io/helmreleases`, and on the `tenant-*` namespaces they should see. Wire this up the same way you would for `kubectl --as`.
-
-The Helm chart's `rbac.create: true` (default) generates the ClusterRole + ClusterRoleBinding automatically.
+The Helm chart's `rbac.create: true` (default) renders the right shape per mode automatically.
 
 ## Observability
 
