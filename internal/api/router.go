@@ -130,6 +130,15 @@ func buildAuthMiddleware(
 		mux.HandleFunc("GET /auth/callback", cfg.AuthHandler.HandleCallback)
 	}
 
+	// BYOK kubeconfig upload form. Placed on the shared mux so it
+	// sits OUTSIDE the protect() wrapper — otherwise a user with
+	// no stored kubeconfig could never reach the form that lets
+	// them upload one (RequireAuth would bounce them right back).
+	if cfg.AuthMode == config.AuthModeBYOK && cfg.AuthHandler != nil {
+		mux.HandleFunc("GET /auth/kubeconfig", cfg.AuthHandler.HandleKubeconfigUploadForm)
+		mux.HandleFunc("POST /auth/kubeconfig", cfg.AuthHandler.HandleKubeconfigUpload)
+	}
+
 	if cfg.AuthHandler != nil {
 		mux.HandleFunc("POST /auth/logout", cfg.AuthHandler.HandleLogout)
 	}
