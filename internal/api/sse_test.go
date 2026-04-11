@@ -182,6 +182,40 @@ func TestSSEMessageMarshalHasUnifiedFields(t *testing.T) {
 	}
 }
 
+// TestParseLastEventID locks in the EventSource replay contract:
+// empty header → 0 ("no history"), valid integers pass through,
+// junk falls back to 0 so a broken proxy or a malformed client
+// can never trick us into an invalid sinceID.
+func TestParseLastEventID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want int64
+	}{
+		{"empty", "", 0},
+		{"zero", "0", 0},
+		{"positive", "42", 42},
+		{"large", "9999999", 9999999},
+		{"negative rejected", "-1", 0},
+		{"non-numeric rejected", "abc", 0},
+		{"whitespace rejected", "  ", 0},
+		{"leading zero ok", "07", 7},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := parseLastEventID(tt.in)
+			if got != tt.want {
+				t.Errorf("parseLastEventID(%q) = %d, want %d", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 // testingWriter adapts testing.T to io.Writer so slog output goes to the
 // test log instead of stderr, and stays attached to the failing test.
 type testingWriter struct {

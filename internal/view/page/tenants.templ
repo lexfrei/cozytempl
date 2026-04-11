@@ -103,7 +103,12 @@ templ Tenants(data view.TenantsPageData) {
 		</div>
 		if len(data.Tenants) == 0 {
 			<div class="empty-state">
-				<div class="empty-state-title">No tenants</div>
+				<div class="empty-state-title">No tenants yet</div>
+				<p class="text-muted mt-2">Tenants group applications into isolated workload namespaces. Create one to get started.</p>
+				<button class="btn btn-primary mt-3" type="button"
+					data-action="modal-open" data-modal="create-tenant-modal">
+					Create your first tenant
+				</button>
 			</div>
 		}
 	</div>

@@ -163,8 +163,21 @@ templ Tenant(data view.TenantPageData) {
 		</div>
 		if len(data.Apps) == 0 {
 			<div class="empty-state">
-				<div class="empty-state-title">No applications found</div>
-				<p class="text-muted">Create your first application to get started.</p>
+				<div class="empty-state-title">No applications yet</div>
+				<p class="text-muted mt-2">
+					Pick a kind from the marketplace and cozytempl will drop the matching
+					Cozystack CRD into this tenant's namespace with a schema-driven form.
+				</p>
+				<div class="flex items-center gap-2 mt-3" style="justify-content: center;">
+					<button class="btn btn-primary" type="button"
+						data-action="modal-open" data-modal="create-app-modal">
+						Create your first application
+					</button>
+					<a class="btn" href="/marketplace"
+						hx-get="/marketplace"
+						hx-target="#main-content"
+						hx-push-url="true">Browse marketplace</a>
+				</div>
 			</div>
 		}
 	</div>

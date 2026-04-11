@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -101,14 +102,67 @@ func (ssh *SSEHandler) Stream(writer http.ResponseWriter, req *http.Request) {
 
 	flusher.Flush()
 
-	events := ssh.watcher.Subscribe(tenant)
+	ssh.subscribeAndStream(req, writer, flusher, tenant, usr.Username)
+}
+
+// subscribeAndStream is the second half of Stream — split out so
+// the handler stays under the funlen limit. Performs the replay
+// for reconnecting clients (Last-Event-ID) and then pumps live
+// events until the request context fires or the subscription is
+// dropped.
+func (ssh *SSEHandler) subscribeAndStream(
+	req *http.Request,
+	writer http.ResponseWriter,
+	flusher http.Flusher,
+	tenant, username string,
+) {
+	// EventSource automatically sends Last-Event-ID on reconnect
+	// if we emit `id:` lines with our SSE messages. Parse it and
+	// pass to Subscribe so the watcher can replay events in its
+	// per-tenant ring buffer that the client missed during the
+	// disconnect window.
+	sinceID := parseLastEventID(req.Header.Get("Last-Event-ID"))
+
+	events, missed := ssh.watcher.Subscribe(tenant, sinceID)
 	defer ssh.watcher.Unsubscribe(events)
 
-	ssh.log.Info("SSE client connected", "tenant", tenant, "user", usr.Username)
+	ssh.log.Info("SSE client connected",
+		"tenant", tenant,
+		"user", username,
+		"since_id", sinceID,
+		"replayed", len(missed))
+
+	// Replay any events that fired while the client was
+	// disconnected, in original order. Each one carries its
+	// original EventID so the client's internal Last-Event-ID
+	// continues to advance monotonically.
+	for idx := range missed {
+		if !ssh.writeEvent(req.Context(), writer, flusher, tenant, &missed[idx]) {
+			return
+		}
+	}
 
 	ssh.pumpEvents(req.Context(), writer, flusher, tenant, events)
 
-	ssh.log.Info("SSE client disconnected", "tenant", tenant, "user", usr.Username)
+	ssh.log.Info("SSE client disconnected", "tenant", tenant, "user", username)
+}
+
+// parseLastEventID converts the browser's Last-Event-ID header
+// into the int64 our watcher uses for replay. Invalid values
+// (non-numeric, negative, empty) become 0, which means "send
+// everything from scratch" — the safe default for a first
+// connection or a malformed replay request.
+func parseLastEventID(raw string) int64 {
+	if raw == "" {
+		return 0
+	}
+
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id < 0 {
+		return 0
+	}
+
+	return id
 }
 
 // authorizeTenant returns nil if the impersonated user can list HelmReleases
@@ -182,7 +236,16 @@ func (ssh *SSEHandler) writeEvent(
 		return true
 	}
 
-	_, err = fmt.Fprintf(writer, "data: %s\n\n", payload)
+	// Emit `id:` so EventSource records it as the stream's
+	// Last-Event-ID. On reconnect the browser automatically
+	// sends that value back in the Last-Event-ID header, which
+	// parseLastEventID decodes and feeds into Subscribe's replay
+	// path. Writing id BEFORE data so the spec's strict parsers
+	// attach it to the correct message. The payload is a
+	// JSON-encoded struct containing templ-rendered HTML, both
+	// of which are already escaped at their source — gosec's
+	// taint tracker can't see that, so we silence G705 here.
+	_, err = fmt.Fprintf(writer, "id: %d\ndata: %s\n\n", evt.EventID, payload) //nolint:gosec // payload is JSON of templ-escaped content
 	if err != nil {
 		return false
 	}
