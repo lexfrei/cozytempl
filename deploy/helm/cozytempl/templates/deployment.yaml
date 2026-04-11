@@ -51,6 +51,10 @@ spec:
               value: {{ .Values.config.authMode | default "passthrough" | quote }}
             - name: COZYTEMPL_DEV_MODE
               value: {{ .Values.config.devMode | quote }}
+            {{- with .Values.config.debugPprofAddr }}
+            - name: COZYTEMPL_DEBUG_PPROF_ADDR
+              value: {{ . | quote }}
+            {{- end }}
             {{- if .Values.config.tracing }}
             {{- with .Values.config.tracing.otlpEndpoint }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

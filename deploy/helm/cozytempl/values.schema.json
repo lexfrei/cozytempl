@@ -88,6 +88,10 @@
           "type": "boolean",
           "description": "Legacy opt-in for dev mode. Equivalent to authMode=dev and wins when both are set. NEVER enable in production."
         },
+        "debugPprofAddr": {
+          "type": "string",
+          "description": "Bind address for a dedicated net/http/pprof listener (e.g. 'localhost:6060'). Empty disables. NEVER bind on a network an attacker can reach; reach via `kubectl port-forward`."
+        },
         "oidc": {
           "type": "object",
           "additionalProperties": false,

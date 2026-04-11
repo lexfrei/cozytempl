@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -190,6 +192,8 @@ func run() error {
 		IdleTimeout:  idleTimeout,
 	}
 
+	pprofSrv := startDebugPprofServer(ctx, log, cfg.DebugPprofAddr)
+
 	go func() {
 		log.Info("starting server", "addr", cfg.ListenAddr)
 
@@ -204,7 +208,61 @@ func run() error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
+	if pprofSrv != nil {
+		shutdownErr := pprofSrv.Shutdown(shutdownCtx)
+		if shutdownErr != nil {
+			log.Warn("debug pprof server shutdown", "error", shutdownErr)
+		}
+	}
+
 	return srv.Shutdown(shutdownCtx) //nolint:wrapcheck // top-level, error logged by caller
+}
+
+// startDebugPprofServer starts a dedicated HTTP server exposing the
+// standard net/http/pprof handlers when COZYTEMPL_DEBUG_PPROF_ADDR is
+// non-empty. The listener is separate from the main public server so
+// pprof is NEVER reachable on the production port — an operator
+// typically points this at "localhost:6060" and accesses it through a
+// kubectl port-forward.
+//
+// pprof handlers are registered on a local mux rather than importing
+// net/http/pprof purely for its init side-effects, which would
+// contaminate http.DefaultServeMux and leak debug endpoints onto any
+// other caller that reuses that mux.
+//
+// Returns nil when the endpoint is disabled so the caller can safely
+// dereference the result for shutdown.
+func startDebugPprofServer(ctx context.Context, log *slog.Logger, addr string) *http.Server {
+	if addr == "" {
+		return nil
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: readTimeout,
+		BaseContext:       func(_ net.Listener) context.Context { return ctx },
+	}
+
+	log.Warn("debug pprof server enabled",
+		"addr", addr,
+		"note", "do not expose on a network an attacker can reach")
+
+	go func() {
+		listenErr := srv.ListenAndServe()
+		if listenErr != nil && !errors.Is(listenErr, http.ErrServerClosed) {
+			log.Error("debug pprof server error", "error", listenErr)
+		}
+	}()
+
+	return srv
 }
 
 func loadKubeConfig() (*rest.Config, error) {

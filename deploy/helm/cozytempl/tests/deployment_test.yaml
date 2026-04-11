@@ -238,6 +238,28 @@ tests:
       - exists:
           path: spec.template.metadata.annotations["checksum/config"]
 
+  - it: debugPprofAddr empty by default — no COZYTEMPL_DEBUG_PPROF_ADDR env var
+    template: deployment.yaml
+    set:
+      config.devMode: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: COZYTEMPL_DEBUG_PPROF_ADDR
+
+  - it: debugPprofAddr flips in when set
+    template: deployment.yaml
+    set:
+      config.devMode: true
+      config.debugPprofAddr: localhost:6060
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: COZYTEMPL_DEBUG_PPROF_ADDR
+            value: localhost:6060
+
   - it: tracing disabled by default — no OTEL_* env vars rendered
     template: deployment.yaml
     set:

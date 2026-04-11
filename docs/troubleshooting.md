@@ -143,6 +143,28 @@ kubectl --namespace cozy-system logs deploy/cozytempl --since=24h | jq 'select(.
 
 Every mutation logged during that window ran as `dev-admin`, not as a real user, so the audit trail effectively has no actor. Treat the exposure window as a security incident.
 
+## Collecting a heap / CPU profile for an OOM or slow request
+
+cozytempl ships a standard `net/http/pprof` handler set, but it is **disabled by default** and never exposed on the public listener. Enable it by setting `COZYTEMPL_DEBUG_PPROF_ADDR` to a bind address the operator controls — typically `localhost:6060` — then `kubectl port-forward` to reach it:
+
+```bash
+# 1. Enable on the running pod via Helm:
+helm upgrade cozytempl deploy/helm/cozytempl \
+  --reuse-values --set config.debugPprofAddr=localhost:6060
+
+# 2. Port-forward the debug listener:
+kubectl --namespace cozy-system port-forward deploy/cozytempl 6060:6060
+
+# 3. Collect a heap profile:
+curl --output /tmp/heap.pprof http://localhost:6060/debug/pprof/heap
+go tool pprof /tmp/heap.pprof
+
+# 4. Collect a 30-second CPU profile:
+curl --output /tmp/cpu.pprof http://localhost:6060/debug/pprof/profile?seconds=30
+```
+
+**Disable again when you are done** (`--set config.debugPprofAddr=""`). `net/http/pprof` is not hardened against hostile traffic — anyone with network access to the bind address can pull a stack trace, trigger a GC, or read arbitrary runtime metadata. Keep it on `localhost:*` and rely on port-forward.
+
 ## Container starts but the pod gets OOM-killed
 
 Default memory limit is `256Mi`. That's enough for a small homelab. Large clusters (thousands of tenants, hundreds of apps per tenant) can push over this on the dashboard aggregation path.

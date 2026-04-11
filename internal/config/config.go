@@ -19,8 +19,14 @@ type Config struct {
 	OIDCRedirectURL       string
 	SessionSecret         string
 	LogLevel              string
-	AuthMode              AuthMode
-	DevMode               bool
+	// DebugPprofAddr, when non-empty, mounts net/http/pprof on a
+	// dedicated listener bound to this address. Typically
+	// "localhost:6060" for port-forward-only access. The public
+	// ListenAddr never exposes pprof. Empty disables the
+	// endpoint entirely. Set via COZYTEMPL_DEBUG_PPROF_ADDR.
+	DebugPprofAddr string
+	AuthMode       AuthMode
+	DevMode        bool
 }
 
 // ErrMissingEnvVar is returned when a required environment variable is not set.
@@ -84,6 +90,7 @@ func Load() (*Config, error) {
 		OIDCClientSecret:      os.Getenv("OIDC_CLIENT_SECRET"),
 		OIDCRedirectURL:       os.Getenv("OIDC_REDIRECT_URL"),
 		SessionSecret:         os.Getenv("SESSION_SECRET"),
+		DebugPprofAddr:        os.Getenv("COZYTEMPL_DEBUG_PPROF_ADDR"),
 	}
 
 	mode, err := resolveAuthMode(os.Getenv(authModeEnv), os.Getenv(devModeEnv) == "true", cfg.OIDCIssuerURL != "")

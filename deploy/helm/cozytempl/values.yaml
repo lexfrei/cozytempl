@@ -74,6 +74,14 @@ config:
   # for backwards compatibility with older values files.
   devMode: false
 
+  # When non-empty, cozytempl starts a SEPARATE HTTP listener on
+  # this address and mounts net/http/pprof on /debug/pprof/*. The
+  # public listener never exposes pprof. Typical value:
+  # "localhost:6060" — reach it via `kubectl port-forward`. Leave
+  # empty to disable. pprof is not hardened against hostile
+  # traffic, so never bind it on a network an attacker can reach.
+  debugPprofAddr: ""
+
   # OpenTelemetry tracing. Leave empty to disable tracing
   # entirely (the global TracerProvider stays at its zero-cost
   # default). Set otlpEndpoint to your collector and cozytempl
