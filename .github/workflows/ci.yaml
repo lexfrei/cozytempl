@@ -86,7 +86,12 @@ jobs:
           version: latest
 
       - name: Install helm-unittest
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest
+        # --verify=false is required because helm-unittest does
+        # not ship a plugin.yaml.prov signature, and Helm 4 now
+        # treats verification as mandatory by default. The
+        # plugin is installed from a public GitHub release, so
+        # we're trusting the tarball hash transport (HTTPS).
+        run: helm plugin install --verify=false https://github.com/helm-unittest/helm-unittest
 
       - name: helm lint (dev mode)
         run: helm lint deploy/helm/cozytempl --set config.devMode=true
