@@ -13,6 +13,7 @@ import { initSSE } from "./sse";
 import { initHtmxFeedback } from "./htmx";
 import { initReveal } from "./reveal";
 import { initThemeToggle } from "./theme";
+import { initCommandPalette } from "./palette";
 
 declare global {
   interface Window {
@@ -188,6 +189,7 @@ function initAll(): void {
   initClipboard();
   initSSE();
   initReveal();
+  initCommandPalette();
   window.__cozytemplInitialized = true;
 }
 

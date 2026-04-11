@@ -1679,3 +1679,126 @@ tr[hx-get]:hover {
   color: var(--color-text-secondary);
   margin-bottom: 32px;
 }
+
+/* ------------------------------------------------------------------
+ * Command palette (Cmd/Ctrl-K overlay).
+ * Rendered client-side by static/ts/palette.ts into a single
+ * document.body-level <div> that stays in the DOM across openings.
+ * Uses the theme variables so dark/light palettes work for free.
+ * ------------------------------------------------------------------ */
+.command-palette {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+}
+
+.command-palette[hidden] {
+  display: none;
+}
+
+.command-palette-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.command-palette-panel {
+  position: relative;
+  width: min(600px, 90vw);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg, 0 20px 60px rgba(0, 0, 0, 0.4));
+  overflow: hidden;
+}
+
+.command-palette-input {
+  flex: 0 0 auto;
+  padding: 16px 20px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 1rem;
+  outline: none;
+}
+
+.command-palette-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.command-palette-list {
+  flex: 1 1 auto;
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  overflow-y: auto;
+}
+
+.command-palette-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 20px;
+  cursor: pointer;
+  color: var(--color-text);
+  transition: background var(--transition);
+}
+
+.command-palette-item-active,
+.command-palette-item:hover {
+  background: var(--color-bg-hover);
+}
+
+.command-palette-item-label {
+  font-size: 0.92rem;
+}
+
+.command-palette-item-hint {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono, monospace);
+}
+
+.command-palette-empty {
+  padding: 16px 20px;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.command-palette-footer {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 16px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.command-palette-footer kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-right: 4px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+}
+
+body.command-palette-open {
+  overflow: hidden;
+}
