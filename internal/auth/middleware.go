@@ -47,3 +47,12 @@ func UserFromContext(ctx context.Context) *UserContext {
 
 	return usr
 }
+
+// ContextWithUser attaches a UserContext to ctx using the same key
+// the auth middleware uses. Exists so tests (and any caller that
+// needs to simulate an authenticated request without going through
+// RequireAuth / DevAuth) can build a request context without having
+// to know the unexported key constant.
+func ContextWithUser(ctx context.Context, usr *UserContext) context.Context {
+	return context.WithValue(ctx, userContextKey, usr)
+}

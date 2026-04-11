@@ -100,11 +100,22 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 func Router(cfg *RouterConfig) http.Handler {
 	mux := http.NewServeMux()
 
+	// Shared per-user rate limit store. Created here so its
+	// janitor goroutine is tied to the router's lifetime; in
+	// practice the process never shuts it down because the
+	// goroutine exits when the process does.
+	rateStore := newRateLimitStore()
+
 	var protect func(http.Handler) http.Handler
 
 	if cfg.DevMode {
 		protect = func(next http.Handler) http.Handler {
-			return auth.DevAuth(cfg.DevUsername, next)
+			// Rate limit runs after auth so it sees the impersonated
+			// user identity. In dev mode every request is "dev-admin"
+			// so the limit is effectively global — fine for local
+			// development but not for multi-user prod (prod goes
+			// through RequireAuth below).
+			return auth.DevAuth(cfg.DevUsername, withRateLimit(rateStore, next))
 		}
 	} else {
 		mux.HandleFunc("GET /auth/login", cfg.AuthHandler.HandleLogin)
@@ -112,7 +123,7 @@ func Router(cfg *RouterConfig) http.Handler {
 		mux.HandleFunc("POST /auth/logout", cfg.AuthHandler.HandleLogout)
 
 		protect = func(next http.Handler) http.Handler {
-			return auth.RequireAuth(cfg.SessionStore, next)
+			return auth.RequireAuth(cfg.SessionStore, withRateLimit(rateStore, next))
 		}
 	}
 
