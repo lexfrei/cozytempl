@@ -34,6 +34,18 @@ func NewSessionStore(secret string) *SessionStore {
 	blockKey := padOrTruncate([]byte(secret), aes256KeySize)
 
 	store := sessions.NewCookieStore(hashKey, blockKey)
+	// Cookie hardening:
+	//   - HttpOnly: JavaScript cannot read the session cookie, so an
+	//     XSS in a future dependency can't exfiltrate it.
+	//   - Secure: the cookie is only sent over HTTPS. Production runs
+	//     behind a TLS-terminating proxy (Cloudflare Tunnel, nginx)
+	//     so the browser always sees an HTTPS origin.
+	//   - SameSite=Lax: blocks cross-site POST and XHR/fetch, which is
+	//     the entire CSRF attack surface for an htmx app. We intentionally
+	//     do NOT issue per-form CSRF tokens — Lax carries that weight.
+	//     Every modern browser (Chrome 80+, Firefox, Safari, Edge)
+	//     enforces Lax-blocks-cross-site-POST; pre-2020 browsers do not,
+	//     and we accept that as out-of-scope.
 	store.Options = &sessions.Options{
 		Path:     "/",
 		MaxAge:   sessionMaxAgeSecs,

@@ -33,19 +33,30 @@ type RouterConfig struct {
 	DevUsername   string
 }
 
-// contentSecurityPolicy is the CSP header applied to every response. It
-// allows the two external origins actually used by the page — unpkg for
-// htmx, Google Fonts for Inter — plus self for everything else, and
-// blocks frame embedding entirely (clickjacking defense).
+// contentSecurityPolicy is the CSP header applied to every response.
+// Everything is loaded from self — htmx is bundled into bundle.js and
+// the UI fonts are vendored under /static/fonts, so no third-party
+// origins are allowed at all. object-src and frame-src are locked to
+// 'none' for defense-in-depth against plugin and iframe injection.
 const contentSecurityPolicy = "default-src 'self'; " +
-	"script-src 'self' https://unpkg.com; " +
-	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-	"font-src 'self' https://fonts.gstatic.com; " +
+	"script-src 'self'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"font-src 'self'; " +
 	"img-src 'self' data:; " +
 	"connect-src 'self'; " +
+	"object-src 'none'; " +
+	"frame-src 'none'; " +
 	"frame-ancestors 'none'; " +
 	"base-uri 'self'; " +
 	"form-action 'self'"
+
+// strictTransportSecurity pins the browser to HTTPS for this host
+// (and every subdomain) for two years. Production runs behind a
+// TLS-terminating proxy — Cloudflare Tunnel or nginx — that serves
+// every user-facing request over HTTPS, so the header is always
+// accurate. `preload` is a hint for the HSTS preload list; actual
+// submission to hstspreload.org is an operator decision.
+const strictTransportSecurity = "max-age=63072000; includeSubDomains; preload"
 
 // withRequestTimeout caps the context of every non-SSE request at
 // requestTimeout so that a hung Kubernetes call can't leave a goroutine
@@ -72,12 +83,14 @@ func withRequestTimeout(next http.Handler) http.Handler {
 // boilerplate.
 func withSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
-		h := writer.Header()
-		h.Set("Content-Security-Policy", contentSecurityPolicy)
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-Frame-Options", "DENY")
-		h.Set("Referrer-Policy", "same-origin")
-		h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		headers := writer.Header()
+		headers.Set("Content-Security-Policy", contentSecurityPolicy)
+		headers.Set("Strict-Transport-Security", strictTransportSecurity)
+		headers.Set("X-Content-Type-Options", "nosniff")
+		headers.Set("X-Frame-Options", "DENY")
+		headers.Set("X-Permitted-Cross-Domain-Policies", "none")
+		headers.Set("Referrer-Policy", "same-origin")
+		headers.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
 
 		next.ServeHTTP(writer, req)
 	})

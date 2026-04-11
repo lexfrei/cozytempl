@@ -1,3 +1,11 @@
+// htmx is imported from the vendored npm package and bundled into
+// bundle.js by esbuild. We intentionally do NOT load it from unpkg
+// or any other CDN — the old `<script src="unpkg.com/htmx.org@2/...">`
+// tag was a supply-chain RCE vector (no SRI, unpinned patch version,
+// third-party origin in script-src). Bundling locks us to a reviewed
+// version and ties integrity to our own asset-version cache buster.
+import htmx from "htmx.org";
+
 import { initToasts } from "./toast";
 import { initModals, openModal, closeModal } from "./modal";
 import { initClipboard } from "./clipboard";
@@ -7,9 +15,15 @@ import { initHtmxFeedback } from "./htmx";
 declare global {
   interface Window {
     __cozytemplInitialized: boolean;
+    htmx: typeof htmx;
   }
 }
 window.__cozytemplInitialized = false;
+// htmx needs to be reachable from `window.htmx` for attributes like
+// hx-on::*, inline scripts in extensions, and our SSE glue. The ESM
+// export gives us the object back; we expose it explicitly instead of
+// relying on the IIFE's side-effects.
+window.htmx = htmx;
 
 // initActionDelegation wires a single document-level click listener
 // that routes every data-action button to the right handler. Switching

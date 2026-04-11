@@ -1,8 +1,10 @@
 {
   "devDependencies": {
+    "@fontsource/inter": "^5.2.8",
     "@typescript-eslint/eslint-plugin": "^8.58.1",
     "@typescript-eslint/parser": "^8.58.1",
     "eslint": "^10.2.0",
+    "htmx.org": "^2.0.8",
     "typescript": "^6.0.2"
   }
 }

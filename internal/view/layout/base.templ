@@ -12,10 +12,6 @@ templ Base(title string) {
 		<meta http-equiv="X-Content-Type-Options" content="nosniff"/>
 		<title>{ title } — cozytempl</title>
 		<link rel="stylesheet" href={ "/static/css/styles.css?v=" + static.AssetVersion() }/>
-		<link rel="preconnect" href="https://fonts.googleapis.com"/>
-		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-		<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"/>
-		<script src="https://unpkg.com/htmx.org@2/dist/htmx.min.js"></script>
 		<script defer src={ "/static/dist/bundle.js?v=" + static.AssetVersion() }></script>
 	</head>
 	<body>
