@@ -8,16 +8,19 @@ generate:
 ts:
 	esbuild static/ts/main.ts --bundle --outfile=static/dist/bundle.js --minify --sourcemap
 
-# Run all tests
+# Run all tests. Exclude node_modules because one npm package ships a stray
+# Go file that Go tooling would otherwise pick up.
 test: generate
-	go test ./... -count=1 -race
+	go test ./cmd/... ./internal/... ./static/... -count=1 -race
 
-# Run linters (Go + TypeScript)
+# Run linters (Go + TypeScript). Same scope as test — avoid scanning
+# node_modules for Go code.
 lint: generate
-	golangci-lint run
+	golangci-lint run ./cmd/... ./internal/... ./static/...
 	npx eslint static/ts/
 
-# Build binary (embeds static assets)
+# Build binary (embeds static assets). Same scoping rationale — package
+# list explicit so node_modules is never linked into the binary.
 build: generate ts
 	CGO_ENABLED=0 go build -o bin/cozytempl ./cmd/cozytempl
 
