@@ -121,6 +121,14 @@ func Router(cfg *RouterConfig) http.Handler {
 
 	mux.HandleFunc("GET /healthz", healthHandler)
 	mux.HandleFunc("GET /readyz", healthHandler)
+	// /metrics is intentionally NOT wrapped in auth middleware:
+	// Prometheus scrapers authenticate at the network boundary (pod
+	// network policy, service mesh, or an HTTP proxy) rather than
+	// via OIDC, and requiring a user session for scraping would
+	// break every stock Prometheus config. The endpoint serves only
+	// aggregate counts and latency histograms — no tenant data,
+	// no secrets, no user identifiers.
+	mux.Handle("GET /metrics", metricsHandler())
 
 	mountStaticFiles(mux, cfg.StaticFS)
 
@@ -140,13 +148,26 @@ func Router(cfg *RouterConfig) http.Handler {
 	//                        MUST be outermost so every downstream
 	//                        middleware, including withAccessLog,
 	//                        sees the ID when reading the context.
+	//   withMetrics:         Prometheus counters/histograms/gauge.
+	//                        Wraps the response writer to capture
+	//                        the final status, so it must sit
+	//                        outside withSecurityHeaders (which
+	//                        only calls Header().Set — no impact on
+	//                        status code capture) and outside the
+	//                        mux itself.
 	//   withAccessLog:       emits one structured log line per
 	//                        completed request, including request_id
 	//                        pulled from the enriched context.
 	//   withSecurityHeaders: sets CSP/HSTS/etc on every response,
 	//                        including error pages and 404s.
 	//   withRequestTimeout:  caps handler execution (bypassed for SSE).
-	return withRequestID(withAccessLog(cfg.Log, withSecurityHeaders(withRequestTimeout(mux))))
+	return withRequestID(
+		withMetrics(
+			withAccessLog(cfg.Log,
+				withSecurityHeaders(withRequestTimeout(mux)),
+			),
+		),
+	)
 }
 
 func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {
