@@ -77,6 +77,60 @@ func (pgh *PageHandler) SchemaFieldsFragment(writer http.ResponseWriter, req *ht
 	}
 }
 
+// TenantEditFragment renders the edit modal for a single tenant, pre-
+// populating the form fields from the tenant's current spec so the user
+// edits in place.
+func (pgh *PageHandler) TenantEditFragment(writer http.ResponseWriter, req *http.Request) {
+	usr := auth.UserFromContext(req.Context())
+	if usr == nil {
+		http.Error(writer, "unauthorized", http.StatusUnauthorized)
+
+		return
+	}
+
+	name := req.URL.Query().Get("name")
+	namespace := req.URL.Query().Get("ns")
+
+	if name == "" || namespace == "" {
+		http.Error(writer, "name and ns required", http.StatusBadRequest)
+
+		return
+	}
+
+	// The current tenant view is looked up under its workload namespace
+	// (what the sidebar / tenant list links to). Pull the full CR through
+	// TenantService.Get so we get DisplayName, Namespace, ParentNamespace.
+	tenant, err := pgh.tenantSvc.Get(req.Context(), usr.Username, usr.Groups, name)
+	if err != nil {
+		pgh.log.Error("loading tenant for edit", "name", name, "error", err)
+		http.Error(writer, "tenant not found", http.StatusNotFound)
+
+		return
+	}
+
+	// Current spec from the impersonated CR read — the CRs live in the
+	// parent's workload namespace, hence the 'namespace' query param.
+	currentSpec, specErr := pgh.tenantSvc.GetSpec(req.Context(), usr.Username, usr.Groups, namespace, name)
+	if specErr != nil {
+		pgh.log.Debug("loading tenant spec for edit", "ns", namespace, "name", name, "error", specErr)
+	}
+
+	// Schema is optional: if it fails we still render the modal with a
+	// "no editable fields" note so the user is not left without feedback.
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr.Username, usr.Groups, tenantSchemaKind)
+	if schemaErr != nil {
+		pgh.log.Debug("loading tenant schema for edit", "error", schemaErr)
+	}
+
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	writer.Header().Set("Cache-Control", "no-store")
+
+	renderErr := fragment.TenantEditModal(*tenant, schema, currentSpec).Render(req.Context(), writer)
+	if renderErr != nil {
+		pgh.log.Error("rendering tenant edit modal", "error", renderErr)
+	}
+}
+
 // MarketplaceFragment renders filtered marketplace grid for htmx swap.
 func (pgh *PageHandler) MarketplaceFragment(writer http.ResponseWriter, req *http.Request) {
 	usr := auth.UserFromContext(req.Context())

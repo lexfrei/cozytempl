@@ -1,13 +1,22 @@
 package api
 
 import (
+	"context"
 	"embed"
 	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/handler"
 )
+
+// requestTimeout caps how long a single non-SSE handler may spend reading
+// from the Kubernetes API and rendering its response. 15 seconds is well
+// above normal tail latencies for a listing but short enough that a hung
+// k8s watch or a slow impersonation roundtrip cannot starve goroutines.
+const requestTimeout = 15 * time.Second
 
 // RouterConfig holds all dependencies for building the HTTP router.
 type RouterConfig struct {
@@ -37,6 +46,25 @@ const contentSecurityPolicy = "default-src 'self'; " +
 	"frame-ancestors 'none'; " +
 	"base-uri 'self'; " +
 	"form-action 'self'"
+
+// withRequestTimeout caps the context of every non-SSE request at
+// requestTimeout so that a hung Kubernetes call can't leave a goroutine
+// parked forever. SSE connections are long-lived by design and are left
+// alone — the stream handler manages its own lifecycle.
+func withRequestTimeout(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		if strings.HasPrefix(req.URL.Path, "/api/events") {
+			next.ServeHTTP(writer, req)
+
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(req.Context(), requestTimeout)
+		defer cancel()
+
+		next.ServeHTTP(writer, req.WithContext(ctx))
+	})
+}
 
 // withSecurityHeaders attaches a set of conservative headers to every
 // response. This is a small wrapper around http.Handler so the headers
@@ -93,7 +121,7 @@ func Router(cfg *RouterConfig) http.Handler {
 	mux.Handle("PUT /", protect(pageMux))
 	mux.Handle("DELETE /", protect(pageMux))
 
-	return withSecurityHeaders(mux)
+	return withSecurityHeaders(withRequestTimeout(mux))
 }
 
 func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {
@@ -115,6 +143,7 @@ func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {
 	pageMux.HandleFunc("GET /fragments/app-table", pgh.AppTableFragment)
 	pageMux.HandleFunc("GET /fragments/marketplace", pgh.MarketplaceFragment)
 	pageMux.HandleFunc("GET /fragments/schema-fields", pgh.SchemaFieldsFragment)
+	pageMux.HandleFunc("GET /fragments/tenant-edit", pgh.TenantEditFragment)
 
 	return pageMux
 }

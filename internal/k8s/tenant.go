@@ -182,6 +182,32 @@ func findChildren(items []unstructured.Unstructured, parentNS string) []string {
 	return children
 }
 
+// GetSpec returns the raw spec map of an existing Tenant CR. Used by edit
+// flows to pre-populate a schema-driven form with the current values.
+// Uses the same namespace+name lookup as Delete/Update to disambiguate
+// tenants sharing a leaf name under different parents.
+func (tsv *TenantService) GetSpec(
+	ctx context.Context, username string, groups []string, namespace, name string,
+) (map[string]any, error) {
+	if namespace == "" {
+		return nil, ErrNamespaceRequired
+	}
+
+	client, err := NewImpersonatingClient(tsv.baseCfg, username, groups)
+	if err != nil {
+		return nil, err
+	}
+
+	obj, err := client.Resource(TenantCRDGVR()).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("getting tenant %s/%s: %w", namespace, name, err)
+	}
+
+	spec, _, _ := unstructured.NestedMap(obj.Object, "spec")
+
+	return spec, nil
+}
+
 // Update merges the given spec fields into an existing Tenant CR. The caller
 // specifies the parent namespace (where the CR lives, i.e. metadata.namespace)
 // because two tenants can share the same leaf name under different parents,

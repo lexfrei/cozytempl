@@ -16,6 +16,8 @@ func parentDisplay(parent string) string {
 }
 
 templ Tenants(data view.TenantsPageData) {
+	<!-- Edit-modal slot: htmx-swapped with the tenant-edit fragment. -->
+	<div id="tenant-edit-slot"></div>
 	<div class="page-header">
 		<h1 class="page-title">Tenants</h1>
 		<button class="btn btn-primary" onclick="openModal('create-tenant-modal')">
@@ -120,17 +122,25 @@ templ tenantRow(item view.TenantWithUsage, metrics bool) {
 			}
 		</td>
 		<td>
-			if k8s.IsRootTenant(item.Tenant.Name) {
-				<button class="btn btn-sm" disabled title="Root tenant cannot be deleted">Delete</button>
-			} else {
-				<button class="btn btn-sm btn-danger"
-					hx-delete={ "/tenants/" + item.Tenant.Name + "?ns=" + item.Tenant.ParentNamespace }
-					hx-confirm={ "Delete tenant '" + item.Tenant.DisplayName + "' (" + item.Tenant.ParentNamespace + "/" + item.Tenant.Name + ")? This will delete the tenant namespace, every application inside it, and every nested sub-tenant. This cannot be undone." }
-					hx-target="closest tr"
-					hx-swap="delete swap:500ms">
-					Delete
+			<div class="flex items-center gap-2">
+				<button class="btn btn-sm"
+					hx-get={ "/fragments/tenant-edit?name=" + item.Tenant.Name + "&ns=" + item.Tenant.ParentNamespace }
+					hx-target="#tenant-edit-slot"
+					hx-swap="innerHTML">
+					Edit
 				</button>
-			}
+				if k8s.IsRootTenant(item.Tenant.Name) {
+					<button class="btn btn-sm" disabled title="Root tenant cannot be deleted">Delete</button>
+				} else {
+					<button class="btn btn-sm btn-danger"
+						hx-delete={ "/tenants/" + item.Tenant.Name + "?ns=" + item.Tenant.ParentNamespace }
+						hx-confirm={ "Delete tenant '" + item.Tenant.DisplayName + "' (" + item.Tenant.ParentNamespace + "/" + item.Tenant.Name + ")? This will delete the tenant namespace, every application inside it, and every nested sub-tenant. This cannot be undone." }
+						hx-target="closest tr"
+						hx-swap="delete swap:500ms">
+						Delete
+					</button>
+				}
+			</div>
 		</td>
 	</tr>
 }

@@ -6,8 +6,17 @@ import (
 )
 
 // SchemaFields renders form fields dynamically from a JSON Schema.
+// For edit flows use SchemaFieldsWithValues to pre-populate the form.
 templ SchemaFields(schema k8s.AppSchema) {
-	if props := extractProperties(schema); len(props) > 0 {
+	@SchemaFieldsWithValues(schema, nil)
+}
+
+// SchemaFieldsWithValues is the variant used by edit flows: the values
+// map overrides the schema-level default so the form opens displaying
+// whatever the user previously submitted. A nil values map is equivalent
+// to SchemaFields.
+templ SchemaFieldsWithValues(schema k8s.AppSchema, values map[string]any) {
+	if props := extractPropertiesWithValues(schema, values); len(props) > 0 {
 		for _, field := range props {
 			<div class="form-group">
 				<label class="form-label">
@@ -56,9 +65,11 @@ type SchemaField struct {
 	Required    bool
 }
 
-// extractProperties flattens the top-level JSON Schema properties into form fields.
-// Skips nested object types (backup, postgresql, quorum, etc.) — too complex for a simple form.
-func extractProperties(schema k8s.AppSchema) []SchemaField {
+// extractPropertiesWithValues flattens the top-level JSON Schema properties
+// into form fields. When values is non-nil, a matching key replaces the
+// schema default — used by edit flows to show the current spec. Nested
+// object / array types are skipped: too complex for a simple HTML form.
+func extractPropertiesWithValues(schema k8s.AppSchema, values map[string]any) []SchemaField {
 	if schema.JSONSchema == nil {
 		return nil
 	}
@@ -112,6 +123,11 @@ func extractProperties(schema k8s.AppSchema) []SchemaField {
 
 		if def, exists := prop["default"]; exists {
 			field.Default = fmt.Sprint(def)
+		}
+
+		// Override with the current saved value when editing.
+		if current, exists := values[key]; exists {
+			field.Default = fmt.Sprint(current)
 		}
 
 		if rawEnum, ok := prop["enum"].([]any); ok {
