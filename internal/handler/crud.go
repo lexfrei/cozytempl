@@ -19,10 +19,8 @@ const (
 
 // CreateApp handles POST to create a new application.
 func (pgh *PageHandler) CreateApp(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
@@ -126,10 +124,8 @@ func extractFieldTypes(schema *k8s.AppSchema) map[string]string {
 // same schema-driven form used by create, minus the name + kind fields
 // which are fixed at creation time.
 func (pgh *PageHandler) UpdateApp(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
@@ -191,10 +187,8 @@ func (pgh *PageHandler) doUpdateApp(
 
 // DeleteApp handles DELETE to remove an application.
 func (pgh *PageHandler) DeleteApp(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 

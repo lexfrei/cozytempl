@@ -33,10 +33,8 @@ func validTenantName(s string) bool {
 
 // TenantsPage renders the tenant management page: list + create form.
 func (pgh *PageHandler) TenantsPage(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
@@ -86,10 +84,8 @@ func (pgh *PageHandler) TenantsPage(writer http.ResponseWriter, req *http.Reques
 
 // CreateTenant handles POST /tenants to create a new tenant.
 func (pgh *PageHandler) CreateTenant(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
@@ -175,10 +171,8 @@ func (pgh *PageHandler) tenantSpec(req *http.Request, usr *auth.UserContext) map
 // The ns query param is the parent namespace where the CR lives (not the
 // tenant's own workload namespace), same convention as DeleteTenant.
 func (pgh *PageHandler) UpdateTenant(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
@@ -223,10 +217,8 @@ func (pgh *PageHandler) UpdateTenant(writer http.ResponseWriter, req *http.Reque
 // DeleteTenant handles DELETE /tenants/{name}?ns=... to remove a tenant.
 // Namespace disambiguates same-named tenants under different parents.
 func (pgh *PageHandler) DeleteTenant(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 

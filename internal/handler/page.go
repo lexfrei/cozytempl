@@ -48,10 +48,8 @@ func NewPageHandler(
 
 // Dashboard renders the dashboard page.
 func (pgh *PageHandler) Dashboard(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
@@ -96,10 +94,8 @@ func (pgh *PageHandler) Dashboard(writer http.ResponseWriter, req *http.Request)
 
 // TenantPage renders the tenant detail with app list.
 func (pgh *PageHandler) TenantPage(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
@@ -123,10 +119,8 @@ func (pgh *PageHandler) TenantPage(writer http.ResponseWriter, req *http.Request
 
 // AppDetailPage renders the application detail page.
 func (pgh *PageHandler) AppDetailPage(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
@@ -188,10 +182,8 @@ const tenantEventLimit = 15
 
 // ProfilePage renders the current user's identity details.
 func (pgh *PageHandler) ProfilePage(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
@@ -203,10 +195,8 @@ func (pgh *PageHandler) ProfilePage(writer http.ResponseWriter, req *http.Reques
 
 // MarketplacePage renders the marketplace catalog.
 func (pgh *PageHandler) MarketplacePage(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 

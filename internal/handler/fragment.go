@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view/fragment"
 	"github.com/lexfrei/cozytempl/internal/view/page"
@@ -13,10 +12,8 @@ import (
 
 // AppTableFragment renders filtered app table rows for htmx swap.
 func (pgh *PageHandler) AppTableFragment(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
@@ -46,10 +43,8 @@ func (pgh *PageHandler) AppTableFragment(writer http.ResponseWriter, req *http.R
 
 // SchemaFieldsFragment renders schema-driven form fields for the create app modal.
 func (pgh *PageHandler) SchemaFieldsFragment(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
@@ -82,10 +77,8 @@ func (pgh *PageHandler) SchemaFieldsFragment(writer http.ResponseWriter, req *ht
 // TenantEditFragment flow — schema + current spec are fetched via
 // impersonation so permission errors surface here, not on PUT.
 func (pgh *PageHandler) AppEditFragment(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
@@ -129,10 +122,8 @@ func (pgh *PageHandler) AppEditFragment(writer http.ResponseWriter, req *http.Re
 // populating the form fields from the tenant's current spec so the user
 // edits in place.
 func (pgh *PageHandler) TenantEditFragment(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
@@ -181,10 +172,8 @@ func (pgh *PageHandler) TenantEditFragment(writer http.ResponseWriter, req *http
 
 // MarketplaceFragment renders filtered marketplace grid for htmx swap.
 func (pgh *PageHandler) MarketplaceFragment(writer http.ResponseWriter, req *http.Request) {
-	usr := auth.UserFromContext(req.Context())
+	usr := pgh.requireUser(writer, req)
 	if usr == nil {
-		http.Error(writer, "unauthorized", http.StatusUnauthorized)
-
 		return
 	}
 
