@@ -12,6 +12,7 @@ import { initClipboard } from "./clipboard";
 import { initSSE } from "./sse";
 import { initHtmxFeedback } from "./htmx";
 import { initReveal } from "./reveal";
+import { initThemeToggle } from "./theme";
 
 declare global {
   interface Window {
@@ -162,6 +163,7 @@ function initBurger(): void {
 }
 
 function initAll(): void {
+  initThemeToggle();
   initHtmxFeedback();
   initActionDelegation();
   initNamespacePreview();

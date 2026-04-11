@@ -4,9 +4,15 @@
 generate:
 	templ generate
 
-# Bundle TypeScript
+# Bundle TypeScript. Two entry points:
+#   - main.ts  → static/dist/bundle.js (deferred; everything else)
+#   - theme-early.ts → static/dist/theme-early.js (non-deferred,
+#     loaded in <head> before the stylesheet so the stored
+#     data-theme is applied before first paint and no flash of
+#     the wrong theme leaks onto the screen).
 ts:
 	esbuild static/ts/main.ts --bundle --outfile=static/dist/bundle.js --minify --sourcemap
+	esbuild static/ts/theme-early.ts --bundle --outfile=static/dist/theme-early.js --minify
 
 # Run all tests. Exclude node_modules because one npm package ships a stray
 # Go file that Go tooling would otherwise pick up. Also runs the Helm chart

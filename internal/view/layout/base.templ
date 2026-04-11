@@ -11,6 +11,12 @@ templ Base(title string) {
 		<meta name="referrer" content="same-origin"/>
 		<meta http-equiv="X-Content-Type-Options" content="nosniff"/>
 		<title>{ title } — cozytempl</title>
+		<!-- theme-early.js is a ~200-byte non-deferred bundle that
+		     applies the stored data-theme before paint. Loading it
+		     synchronously in <head> is intentional — without it, a
+		     user who picked light mode sees a flash of dark on every
+		     navigation. -->
+		<script src={ "/static/dist/theme-early.js?v=" + static.AssetVersion() }></script>
 		<link rel="stylesheet" href={ "/static/css/styles.css?v=" + static.AssetVersion() }/>
 		<script defer src={ "/static/dist/bundle.js?v=" + static.AssetVersion() }></script>
 	</head>
