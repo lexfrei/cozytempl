@@ -1,0 +1,37 @@
+# markdownlint config.
+#
+# MD013 (line-length) is disabled because GitHub renders paragraphs
+# automatically and hard-wrapping at 80 columns adds noise to diffs
+# and breaks list rendering in some edge cases. This matches the
+# project's documented rule in CLAUDE.md.
+#
+# Everything else stays on — the blank-line rules (MD022, MD032)
+# and fenced-code-block rules in particular catch real formatting
+# mistakes that trip GitHub's renderer.
+
+default: true
+
+# Line length — off. See comment above.
+MD013: false
+
+# Allow duplicate headings when they're in different sections
+# (e.g. "Configuration" appearing at both chart and project level
+# if someone ever concatenates them).
+MD024:
+  siblings_only: true
+
+# Inline HTML: our README uses a few <div>/<kbd>/<sub> when Markdown
+# alone can't express the intent. Permit the common tags GitHub's
+# sanitizer already allows.
+MD033:
+  allowed_elements:
+    - kbd
+    - sub
+    - sup
+    - details
+    - summary
+    - br
+
+# First line doesn't have to be a top-level heading — the README
+# is free to open with a logo or badges. Not a big deal either way.
+MD041: false

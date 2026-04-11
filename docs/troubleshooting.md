@@ -27,7 +27,7 @@ The OIDC handshake failed. Causes in descending order of likelihood:
 3. **Issuer URL not discoverable.** cozytempl fetches `${OIDC_ISSUER_URL}/.well-known/openid-configuration` at startup. A typo, a closed port, or a TLS cert the pod can't verify will make discovery fail.
 4. **Clock skew.** JWTs carry `iat`/`exp` — if your cluster nodes' clocks drift more than a few minutes from the OIDC provider, tokens look expired. `chrony` or `systemd-timesyncd` on the hosts.
 
-## "Failed to create tenant" / "Failed to create <app>"
+## "Failed to create tenant" / "Failed to create &lt;app&gt;"
 
 cozytempl deliberately returns generic error messages on mutations so an attacker can't probe RBAC by reading specific errors. The real error is in the server log.
 
@@ -58,7 +58,7 @@ You or someone else wrote to the same resource between the moment you opened the
 
 The HelmRelease watcher is cluster-scoped and runs in a background goroutine per cozytempl pod. If it fails to start (RBAC, API version mismatch, etc.) the `/api/events` endpoint is disabled and the server logs:
 
-```
+```text
 failed to start watcher, SSE will be unavailable
 ```
 

@@ -83,6 +83,7 @@ Kubernetes API (dynamic client, user impersonation on every call)
 ## Features
 
 ### Multitenancy
+
 - Recursive tenant sidebar — walks the whole hierarchy.
 - Tenant create with DNS-1123 name validation; root tenant is protected.
 - Tenant edit modal with every top-level spec field pre-populated.
@@ -90,6 +91,7 @@ Kubernetes API (dynamic client, user impersonation on every call)
 - Back-to-parent breadcrumb and button on non-root tenant pages.
 
 ### Applications
+
 - Full CRUD for every Cozystack application type via schema-driven forms generated from each ApplicationDefinition's `openAPISchema`.
 - App edit modal with current values pre-loaded.
 - Tab-based detail view: Overview, Connection, Conditions, Events, Logs, Values.
@@ -97,12 +99,14 @@ Kubernetes API (dynamic client, user impersonation on every call)
 - Hard cap of 500 applications per tenant list with a visible truncation banner — a 10k-app tenant can't hang the UI or push the k8s API beyond budget.
 
 ### Observability
+
 - **Prometheus `/metrics`** with bounded label cardinality: `cozytempl_http_requests_total`, `cozytempl_http_request_duration_seconds`, `cozytempl_http_requests_inflight`, plus Go runtime and process collectors. Path labels are normalised (`/tenants/:ns`, `/tenants/:ns/apps/:name`) so tenant and app names never leak into the label space.
 - **Request correlation IDs** on every request (`X-Request-ID` header, honours trusted upstream values, otherwise mints a UUID). Every access-log line and every audit event carries the same ID.
 - **Structured access log** — one `http` log line per request with method, path, status, duration and request ID.
 - **Structured audit log** — one `audit` log line per mutation (tenant/app create/update/delete) and per `connection.view` on the Connection tab. JSON-serialisable, keyed on stable action strings (`tenant.create`, `app.update`, `secret.view`, ...). Pod logs forwarded to Loki / ELK become the append-only audit store; no new storage dependency.
 
 ### Security
+
 - Every Kubernetes call uses user impersonation, so browser-visible data respects cluster RBAC.
 - Strict CSP (`default-src 'self'`, `script-src 'self'`, `object-src 'none'`, `frame-src 'none'`, `frame-ancestors 'none'`, `base-uri 'self'`, `form-action 'self'`). No third-party origins — htmx and Inter are bundled locally.
 - HSTS with a 2-year max-age, `includeSubDomains`, `preload`.
@@ -117,6 +121,7 @@ Kubernetes API (dynamic client, user impersonation on every call)
 - `govulncheck` in `make lint`, Dependabot for Go + npm + GitHub Actions.
 
 ### Platform
+
 - Marketplace catalog with category pills, tag filtering, and live search.
 - Dashboard with stats + recent applications.
 - Profile page showing the impersonated username and groups.

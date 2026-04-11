@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -78,12 +78,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: latest
+
+      - name: Set up Python
+        # check-jsonschema is a Python tool. Using 3.12 to match
+        # what lexfrei/charts uses so we stay on a single pinned
+        # stack across the owner's repos.
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2.8.0
 
       - name: Install helm-unittest
         # --verify=false is required because helm-unittest does
@@ -91,7 +102,17 @@ jobs:
         # treats verification as mandatory by default. The
         # plugin is installed from a public GitHub release, so
         # we're trusting the tarball hash transport (HTTPS).
-        run: helm plugin install --verify=false https://github.com/helm-unittest/helm-unittest
+        # Same pattern as lexfrei/charts/.github/workflows/test.yaml.
+        run: helm plugin install --verify=false https://github.com/helm-unittest/helm-unittest.git
+
+      - name: Install check-jsonschema
+        # Validates values.yaml against values.schema.json —
+        # a typo in the defaults that the schema catches here
+        # saves a helm install --dry-run later.
+        run: pip install --quiet check-jsonschema
+
+      - name: Install markdownlint-cli
+        run: npm install --global markdownlint-cli
 
       - name: helm lint (dev mode)
         run: helm lint deploy/helm/cozytempl --set config.devMode=true
@@ -104,6 +125,24 @@ jobs:
             --set config.oidc.redirectURL=https://cozy.example.com/auth/callback \
             --set config.oidc.clientSecret=placeholder-secret \
             --set config.oidc.sessionSecret=VERYSECURESECRET32BYTESATLEASTOK
+
+      - name: chart-testing lint
+        # ct lint layers additional best-practice checks on top
+        # of helm lint: semver bumps, Chart.yaml required fields,
+        # icon presence, templated-name uniqueness, etc.
+        run: ct lint --charts deploy/helm/cozytempl --validate-maintainers=false --target-branch=master
+
+      - name: Validate values.yaml against schema
+        run: check-jsonschema --schemafile deploy/helm/cozytempl/values.schema.json deploy/helm/cozytempl/values.yaml
+
+      - name: markdownlint README
+        # Lint top-level README, chart README, and docs/. A
+        # broken markdown table or missing heading level in a
+        # shipped README is embarrassing and cheap to catch.
+        # Config lives in .markdownlint.yaml — MD013 is off
+        # because the project deliberately doesn't hard-wrap
+        # markdown for GitHub rendering.
+        run: markdownlint README.md deploy/helm/cozytempl/README.md docs/
 
       - name: helm-unittest
         run: helm unittest deploy/helm/cozytempl
