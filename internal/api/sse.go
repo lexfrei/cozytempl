@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -18,6 +19,23 @@ import (
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view/page"
 )
+
+// sseMaxStreamAge caps the lifetime of a single SSE connection. Past
+// this, the handler closes the stream cleanly, the browser's
+// EventSource reconnects automatically with Last-Event-ID, and
+// RequireAuth runs again — picking up a fresh OIDC ID token via the
+// refresh loop. Without this cap a long-lived SSE session holds a
+// stale Bearer token until the server restarts, which is the entire
+// reason passthrough mode needs bounded streams.
+//
+// Chosen below the 1-hour TTL Keycloak issues by default (15 min for
+// access token, 30 min for ID token in stock cozystack) so the
+// reconnect always happens while the refresh token is still valid
+// but well above the natural replay ring buffer window. 60 minutes
+// means worst-case latency between a manual Keycloak revocation and
+// the refresh rejection is one hour; operators who need faster
+// revocation can lower this.
+const sseMaxStreamAge = 60 * time.Minute
 
 // SSEHandler handles Server-Sent Events for real-time updates. It authorizes
 // each subscribe by doing a user-scoped list against the requested tenant
@@ -202,16 +220,26 @@ func (ssh *SSEHandler) pumpEvents(
 	tenant string,
 	events <-chan k8s.WatchEvent,
 ) {
+	// Bound the stream lifetime. When the deadline fires, this
+	// function returns, the HTTP handler exits, the browser's
+	// EventSource sees readyState=CLOSED and reconnects, which
+	// re-runs RequireAuth (refreshing the OIDC ID token) and
+	// builds a new subscription. The watcher's ring buffer
+	// replays any events that happened during the momentary
+	// disconnect, so the user sees no data loss.
+	streamCtx, cancel := context.WithDeadline(ctx, time.Now().Add(sseMaxStreamAge))
+	defer cancel()
+
 	for {
 		select {
-		case <-ctx.Done():
+		case <-streamCtx.Done():
 			return
 		case evt, ok := <-events:
 			if !ok {
 				return
 			}
 
-			if !ssh.writeEvent(ctx, writer, flusher, tenant, &evt) {
+			if !ssh.writeEvent(streamCtx, writer, flusher, tenant, &evt) {
 				return
 			}
 		}

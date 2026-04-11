@@ -86,7 +86,21 @@ func run() error {
 	usageSvc := k8s.NewUsageService(k8sCfg, cfg.AuthMode)
 	eventSvc := k8s.NewEventService(k8sCfg, cfg.AuthMode)
 	logSvc := k8s.NewLogService(k8sCfg, cfg.AuthMode)
-	watcher := k8s.NewWatcher(k8sCfg, log)
+
+	// Watcher runs as its OWN ServiceAccount so the main cozytempl
+	// pod SA can stay at zero k8s permissions in passthrough and
+	// byok modes. If COZYTEMPL_WATCHER_KUBECONFIG points at a
+	// kubeconfig file (typically mounted from a projected SA token
+	// by the Helm chart), we use that. Otherwise the watcher
+	// reuses the process's primary kubeconfig — fine in
+	// impersonation-legacy and dev modes where the main SA
+	// already has list/watch rights.
+	watcherCfg, err := loadWatcherKubeConfig(k8sCfg)
+	if err != nil {
+		return fmt.Errorf("loading watcher kubeconfig: %w", err)
+	}
+
+	watcher := k8s.NewWatcher(watcherCfg, log)
 
 	err = watcher.Start(ctx)
 	if err != nil {
@@ -208,4 +222,32 @@ func loadKubeConfig() (*rest.Config, error) {
 	}
 
 	return restCfg, nil
+}
+
+// watcherKubeconfigEnv names the env var the Helm chart sets to point
+// at a projected-token kubeconfig for the cozytempl-watcher SA. In
+// production that file is mounted read-only in the pod filesystem;
+// locally it is usually unset and the watcher falls back to fallback.
+const watcherKubeconfigEnv = "COZYTEMPL_WATCHER_KUBECONFIG"
+
+// loadWatcherKubeConfig returns the rest.Config that the HelmRelease
+// watcher should use. In production, the Helm chart creates a
+// dedicated cozytempl-watcher ServiceAccount whose kubeconfig is
+// mounted and pointed at via COZYTEMPL_WATCHER_KUBECONFIG — this
+// lets the main cozytempl SA stay at zero RBAC. When the env var
+// is unset we reuse fallback (the process's primary kubeconfig),
+// which is the right behaviour for impersonation-legacy and dev
+// modes, and for local development with a single credential.
+func loadWatcherKubeConfig(fallback *rest.Config) (*rest.Config, error) {
+	path := os.Getenv(watcherKubeconfigEnv)
+	if path == "" {
+		return fallback, nil
+	}
+
+	cfg, err := clientcmd.BuildConfigFromFlags("", path)
+	if err != nil {
+		return nil, fmt.Errorf("loading watcher kubeconfig from %q: %w", path, err)
+	}
+
+	return cfg, nil
 }
