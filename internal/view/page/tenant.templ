@@ -1,22 +1,86 @@
 package page
 
 import (
+	"fmt"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
 
-templ Tenant(data view.TenantPageData) {
-	@partial.Breadcrumb([]partial.BreadcrumbItem{
+// tenantBreadcrumb builds the crumb trail from dashboard down to the tenant.
+// The parent is synthesized from the Parent namespace without trying to
+// derive display names for intermediate ancestors: rendering "cozylex" for
+// namespace "tenant-root-cozylex" is enough without an extra tenant lookup.
+func tenantBreadcrumb(t k8s.Tenant) []partial.BreadcrumbItem {
+	crumbs := []partial.BreadcrumbItem{
 		{Label: "Dashboard", URL: "/"},
-		{Label: data.Tenant.DisplayName},
-	})
+	}
+	if t.Parent != "" && !k8s.IsRootTenant(t.Name) {
+		crumbs = append(crumbs, partial.BreadcrumbItem{
+			Label: t.Parent,
+			URL:   "/tenants/" + t.Parent,
+		})
+	}
+	crumbs = append(crumbs, partial.BreadcrumbItem{Label: t.DisplayName})
+	return crumbs
+}
+
+templ Tenant(data view.TenantPageData) {
+	@partial.Breadcrumb(tenantBreadcrumb(data.Tenant))
 	<div class="page-header">
 		<h1 class="page-title">{ data.Tenant.DisplayName }</h1>
-		<button class="btn btn-primary" onclick="openModal('create-app-modal')">
-			+ Create Application
-		</button>
+		<div class="flex items-center gap-2">
+			if !k8s.IsRootTenant(data.Tenant.Name) {
+				<a class="btn"
+					href={ templ.SafeURL("/tenants/" + data.Tenant.Parent) }
+					hx-get={ "/tenants/" + data.Tenant.Parent }
+					hx-target="#main-content"
+					hx-push-url="true">
+					&uarr; Parent
+				</a>
+			}
+			<button class="btn btn-primary" onclick="openModal('create-app-modal')">
+				+ Create Application
+			</button>
+		</div>
 	</div>
+	if len(data.Children) > 0 {
+		<div class="card mb-4">
+			<div class="card-header">
+				<div class="card-title">Sub-tenants</div>
+				<span class="text-sm text-muted">{ fmt.Sprint(len(data.Children)) }</span>
+			</div>
+			<div class="mp-grid">
+				for _, child := range data.Children {
+					<a class="mp-card"
+						href={ templ.SafeURL("/tenants/" + child.Namespace) }
+						hx-get={ "/tenants/" + child.Namespace }
+						hx-target="#main-content"
+						hx-push-url="true"
+						style="text-decoration: none; color: inherit;">
+						<div class="mp-card-row">
+							<div class="mp-card-icon">
+								<svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+									stroke="var(--color-primary)" stroke-width="1.5">
+									<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+									<circle cx="9" cy="7" r="4"></circle>
+								</svg>
+							</div>
+							<div style="flex:1;min-width:0;">
+								<div class="mp-card-title">{ child.DisplayName }</div>
+								<div class="mp-card-desc">
+									{ fmt.Sprint(child.AppCount) } apps
+									if child.ChildCount > 0 {
+										&middot; { fmt.Sprint(child.ChildCount) } sub-tenants
+									}
+								</div>
+							</div>
+						</div>
+					</a>
+				}
+			</div>
+		</div>
+	}
 
 	<!-- Filters -->
 	<div class="flex items-center gap-3 mb-4">

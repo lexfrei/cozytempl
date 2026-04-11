@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -157,6 +158,55 @@ func findChildren(items []unstructured.Unstructured, parentNS string) []string {
 	}
 
 	return children
+}
+
+// Update merges the given spec fields into an existing Tenant CR. The caller
+// specifies the parent namespace (where the CR lives, i.e. metadata.namespace)
+// because two tenants can share the same leaf name under different parents,
+// just like Delete. The root tenant is allowed to update since we don't let
+// users delete it — letting them tweak its quotas is safer than making root
+// read-only and having escape-hatch editing happen in kubectl.
+func (tsv *TenantService) Update(
+	ctx context.Context, username string, groups []string, namespace, name string, spec map[string]any,
+) (*Tenant, error) {
+	if namespace == "" {
+		return nil, ErrNamespaceRequired
+	}
+
+	client, err := NewImpersonatingClient(tsv.baseCfg, username, groups)
+	if err != nil {
+		return nil, err
+	}
+
+	obj, err := client.Resource(TenantCRDGVR()).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("getting tenant %s/%s: %w", namespace, name, err)
+	}
+
+	// Merge: we don't want to wipe fields the UI didn't render. Only the
+	// keys present in the incoming spec map are set; missing keys keep
+	// their current value. This matches the schema-driven form where
+	// leaving a field blank means "don't change".
+	existing, _, _ := unstructured.NestedMap(obj.Object, "spec")
+	if existing == nil {
+		existing = map[string]any{}
+	}
+
+	maps.Copy(existing, spec)
+
+	setErr := unstructured.SetNestedField(obj.Object, existing, "spec")
+	if setErr != nil {
+		return nil, fmt.Errorf("setting spec: %w", setErr)
+	}
+
+	updated, err := client.Resource(TenantCRDGVR()).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("updating tenant %s/%s: %w", namespace, name, err)
+	}
+
+	tenant := crdToTenant(updated)
+
+	return &tenant, nil
 }
 
 // Create creates a new tenant via the Tenant CRD.

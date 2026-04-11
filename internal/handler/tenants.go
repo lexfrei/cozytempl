@@ -167,6 +167,55 @@ func (pgh *PageHandler) tenantSpec(req *http.Request, usr *auth.UserContext) map
 	return extractTenantSpec(req, fieldTypes)
 }
 
+// UpdateTenant handles PUT /tenants/{name}?ns=... to edit a tenant's spec.
+// The ns query param is the parent namespace where the CR lives (not the
+// tenant's own workload namespace), same convention as DeleteTenant.
+func (pgh *PageHandler) UpdateTenant(writer http.ResponseWriter, req *http.Request) {
+	usr := auth.UserFromContext(req.Context())
+	if usr == nil {
+		http.Error(writer, "unauthorized", http.StatusUnauthorized)
+
+		return
+	}
+
+	name := req.PathValue("name")
+	namespace := req.URL.Query().Get("ns")
+
+	if name == "" || namespace == "" {
+		http.Error(writer, "name and ns required", http.StatusBadRequest)
+
+		return
+	}
+
+	req.Body = http.MaxBytesReader(writer, req.Body, maxFormBytes)
+
+	parseErr := req.ParseForm()
+	if parseErr != nil {
+		http.Error(writer, "bad request", http.StatusBadRequest)
+
+		return
+	}
+
+	spec := pgh.tenantSpec(req, usr)
+	if spec == nil {
+		pgh.renderErrorToast(writer, req, "Nothing to update: no form fields recognized against the tenant schema")
+
+		return
+	}
+
+	_, err := pgh.tenantSvc.Update(req.Context(), usr.Username, usr.Groups, namespace, name, spec)
+	if err != nil {
+		pgh.log.Error("updating tenant", "ns", namespace, "name", name, "error", err)
+		pgh.renderErrorToast(writer, req, "Failed to update tenant: "+err.Error())
+
+		return
+	}
+
+	pgh.log.Info("tenant updated", "ns", namespace, "name", name, "keys", len(spec))
+	writer.Header().Set("Hx-Redirect", "/tenants")
+	writer.WriteHeader(http.StatusOK)
+}
+
 // DeleteTenant handles DELETE /tenants/{name}?ns=... to remove a tenant.
 // Namespace disambiguates same-named tenants under different parents.
 func (pgh *PageHandler) DeleteTenant(writer http.ResponseWriter, req *http.Request) {

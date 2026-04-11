@@ -28,6 +28,7 @@ type TenantWithUsage struct {
 // TenantPageData holds data for the tenant detail page.
 type TenantPageData struct {
 	Tenant     k8s.Tenant
+	Children   []k8s.Tenant // Direct child tenants, filtered to those visible to the user.
 	Apps       []k8s.Application
 	Schemas    []k8s.AppSchema
 	Query      string

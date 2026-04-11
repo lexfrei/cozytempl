@@ -65,39 +65,37 @@ templ sidebarInner(tenants []k8s.Tenant, activePage string, activeTenant string)
 		<div class="sidebar-label">Tenants</div>
 		<ul class="tenant-tree">
 			for _, tenant := range rootTenants(tenants) {
-				<li class="tenant-node">
-					<a href={ templ.SafeURL("/tenants/" + tenant.Namespace) }
-						hx-get={ "/tenants/" + tenant.Namespace }
-						hx-target="#main-content"
-						hx-push-url="true"
-						class={ "sidebar-item", templ.KV("active", activeTenant == tenant.Namespace) }>
-						<span>{ tenant.DisplayName }</span>
-						<span class="text-sm text-muted" style="margin-left: auto;">
-							{ fmt.Sprint(tenant.AppCount) }
-						</span>
-					</a>
-					if len(childTenants(tenants, tenant.Namespace)) > 0 {
-						<ul class="tenant-tree">
-							for _, child := range childTenants(tenants, tenant.Namespace) {
-								<li class="tenant-node">
-									<a href={ templ.SafeURL("/tenants/" + child.Namespace) }
-										hx-get={ "/tenants/" + child.Namespace }
-										hx-target="#main-content"
-										hx-push-url="true"
-										class={ "sidebar-item", templ.KV("active", activeTenant == child.Namespace) }>
-										<span>{ child.DisplayName }</span>
-										<span class="text-sm text-muted" style="margin-left: auto;">
-											{ fmt.Sprint(child.AppCount) }
-										</span>
-									</a>
-								</li>
-							}
-						</ul>
-					}
-				</li>
+				@tenantNode(tenant, tenants, activeTenant)
 			}
 		</ul>
 	</div>
+}
+
+// tenantNode renders a single tenant and recurses into its descendants.
+// The full tenants slice is threaded through so each level can look up its
+// own children without pre-computing a tree. For typical tenant counts
+// (tens to low hundreds) the O(n) per-level scan is cheaper than building
+// an adjacency map once.
+templ tenantNode(tenant k8s.Tenant, all []k8s.Tenant, activeTenant string) {
+	<li class="tenant-node">
+		<a href={ templ.SafeURL("/tenants/" + tenant.Namespace) }
+			hx-get={ "/tenants/" + tenant.Namespace }
+			hx-target="#main-content"
+			hx-push-url="true"
+			class={ "sidebar-item", templ.KV("active", activeTenant == tenant.Namespace) }>
+			<span>{ tenant.DisplayName }</span>
+			<span class="text-sm text-muted" style="margin-left: auto;">
+				{ fmt.Sprint(tenant.AppCount) }
+			</span>
+		</a>
+		if children := childTenants(all, tenant.Namespace); len(children) > 0 {
+			<ul class="tenant-tree">
+				for _, child := range children {
+					@tenantNode(child, all, activeTenant)
+				}
+			</ul>
+		}
+	</li>
 }
 
 func rootTenants(tenants []k8s.Tenant) []k8s.Tenant {

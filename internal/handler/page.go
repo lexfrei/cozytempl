@@ -115,8 +115,20 @@ func (pgh *PageHandler) TenantPage(writer http.ResponseWriter, req *http.Request
 	apps, _ := pgh.appSvc.List(req.Context(), usr.Username, usr.Groups, tenantNS)
 	schemas, _ := pgh.schemaSvc.List(req.Context(), usr.Username, usr.Groups)
 
+	// Direct children of this tenant, scoped to what the user can see: we
+	// reuse the already-listed tenants slice so the child list inherits the
+	// caller's RBAC view without a second impersonated call.
+	var children []k8s.Tenant
+
+	for idx := range tenants {
+		if tenants[idx].Parent == tenantNS {
+			children = append(children, tenants[idx])
+		}
+	}
+
 	data := view.TenantPageData{
 		Tenant:     *tenant,
+		Children:   children,
 		Apps:       apps,
 		Schemas:    schemas,
 		Query:      req.URL.Query().Get("q"),
