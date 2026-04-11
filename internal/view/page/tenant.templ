@@ -130,6 +130,21 @@ templ Tenant(data view.TenantPageData) {
 
 	<!-- App table -->
 	<div class="card mb-4">
+		if data.AppsTruncated {
+			<!-- Pagination safety valve: ApplicationService.List
+			     capped this response. The filter/sort controls above
+			     run over the returned window only, so this warning is
+			     essential context — otherwise a filter that shows
+			     "3 results" when there are actually 10 000 apps feels
+			     like a bug. -->
+			<div class="truncated-banner">
+				<strong>Showing the first { fmt.Sprint(len(data.Apps)) } applications.</strong>
+				<span>
+					This tenant has more than the display limit. Filters and sort apply to this window only.
+					Use kubectl to see the full inventory.
+				</span>
+			</div>
+		}
 		<div class="table-container">
 			<table>
 				<thead>

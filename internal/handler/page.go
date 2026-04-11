@@ -442,7 +442,7 @@ func (pgh *PageHandler) fetchAppLogs(
 func (pgh *PageHandler) buildTenantPageData(
 	req *http.Request, usr *auth.UserContext, tenantNS string, tenant *k8s.Tenant, allTenants []k8s.Tenant,
 ) view.TenantPageData {
-	apps, _ := pgh.appSvc.List(req.Context(), usr.Username, usr.Groups, tenantNS)
+	appList, _ := pgh.appSvc.List(req.Context(), usr.Username, usr.Groups, tenantNS)
 	schemas, _ := pgh.schemaSvc.List(req.Context(), usr.Username, usr.Groups)
 
 	// Direct children of this tenant, scoped to what the user can see:
@@ -474,16 +474,17 @@ func (pgh *PageHandler) buildTenantPageData(
 	}
 
 	return view.TenantPageData{
-		Tenant:     *tenant,
-		Usage:      usage,
-		Quotas:     quotas,
-		Children:   children,
-		Apps:       apps,
-		Schemas:    schemas,
-		Events:     events,
-		Query:      req.URL.Query().Get("q"),
-		KindFilter: req.URL.Query().Get("kind"),
-		SortBy:     req.URL.Query().Get("sort"),
+		Tenant:        *tenant,
+		Usage:         usage,
+		Quotas:        quotas,
+		Children:      children,
+		Apps:          appList.Items,
+		AppsTruncated: appList.Truncated,
+		Schemas:       schemas,
+		Events:        events,
+		Query:         req.URL.Query().Get("q"),
+		KindFilter:    req.URL.Query().Get("kind"),
+		SortBy:        req.URL.Query().Get("sort"),
 	}
 }
 
@@ -493,14 +494,14 @@ func (pgh *PageHandler) aggregateApps(
 	var allApps []k8s.Application
 
 	for idx := range tenants {
-		apps, err := pgh.appSvc.List(req.Context(), usr.Username, usr.Groups, tenants[idx].Namespace)
+		appList, err := pgh.appSvc.List(req.Context(), usr.Username, usr.Groups, tenants[idx].Namespace)
 		if err != nil {
 			pgh.log.Error("listing apps", "tenant", tenants[idx].Namespace, "error", err)
 
 			continue
 		}
 
-		allApps = append(allApps, apps...)
+		allApps = append(allApps, appList.Items...)
 	}
 
 	return allApps

@@ -27,16 +27,21 @@ type TenantWithUsage struct {
 
 // TenantPageData holds data for the tenant detail page.
 type TenantPageData struct {
-	Tenant     k8s.Tenant
-	Usage      k8s.TenantUsage          // Aggregated resource usage for the workload namespace.
-	Quotas     []k8s.ResourceQuotaEntry // Flattened ResourceQuota entries; empty if none configured.
-	Children   []k8s.Tenant             // Direct child tenants, filtered to those visible to the user.
-	Apps       []k8s.Application
-	Schemas    []k8s.AppSchema
-	Events     []k8s.Event // Recent k8s events in the tenant's workload namespace.
-	Query      string
-	KindFilter string
-	SortBy     string
+	Tenant   k8s.Tenant
+	Usage    k8s.TenantUsage          // Aggregated resource usage for the workload namespace.
+	Quotas   []k8s.ResourceQuotaEntry // Flattened ResourceQuota entries; empty if none configured.
+	Children []k8s.Tenant             // Direct child tenants, filtered to those visible to the user.
+	Apps     []k8s.Application
+	// AppsTruncated is true when ApplicationService.List hit its
+	// hard cap and the API server returned a continue token. The
+	// template renders a warning so the user understands the
+	// client-side filter/sort is running over a bounded window.
+	AppsTruncated bool
+	Schemas       []k8s.AppSchema
+	Events        []k8s.Event // Recent k8s events in the tenant's workload namespace.
+	Query         string
+	KindFilter    string
+	SortBy        string
 }
 
 // AppDetailData holds data for the application detail page.

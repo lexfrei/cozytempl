@@ -19,15 +19,15 @@ func (pgh *PageHandler) AppTableFragment(writer http.ResponseWriter, req *http.R
 
 	tenant := req.URL.Query().Get("tenant")
 
-	apps, err := pgh.appSvc.List(req.Context(), usr.Username, usr.Groups, tenant)
+	appList, err := pgh.appSvc.List(req.Context(), usr.Username, usr.Groups, tenant)
 	if err != nil {
 		pgh.log.Error("listing apps for fragment", "tenant", tenant, "error", err)
 
-		apps = []k8s.Application{}
+		appList = k8s.ApplicationList{}
 	}
 
-	apps = filterAndSortApps(
-		apps,
+	apps := filterAndSortApps(
+		appList.Items,
 		req.URL.Query().Get("q"),
 		req.URL.Query().Get("kind"),
 		req.URL.Query().Get("sort"),

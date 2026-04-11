@@ -969,6 +969,32 @@ tr[hx-get]:hover {
   margin-bottom: 4px;
 }
 
+/* Truncated-list warning banner. Shown above the app table when
+   ApplicationService.List hit its hard cap so the user knows
+   filter/sort operates on a bounded window. Warning-amber on
+   subtle amber background so it reads as "informational, not
+   catastrophic". */
+.truncated-banner {
+  margin: 12px 16px 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--color-warning);
+  background: var(--color-warning-bg);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--color-text);
+}
+
+.truncated-banner strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--color-warning);
+}
+
+.truncated-banner span {
+  color: var(--color-text-secondary);
+}
+
 /* Error pages (404 / 403 / 500). Rendered by page/error.templ into
    main-content so htmx in-app navigation to a missing resource lands
    on a branded screen instead of a plain-text http.Error body. */

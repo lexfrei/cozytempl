@@ -76,21 +76,49 @@ func NewApplicationService(baseCfg *rest.Config, schemaSvc *SchemaService) *Appl
 	return &ApplicationService{baseCfg: baseCfg, schemaSvc: schemaSvc}
 }
 
-// List returns all applications in a tenant namespace by querying each known app CRD.
+// AppListLimit caps how many applications a single List call
+// returns. Picked high enough that a normal tenant (1-50 apps)
+// never hits it and low enough that a pathological 10 000-app
+// tenant can't OOM cozytempl or blow out the HTML response.
+// A truncated result surfaces to the UI so the user can see
+// that not every app is on screen.
+const AppListLimit int64 = 500
+
+// ApplicationList is the pagination-aware return shape of
+// ApplicationService.List. Items holds the current page (up to
+// AppListLimit entries) and Truncated is set when the k8s API
+// returned a continue token — i.e. there is at least one more
+// page we chose not to fetch. Callers render the truncation
+// warning in the UI so the user knows the filter/sort they're
+// looking at is over a subset.
+type ApplicationList struct {
+	Items     []Application
+	Truncated bool
+}
+
+// List returns applications in a tenant namespace, capped at
+// AppListLimit. The cap is deliberate: the UI does client-side
+// filter and sort over the returned slice, so paginating the
+// full set would produce confusing partial-data behaviour
+// ("why does this filter match 3 of 10 000 apps?"). Better to
+// return a bounded window and surface the truncation warning.
 func (asv *ApplicationService) List(
 	ctx context.Context, username string, groups []string, tenant string,
-) ([]Application, error) {
+) (ApplicationList, error) {
 	client, err := NewImpersonatingClient(asv.baseCfg, username, groups)
 	if err != nil {
-		return nil, err
+		return ApplicationList{}, err
 	}
 
-	// Also list HelmReleases with the cozystack label as a unified view
+	// HelmReleases with the cozystack label are the unified view
+	// over every app kind. One List call per tenant namespace is
+	// still much cheaper than fanning out per CRD.
 	hrList, err := client.Resource(HelmReleaseGVR()).Namespace(tenant).List(ctx, metav1.ListOptions{
 		LabelSelector: cozyAppKindLabel,
+		Limit:         AppListLimit,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing applications in %s: %w", tenant, err)
+		return ApplicationList{}, fmt.Errorf("listing applications in %s: %w", tenant, err)
 	}
 
 	apps := make([]Application, 0, len(hrList.Items))
@@ -100,7 +128,10 @@ func (asv *ApplicationService) List(
 		apps = append(apps, app)
 	}
 
-	return apps, nil
+	return ApplicationList{
+		Items:     apps,
+		Truncated: hrList.GetContinue() != "",
+	}, nil
 }
 
 // Get returns a single application with full details.
