@@ -57,7 +57,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Trivy vulnerability scanner (filesystem)
-        uses: aquasecurity/trivy-action@master
+        # Pin to a specific trivy-action tag (not @master) so a
+        # broken upstream install script can't turn this job red
+        # overnight. 0.35.0 is the same pin lexfrei/cloudflare-
+        # tunnel-gateway-controller uses; Renovate will upgrade
+        # it on a weekly schedule per .github/renovate.json5.
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -102,9 +107,17 @@ jobs:
         run: templ generate
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        # v9 of the action is required for golangci-lint v2, which
+        # in turn is required because our .golangci.yml uses the
+        # v2 config schema (linters.default: all / linters.disable
+        # shape). The older v6 action's "latest" bound resolves to
+        # golangci-lint v1.64.8 — built with Go 1.24 — and then
+        # refuses to load a v2 config against a go.mod that
+        # targets Go 1.26.2. Pin both the action and the linter
+        # binary so a drift cannot re-break the job.
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.11.4
           args: ./cmd/... ./internal/... ./static/...
 
       - name: govulncheck
