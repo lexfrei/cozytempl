@@ -17,6 +17,7 @@ import (
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/config"
 	"github.com/lexfrei/cozytempl/internal/handler"
+	"github.com/lexfrei/cozytempl/internal/i18n"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/tracing"
 	"github.com/lexfrei/cozytempl/static"
@@ -98,6 +99,16 @@ func run() error {
 	// here if the deployment eventually needs a dedicated sink.
 	auditLog := audit.NewSlogLogger(log)
 
+	// i18n bundle: every TOML file under internal/i18n/locales/
+	// is loaded into a go-i18n bundle. Failure here is fatal
+	// because a broken translation file silently degrades the
+	// UI — better to crash at startup than render [message.id]
+	// to real users.
+	i18nBundle, err := i18n.NewBundle()
+	if err != nil {
+		return fmt.Errorf("loading i18n bundle: %w", err)
+	}
+
 	pageHandler := handler.NewPageHandler(handler.PageHandlerDeps{
 		TenantSvc: tenantSvc,
 		AppSvc:    appSvc,
@@ -106,6 +117,7 @@ func run() error {
 		EventSvc:  eventSvc,
 		LogSvc:    logSvc,
 		Audit:     auditLog,
+		I18n:      i18nBundle,
 		DevMode:   cfg.DevMode,
 		Log:       log,
 	})
@@ -116,6 +128,7 @@ func run() error {
 		SchemaHandler: api.NewSchemaHandler(schemaSvc, log),
 		SSEHandler:    api.NewSSEHandler(watcher, k8sCfg, log),
 		PageHandler:   pageHandler,
+		I18n:          i18nBundle,
 		StaticFS:      static.FS,
 		Log:           log,
 		DevMode:       cfg.DevMode,

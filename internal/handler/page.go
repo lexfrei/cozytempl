@@ -11,6 +11,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/auth"
+	"github.com/lexfrei/cozytempl/internal/i18n"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/internal/view/layout"
@@ -32,6 +33,11 @@ type PageHandler struct {
 	// NewPageHandler substitutes a NopLogger if the caller forgets
 	// so the rest of the code can deref without a guard.
 	auditLog audit.Logger
+	// i18nBundle is the shared translation bundle. Handlers pull a
+	// request-scoped Localizer out of the context and pass it into
+	// templ templates so every user-visible string honours the
+	// caller's locale.
+	i18nBundle *i18n.Bundle
 	// devMode drives the dev-mode banner at the top of every page.
 	// Set at construction time from config so the layout template
 	// does not need to reach into global state.
@@ -50,6 +56,7 @@ type PageHandlerDeps struct {
 	EventSvc  *k8s.EventService
 	LogSvc    *k8s.LogService
 	Audit     audit.Logger
+	I18n      *i18n.Bundle
 	Log       *slog.Logger
 	DevMode   bool
 }
@@ -64,15 +71,16 @@ func NewPageHandler(deps PageHandlerDeps) *PageHandler {
 	}
 
 	return &PageHandler{
-		tenantSvc: deps.TenantSvc,
-		appSvc:    deps.AppSvc,
-		schemaSvc: deps.SchemaSvc,
-		usageSvc:  deps.UsageSvc,
-		eventSvc:  deps.EventSvc,
-		logSvc:    deps.LogSvc,
-		auditLog:  auditLog,
-		devMode:   deps.DevMode,
-		log:       deps.Log,
+		tenantSvc:  deps.TenantSvc,
+		appSvc:     deps.AppSvc,
+		schemaSvc:  deps.SchemaSvc,
+		usageSvc:   deps.UsageSvc,
+		eventSvc:   deps.EventSvc,
+		logSvc:     deps.LogSvc,
+		auditLog:   auditLog,
+		i18nBundle: deps.I18n,
+		devMode:    deps.DevMode,
+		log:        deps.Log,
 	}
 }
 
@@ -261,6 +269,61 @@ func (pgh *PageHandler) NotFoundPage(writer http.ResponseWriter, req *http.Reque
 		"Page not found",
 		"The page '"+req.URL.Path+"' does not exist. Use the navigation on the left or head back to the dashboard.")
 }
+
+// SetLanguage persists the user's chosen locale in a cookie and
+// redirects back to the page they came from. POST because writing
+// a cookie is a mutation. The Referer header drives the redirect
+// target so the language switch feels in-place — no forced
+// navigation to the dashboard.
+func (pgh *PageHandler) SetLanguage(writer http.ResponseWriter, req *http.Request) {
+	// Cap the form body before ParseForm so a hostile client
+	// can't stream megabytes of form data. 1 KB is plenty for
+	// a single `lang=xx` field.
+	req.Body = http.MaxBytesReader(writer, req.Body, maxLangFormBytes)
+
+	parseErr := req.ParseForm()
+	if parseErr != nil {
+		http.Error(writer, "bad request", http.StatusBadRequest)
+
+		return
+	}
+
+	chosen := req.FormValue("lang")
+
+	tag, ok := i18n.LookupSupported(chosen)
+	if !ok {
+		http.Error(writer, "unsupported locale", http.StatusBadRequest)
+
+		return
+	}
+
+	i18n.SetLocaleCookie(writer, tag)
+
+	// Prefer Referer so the switch stays on the current page.
+	// Fall back to the dashboard if the header is missing
+	// (direct curl, privacy mode, etc).
+	target := req.Header.Get("Referer")
+	if target == "" {
+		target = "/"
+	}
+
+	// Use HX-Redirect when the request came from htmx so the
+	// browser does a full reload to re-render every translated
+	// string. Without the full reload the already-swapped
+	// fragments keep their old-language text.
+	if req.Header.Get("Hx-Request") != "" {
+		writer.Header().Set("Hx-Redirect", target)
+		writer.WriteHeader(http.StatusOK)
+
+		return
+	}
+
+	http.Redirect(writer, req, target, http.StatusSeeOther)
+}
+
+// maxLangFormBytes is the body cap on POST /lang. The form has
+// exactly one field so a kilobyte is wildly generous.
+const maxLangFormBytes = 1024
 
 func buildMarketplaceData(schemas []k8s.AppSchema, query, categoryFilter, tagFilter string) view.MarketplaceData {
 	filtered := filterSchemas(schemas, query, categoryFilter, tagFilter)
@@ -524,6 +587,18 @@ func (pgh *PageHandler) aggregateApps(
 	return allApps
 }
 
+// localizer returns the per-request Localizer the i18n middleware
+// attached to ctx. Handlers pass the result to page templates so
+// every user-visible string honours the caller's locale. Falls
+// back to an English Localizer if the bundle is nil (tests).
+func (pgh *PageHandler) localizer(req *http.Request) *i18n.Localizer {
+	if pgh.i18nBundle == nil {
+		return nil
+	}
+
+	return pgh.i18nBundle.LocalizerFromContext(req.Context())
+}
+
 // recordAudit is the ergonomic shorthand handlers use to emit an
 // audit event. It pulls the correlation ID out of the request
 // context, fills in actor/groups from the auth middleware, and
@@ -568,8 +643,15 @@ func (pgh *PageHandler) renderError(
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 	writer.WriteHeader(status)
 
+	loc := pgh.localizer(req)
 	statusText := http.StatusText(status)
-	content := page.ErrorPage(status, statusText, title, detail, "Back to dashboard", "/")
+	backLabel := "Back to dashboard"
+
+	if loc != nil {
+		backLabel = loc.T("action.backToDashboard")
+	}
+
+	content := page.ErrorPage(status, statusText, title, detail, backLabel, "/")
 
 	var renderErr error
 
@@ -582,6 +664,7 @@ func (pgh *PageHandler) renderError(
 			ActivePage:   "",
 			ActiveTenant: "",
 			DevMode:      pgh.devMode,
+			Localizer:    loc,
 		})
 		renderErr = wrapped.Render(templ.WithChildren(req.Context(), content), writer)
 	}
@@ -605,11 +688,13 @@ func (pgh *PageHandler) render(
 
 	var renderErr error
 
+	loc := pgh.localizer(req)
+
 	if req.Header.Get("Hx-Request") != "" {
 		// Render page content + OOB sidebar swap to update active state
 		renderErr = content.Render(req.Context(), writer)
 		if renderErr == nil {
-			renderErr = partial.SidebarOOB(tenants, activePage, activeTenant).Render(req.Context(), writer)
+			renderErr = partial.SidebarOOB(tenants, activePage, activeTenant, loc).Render(req.Context(), writer)
 		}
 	} else {
 		wrapped := layout.App(layout.AppProps{
@@ -618,6 +703,7 @@ func (pgh *PageHandler) render(
 			ActivePage:   activePage,
 			ActiveTenant: activeTenant,
 			DevMode:      pgh.devMode,
+			Localizer:    loc,
 		})
 		renderErr = wrapped.Render(templ.WithChildren(req.Context(), content), writer)
 	}

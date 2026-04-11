@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"github.com/lexfrei/cozytempl/internal/i18n"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
@@ -8,12 +9,18 @@ import (
 // AppProps bundles everything the authenticated layout needs. Grouped
 // into a struct so new fields (e.g. DevMode for the auth-disabled
 // banner) don't ripple into every render call site.
+//
+// Localizer is nil-safe: every call site that reads it via
+// partial.T(L, "id") handles the nil case by echoing the message id,
+// so a template rendered outside the middleware chain still displays
+// something readable instead of crashing.
 type AppProps struct {
 	Username     string
 	Tenants      []k8s.Tenant
 	ActivePage   string
 	ActiveTenant string
 	DevMode      bool
+	Localizer    *i18n.Localizer
 }
 
 templ App(props AppProps) {
@@ -25,13 +32,13 @@ templ App(props AppProps) {
 		<div id="toast-container" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
 		if props.DevMode {
-			@devModeBanner()
+			@devModeBanner(props.Localizer)
 		}
 
 		<div class="app-layout">
-			@partial.Header(props.Username)
+			@partial.Header(props.Username, props.Localizer)
 			<div class="sidebar-overlay"></div>
-			@partial.Sidebar(props.Tenants, props.ActivePage, props.ActiveTenant)
+			@partial.Sidebar(props.Tenants, props.ActivePage, props.ActiveTenant, props.Localizer)
 
 			<main id="main-content" class="main-content" tabindex="-1">
 				{ children... }
@@ -44,16 +51,15 @@ templ App(props AppProps) {
 // active. Bright colours and a link to the profile page so anyone who
 // accidentally hits a dev-mode instance immediately sees it and can
 // check what impersonated identity they are running as.
-templ devModeBanner() {
+templ devModeBanner(loc *i18n.Localizer) {
 	<div class="dev-mode-banner">
-		<span class="dev-mode-banner-label">DEV MODE</span>
+		<span class="dev-mode-banner-label">{ partial.T(loc, "devMode.label") }</span>
 		<span>
-			Authentication is disabled. Every request is treated as
-			<code>dev-admin</code> with <code>system:masters</code>.
+			@partial.HTMLMessage(loc, "devMode.body")
 		</span>
 		<a href="/profile"
 			hx-get="/profile"
 			hx-target="#main-content"
-			hx-push-url="true">View profile</a>
+			hx-push-url="true">{ partial.T(loc, "devMode.viewProfile") }</a>
 	</div>
 }

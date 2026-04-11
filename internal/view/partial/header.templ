@@ -1,9 +1,15 @@
 package partial
 
-templ Header(username string) {
+import (
+	"github.com/lexfrei/cozytempl/internal/i18n"
+)
+
+templ Header(username string, loc *i18n.Localizer) {
 	<header class="header" role="banner">
 		<div class="flex items-center gap-3">
-			<button class="burger" type="button" aria-label="Toggle navigation menu" aria-controls="sidebar">
+			<button class="burger" type="button"
+				aria-label={ T(loc, "nav.toggleMenu") }
+				aria-controls="sidebar">
 				<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false">
 					<line x1="3" y1="6" x2="21" y2="6"></line>
 					<line x1="3" y1="12" x2="21" y2="12"></line>
@@ -15,7 +21,7 @@ templ Header(username string) {
 				hx-target="#main-content"
 				hx-push-url="true"
 				class="header-logo"
-				aria-label="cozytempl home">
+				aria-label={ T(loc, "header.home") }>
 				<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
 					<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
 					<polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
@@ -25,6 +31,7 @@ templ Header(username string) {
 			</a>
 		</div>
 		<div class="header-actions">
+			@LanguageSwitcher(loc)
 			<button id="theme-toggle" type="button" class="btn-icon"
 				aria-label="Toggle theme"
 				title="Toggle theme">&#9728;</button>
@@ -34,9 +41,34 @@ templ Header(username string) {
 				hx-push-url="true"
 				class="text-sm text-muted"
 				style="text-decoration: none;"
-				title="View profile and group membership"
-				aria-label={ "Signed in as " + username + ". Open profile." }>{ username }</a>
-			<a href="/auth/logout" class="btn btn-sm">Logout</a>
+				title={ T(loc, "nav.profile") }
+				aria-label={ T(loc, "header.signedInAs", map[string]any{"Name": username}) }>{ username }</a>
+			<a href="/auth/logout" class="btn btn-sm">{ T(loc, "nav.logout") }</a>
 		</div>
 	</header>
+}
+
+// LanguageSwitcher renders a small dropdown form that POSTs the
+// chosen locale to /lang. Pure HTML, no JavaScript — the form
+// relies on the browser submitting the <select> as a form value.
+// Using a full-page POST rather than htmx because a language
+// change needs the whole UI re-rendered, not a fragment swap.
+templ LanguageSwitcher(loc *i18n.Localizer) {
+	<form method="POST" action="/lang" class="lang-switcher" role="group" aria-label={ T(loc, "lang.label") }>
+		<label class="sr-only" for="lang-select">{ T(loc, "lang.label") }</label>
+		<select id="lang-select" name="lang" class="lang-select" onchange="this.form.submit()">
+			for _, tag := range localeOptions() {
+				<option value={ tag } selected?={ loc != nil && loc.Tag().String() == tag }>
+					{ T(loc, "lang." + tag) }
+				</option>
+			}
+		</select>
+	</form>
+}
+
+// localeOptions is the fixed option list for the language
+// switcher. Kept as a tiny helper so the templ template doesn't
+// have to reference internal/i18n's SupportedLocales directly.
+func localeOptions() []string {
+	return []string{"en", "ru", "kk", "zh"}
 }

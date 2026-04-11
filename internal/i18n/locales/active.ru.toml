@@ -1,0 +1,161 @@
+# Русский (Russian). Keys mirror active.en.toml 1:1. If a key is
+# missing here, go-i18n falls back through the matcher chain to
+# English, so the UI still works — it just shows the English
+# string for the missing entry.
+
+# --- Navigation ---
+
+[nav.dashboard]
+other = "Обзор"
+
+[nav.marketplace]
+other = "Маркетплейс"
+
+[nav.tenants]
+other = "Тенанты"
+
+[nav.profile]
+other = "Профиль"
+
+[nav.logout]
+other = "Выйти"
+
+[nav.primaryLabel]
+other = "Основная навигация"
+
+[nav.toggleMenu]
+other = "Меню"
+
+[nav.tenantsHeading]
+other = "Тенанты"
+
+[nav.sectionHeading]
+other = "Навигация"
+
+[header.home]
+other = "Главная cozytempl"
+
+[header.signedInAs]
+other = "Вы вошли как {{.Name}}. Открыть профиль."
+
+# --- Common actions ---
+
+[action.save]
+other = "Сохранить"
+
+[action.cancel]
+other = "Отмена"
+
+[action.create]
+other = "Создать"
+
+[action.edit]
+other = "Изменить"
+
+[action.delete]
+other = "Удалить"
+
+[action.close]
+other = "Закрыть"
+
+[action.backToDashboard]
+other = "Вернуться на обзор"
+
+[action.browseMarketplace]
+other = "Открыть маркетплейс"
+
+[action.skipToContent]
+other = "Перейти к основному содержимому"
+
+# --- Page titles ---
+
+[page.dashboard.title]
+other = "Обзор"
+
+[page.marketplace.title]
+other = "Маркетплейс"
+
+[page.tenants.title]
+other = "Тенанты"
+
+[page.profile.title]
+other = "Профиль"
+
+# --- Empty states ---
+
+[empty.tenants.title]
+other = "Пока нет тенантов"
+
+[empty.tenants.body]
+other = "Тенанты группируют приложения в изолированные неймспейсы. Создайте первый, чтобы начать."
+
+[empty.tenants.cta]
+other = "Создать первый тенант"
+
+[empty.apps.title]
+other = "Пока нет приложений"
+
+[empty.apps.body]
+other = "Выберите тип из маркетплейса — cozytempl положит соответствующий Cozystack CRD в неймспейс этого тенанта и подставит поля формы по схеме."
+
+[empty.apps.cta]
+other = "Создать первое приложение"
+
+# --- Dev-mode banner ---
+
+[devMode.label]
+other = "DEV MODE"
+
+[devMode.body]
+other = "Аутентификация отключена. Каждый запрос обрабатывается как <code>dev-admin</code> с группой <code>system:masters</code>."
+
+[devMode.viewProfile]
+other = "Профиль"
+
+# --- Error pages ---
+
+[error.notFound.title]
+other = "Страница не найдена"
+
+[error.notFound.body]
+other = "Страница '{{.Path}}' не существует. Воспользуйтесь навигацией слева или вернитесь на обзор."
+
+[error.tenantNotFound.title]
+other = "Тенант не найден"
+
+[error.tenantNotFound.body]
+other = "Тенант '{{.Tenant}}' не существует либо у вас нет прав на его просмотр."
+
+[error.appNotFound.title]
+other = "Приложение не найдено"
+
+[error.appNotFound.body]
+other = "Приложение '{{.App}}' в тенанте '{{.Tenant}}' не существует либо у вас нет прав на его просмотр."
+
+# --- Theme toggle ---
+
+[theme.switchToLight]
+other = "Переключить на светлую тему"
+
+[theme.switchToDark]
+other = "Переключить на тёмную тему"
+
+[theme.switchToSystem]
+other = "Переключить на системную тему"
+
+# --- Language switcher ---
+
+[lang.label]
+other = "Язык"
+
+[lang.en]
+other = "English"
+
+[lang.ru]
+other = "Русский"
+
+[lang.kk]
+other = "Қазақша"
+
+[lang.zh]
+other = "中文"

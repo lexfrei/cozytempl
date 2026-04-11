@@ -1,0 +1,164 @@
+# English — the canonical source of truth for message IDs.
+#
+# Convention: IDs use dot-separated namespaces (nav.dashboard,
+# action.save, error.forbidden). Never rename an ID after shipping
+# it — translation files in other languages key on the ID, and a
+# rename leaves every non-English locale with a missing key.
+# Deprecate by replacing the value, not the ID.
+
+# --- Navigation (sidebar + header) ---
+
+[nav.dashboard]
+other = "Dashboard"
+
+[nav.marketplace]
+other = "Marketplace"
+
+[nav.tenants]
+other = "Manage Tenants"
+
+[nav.profile]
+other = "Profile"
+
+[nav.logout]
+other = "Logout"
+
+[nav.primaryLabel]
+other = "Primary navigation"
+
+[nav.toggleMenu]
+other = "Toggle navigation menu"
+
+[nav.tenantsHeading]
+other = "Tenants"
+
+[nav.sectionHeading]
+other = "Navigation"
+
+[header.home]
+other = "cozytempl home"
+
+[header.signedInAs]
+other = "Signed in as {{.Name}}. Open profile."
+
+# --- Common actions ---
+
+[action.save]
+other = "Save"
+
+[action.cancel]
+other = "Cancel"
+
+[action.create]
+other = "Create"
+
+[action.edit]
+other = "Edit"
+
+[action.delete]
+other = "Delete"
+
+[action.close]
+other = "Close"
+
+[action.backToDashboard]
+other = "Back to dashboard"
+
+[action.browseMarketplace]
+other = "Browse marketplace"
+
+[action.skipToContent]
+other = "Skip to main content"
+
+# --- Page titles & page headers ---
+
+[page.dashboard.title]
+other = "Dashboard"
+
+[page.marketplace.title]
+other = "Marketplace"
+
+[page.tenants.title]
+other = "Tenants"
+
+[page.profile.title]
+other = "Profile"
+
+# --- Empty states ---
+
+[empty.tenants.title]
+other = "No tenants yet"
+
+[empty.tenants.body]
+other = "Tenants group applications into isolated workload namespaces. Create one to get started."
+
+[empty.tenants.cta]
+other = "Create your first tenant"
+
+[empty.apps.title]
+other = "No applications yet"
+
+[empty.apps.body]
+other = "Pick a kind from the marketplace and cozytempl will drop the matching Cozystack CRD into this tenant's namespace with a schema-driven form."
+
+[empty.apps.cta]
+other = "Create your first application"
+
+# --- Dev-mode banner ---
+
+[devMode.label]
+other = "DEV MODE"
+
+[devMode.body]
+other = "Authentication is disabled. Every request is treated as <code>dev-admin</code> with <code>system:masters</code>."
+
+[devMode.viewProfile]
+other = "View profile"
+
+# --- Error pages ---
+
+[error.notFound.title]
+other = "Page not found"
+
+[error.notFound.body]
+other = "The page '{{.Path}}' does not exist. Use the navigation on the left or head back to the dashboard."
+
+[error.tenantNotFound.title]
+other = "Tenant not found"
+
+[error.tenantNotFound.body]
+other = "The tenant '{{.Tenant}}' either does not exist or you do not have permission to view it."
+
+[error.appNotFound.title]
+other = "Application not found"
+
+[error.appNotFound.body]
+other = "The application '{{.App}}' in tenant '{{.Tenant}}' either does not exist or you do not have permission to view it."
+
+# --- Theme toggle ---
+
+[theme.switchToLight]
+other = "Switch to light theme"
+
+[theme.switchToDark]
+other = "Switch to dark theme"
+
+[theme.switchToSystem]
+other = "Switch to system theme"
+
+# --- Language switcher ---
+
+[lang.label]
+other = "Language"
+
+[lang.en]
+other = "English"
+
+[lang.ru]
+other = "Русский"
+
+[lang.kk]
+other = "Қазақша"
+
+[lang.zh]
+other = "中文"

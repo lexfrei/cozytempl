@@ -10,6 +10,7 @@ import (
 
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/handler"
+	"github.com/lexfrei/cozytempl/internal/i18n"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -28,6 +29,7 @@ type RouterConfig struct {
 	SchemaHandler *SchemaHandler
 	SSEHandler    *SSEHandler
 	PageHandler   *handler.PageHandler
+	I18n          *i18n.Bundle
 	StaticFS      embed.FS
 	Log           *slog.Logger
 	DevMode       bool
@@ -177,13 +179,20 @@ func Router(cfg *RouterConfig) http.Handler {
 	//                        pulled from the enriched context.
 	//   withSecurityHeaders: sets CSP/HSTS/etc on every response,
 	//                        including error pages and 404s.
+	//   i18n.Middleware:     resolves the user's locale (cookie →
+	//                        Accept-Language → English) and attaches
+	//                        a Localizer to the request context.
+	//                        Every templ template reads it from
+	//                        there. Placed inside the security/log
+	//                        layers but outside the timeout wrapper
+	//                        so a context cancel still has a Localizer.
 	//   withRequestTimeout:  caps handler execution (bypassed for SSE).
+	inner := withSecurityHeaders(cfg.I18n.Middleware(withRequestTimeout(mux)))
+
 	return otelhttp.NewHandler(
 		withRequestID(
 			withMetrics(
-				withAccessLog(cfg.Log,
-					withSecurityHeaders(withRequestTimeout(mux)),
-				),
+				withAccessLog(cfg.Log, inner),
 			),
 		),
 		"cozytempl",
@@ -220,6 +229,11 @@ func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {
 	pageMux.HandleFunc("GET /fragments/tenant-edit", pgh.TenantEditFragment)
 	pageMux.HandleFunc("GET /fragments/app-edit", pgh.AppEditFragment)
 	pageMux.HandleFunc("GET /fragments/secrets/reveal", pgh.SecretRevealFragment)
+
+	// Language switcher. POST because it writes a cookie; the
+	// handler redirects back to the Referer (or dashboard) and
+	// the next render picks up the new locale via i18n middleware.
+	pageMux.HandleFunc("POST /lang", pgh.SetLanguage)
 
 	// Catch-all 404 for unknown GET paths. Placed last so it only
 	// matches when nothing above did. The handler renders the

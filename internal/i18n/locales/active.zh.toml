@@ -1,0 +1,158 @@
+# 中文 (Simplified Chinese). Keys mirror active.en.toml 1:1.
+
+# --- Navigation ---
+
+[nav.dashboard]
+other = "控制台"
+
+[nav.marketplace]
+other = "应用市场"
+
+[nav.tenants]
+other = "租户管理"
+
+[nav.profile]
+other = "个人资料"
+
+[nav.logout]
+other = "退出"
+
+[nav.primaryLabel]
+other = "主导航"
+
+[nav.toggleMenu]
+other = "切换导航菜单"
+
+[nav.tenantsHeading]
+other = "租户"
+
+[nav.sectionHeading]
+other = "导航"
+
+[header.home]
+other = "cozytempl 首页"
+
+[header.signedInAs]
+other = "已登录为 {{.Name}}。打开个人资料。"
+
+# --- Common actions ---
+
+[action.save]
+other = "保存"
+
+[action.cancel]
+other = "取消"
+
+[action.create]
+other = "创建"
+
+[action.edit]
+other = "编辑"
+
+[action.delete]
+other = "删除"
+
+[action.close]
+other = "关闭"
+
+[action.backToDashboard]
+other = "返回控制台"
+
+[action.browseMarketplace]
+other = "浏览应用市场"
+
+[action.skipToContent]
+other = "跳到主要内容"
+
+# --- Page titles ---
+
+[page.dashboard.title]
+other = "控制台"
+
+[page.marketplace.title]
+other = "应用市场"
+
+[page.tenants.title]
+other = "租户"
+
+[page.profile.title]
+other = "个人资料"
+
+# --- Empty states ---
+
+[empty.tenants.title]
+other = "暂无租户"
+
+[empty.tenants.body]
+other = "租户将应用分组到隔离的工作负载命名空间中。创建一个以开始使用。"
+
+[empty.tenants.cta]
+other = "创建第一个租户"
+
+[empty.apps.title]
+other = "暂无应用"
+
+[empty.apps.body]
+other = "从应用市场选择一种类型,cozytempl 会根据模式将相应的 Cozystack CRD 放入此租户的命名空间并自动生成表单。"
+
+[empty.apps.cta]
+other = "创建第一个应用"
+
+# --- Dev-mode banner ---
+
+[devMode.label]
+other = "DEV MODE"
+
+[devMode.body]
+other = "身份验证已禁用。所有请求都被视为 <code>dev-admin</code>,属于 <code>system:masters</code> 组。"
+
+[devMode.viewProfile]
+other = "查看个人资料"
+
+# --- Error pages ---
+
+[error.notFound.title]
+other = "页面未找到"
+
+[error.notFound.body]
+other = "页面 '{{.Path}}' 不存在。请使用左侧导航或返回控制台。"
+
+[error.tenantNotFound.title]
+other = "租户未找到"
+
+[error.tenantNotFound.body]
+other = "租户 '{{.Tenant}}' 不存在,或您没有查看权限。"
+
+[error.appNotFound.title]
+other = "应用未找到"
+
+[error.appNotFound.body]
+other = "租户 '{{.Tenant}}' 中的应用 '{{.App}}' 不存在,或您没有查看权限。"
+
+# --- Theme toggle ---
+
+[theme.switchToLight]
+other = "切换到浅色主题"
+
+[theme.switchToDark]
+other = "切换到深色主题"
+
+[theme.switchToSystem]
+other = "切换到系统主题"
+
+# --- Language switcher ---
+
+[lang.label]
+other = "语言"
+
+[lang.en]
+other = "English"
+
+[lang.ru]
+other = "Русский"
+
+[lang.kk]
+other = "Қазақша"
+
+[lang.zh]
+other = "中文"

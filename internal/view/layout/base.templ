@@ -21,6 +21,11 @@ templ Base(title string) {
 		<script defer src={ "/static/dist/bundle.js?v=" + static.AssetVersion() }></script>
 	</head>
 	<body>
+		<!-- Skip link uses English-only text by design: it is only
+		     visible to keyboard users mid-tab, and the alternative
+		     (threading the Localizer through every template that
+		     calls Base) is a heavy refactor for a single string.
+		     Revisit if a screen-reader user complains. -->
 		<a class="skip-link" href="#main-content">Skip to main content</a>
 		<div id="htmx-progress-bar" aria-hidden="true"></div>
 		{ children... }

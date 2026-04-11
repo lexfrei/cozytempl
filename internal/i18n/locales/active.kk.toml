@@ -1,0 +1,159 @@
+# Қазақша (Kazakh). Keys mirror active.en.toml 1:1. Same fallback
+# rules as the Russian file — missing keys fall through to English.
+
+# --- Navigation ---
+
+[nav.dashboard]
+other = "Басты бет"
+
+[nav.marketplace]
+other = "Маркетплейс"
+
+[nav.tenants]
+other = "Тенанттар"
+
+[nav.profile]
+other = "Профиль"
+
+[nav.logout]
+other = "Шығу"
+
+[nav.primaryLabel]
+other = "Негізгі навигация"
+
+[nav.toggleMenu]
+other = "Мәзірді ауыстыру"
+
+[nav.tenantsHeading]
+other = "Тенанттар"
+
+[nav.sectionHeading]
+other = "Навигация"
+
+[header.home]
+other = "cozytempl басты беті"
+
+[header.signedInAs]
+other = "Сіз {{.Name}} ретінде кірдіңіз. Профильді ашу."
+
+# --- Common actions ---
+
+[action.save]
+other = "Сақтау"
+
+[action.cancel]
+other = "Бас тарту"
+
+[action.create]
+other = "Жасау"
+
+[action.edit]
+other = "Өңдеу"
+
+[action.delete]
+other = "Жою"
+
+[action.close]
+other = "Жабу"
+
+[action.backToDashboard]
+other = "Басты бетке оралу"
+
+[action.browseMarketplace]
+other = "Маркетплейске өту"
+
+[action.skipToContent]
+other = "Негізгі мазмұнға өту"
+
+# --- Page titles ---
+
+[page.dashboard.title]
+other = "Басты бет"
+
+[page.marketplace.title]
+other = "Маркетплейс"
+
+[page.tenants.title]
+other = "Тенанттар"
+
+[page.profile.title]
+other = "Профиль"
+
+# --- Empty states ---
+
+[empty.tenants.title]
+other = "Әзірге тенанттар жоқ"
+
+[empty.tenants.body]
+other = "Тенанттар қолданбаларды оқшау жұмыс кеңістіктерінде топтайды. Бастау үшін біреуін жасаңыз."
+
+[empty.tenants.cta]
+other = "Алғашқы тенантты жасау"
+
+[empty.apps.title]
+other = "Әзірге қолданбалар жоқ"
+
+[empty.apps.body]
+other = "Маркетплейстен түрін таңдаңыз — cozytempl тиісті Cozystack CRD-ні осы тенанттың кеңістігіне салады және схема бойынша форманы толтырады."
+
+[empty.apps.cta]
+other = "Алғашқы қолданбаны жасау"
+
+# --- Dev-mode banner ---
+
+[devMode.label]
+other = "DEV MODE"
+
+[devMode.body]
+other = "Аутентификация өшірілген. Әрбір сұраныс <code>dev-admin</code> ретінде <code>system:masters</code> тобымен өңделеді."
+
+[devMode.viewProfile]
+other = "Профильді көру"
+
+# --- Error pages ---
+
+[error.notFound.title]
+other = "Бет табылмады"
+
+[error.notFound.body]
+other = "'{{.Path}}' беті жоқ. Сол жақтағы навигацияны пайдаланыңыз немесе басты бетке оралыңыз."
+
+[error.tenantNotFound.title]
+other = "Тенант табылмады"
+
+[error.tenantNotFound.body]
+other = "'{{.Tenant}}' тенанты жоқ немесе оны көру үшін рұқсатыңыз жоқ."
+
+[error.appNotFound.title]
+other = "Қолданба табылмады"
+
+[error.appNotFound.body]
+other = "'{{.Tenant}}' тенантындағы '{{.App}}' қолданбасы жоқ немесе оны көру үшін рұқсатыңыз жоқ."
+
+# --- Theme toggle ---
+
+[theme.switchToLight]
+other = "Ашық тақырыпқа ауыстыру"
+
+[theme.switchToDark]
+other = "Қараңғы тақырыпқа ауыстыру"
+
+[theme.switchToSystem]
+other = "Жүйе тақырыбына ауыстыру"
+
+# --- Language switcher ---
+
+[lang.label]
+other = "Тіл"
+
+[lang.en]
+other = "English"
+
+[lang.ru]
+other = "Русский"
+
+[lang.kk]
+other = "Қазақша"
+
+[lang.zh]
+other = "中文"

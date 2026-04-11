@@ -2,26 +2,27 @@ package partial
 
 import (
 	"fmt"
+	"github.com/lexfrei/cozytempl/internal/i18n"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 )
 
 // SidebarOOB renders the sidebar wrapped in an OOB swap wrapper for htmx.
 // Used on partial requests to update sidebar active state alongside #main-content.
-templ SidebarOOB(tenants []k8s.Tenant, activePage string, activeTenant string) {
-	<aside class="sidebar" hx-swap-oob="true" id="sidebar" aria-label="Primary navigation">
-		@sidebarInner(tenants, activePage, activeTenant)
+templ SidebarOOB(tenants []k8s.Tenant, activePage string, activeTenant string, loc *i18n.Localizer) {
+	<aside class="sidebar" hx-swap-oob="true" id="sidebar" aria-label={ T(loc, "nav.primaryLabel") }>
+		@sidebarInner(tenants, activePage, activeTenant, loc)
 	</aside>
 }
 
-templ Sidebar(tenants []k8s.Tenant, activePage string, activeTenant string) {
-	<aside class="sidebar" id="sidebar" aria-label="Primary navigation">
-		@sidebarInner(tenants, activePage, activeTenant)
+templ Sidebar(tenants []k8s.Tenant, activePage string, activeTenant string, loc *i18n.Localizer) {
+	<aside class="sidebar" id="sidebar" aria-label={ T(loc, "nav.primaryLabel") }>
+		@sidebarInner(tenants, activePage, activeTenant, loc)
 	</aside>
 }
 
-templ sidebarInner(tenants []k8s.Tenant, activePage string, activeTenant string) {
+templ sidebarInner(tenants []k8s.Tenant, activePage string, activeTenant string, loc *i18n.Localizer) {
 	<nav class="sidebar-section" aria-labelledby="nav-section-heading">
-		<div id="nav-section-heading" class="sidebar-label">Navigation</div>
+		<div id="nav-section-heading" class="sidebar-label">{ T(loc, "nav.sectionHeading") }</div>
 		<a href="/"
 			hx-get="/"
 			hx-target="#main-content"
@@ -36,7 +37,7 @@ templ sidebarInner(tenants []k8s.Tenant, activePage string, activeTenant string)
 				<rect x="3" y="14" width="7" height="7"></rect>
 				<rect x="14" y="14" width="7" height="7"></rect>
 			</svg>
-			Dashboard
+			{ T(loc, "nav.dashboard") }
 		</a>
 		<a href="/marketplace"
 			hx-get="/marketplace"
@@ -51,7 +52,7 @@ templ sidebarInner(tenants []k8s.Tenant, activePage string, activeTenant string)
 				<line x1="3" y1="7" x2="21" y2="7"></line>
 				<path d="M16 11a4 4 0 01-8 0"></path>
 			</svg>
-			Marketplace
+			{ T(loc, "nav.marketplace") }
 		</a>
 		<a href="/tenants"
 			hx-get="/tenants"
@@ -67,11 +68,11 @@ templ sidebarInner(tenants []k8s.Tenant, activePage string, activeTenant string)
 				<path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
 				<path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
 			</svg>
-			Manage Tenants
+			{ T(loc, "nav.tenants") }
 		</a>
 	</nav>
 	<nav class="sidebar-section" aria-labelledby="tenants-section-heading">
-		<div id="tenants-section-heading" class="sidebar-label">Tenants</div>
+		<div id="tenants-section-heading" class="sidebar-label">{ T(loc, "nav.tenantsHeading") }</div>
 		<ul class="tenant-tree">
 			for _, tenant := range rootTenants(tenants) {
 				@tenantNode(tenant, tenants, activeTenant)

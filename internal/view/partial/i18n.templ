@@ -1,0 +1,32 @@
+package partial
+
+import (
+	"github.com/lexfrei/cozytempl/internal/i18n"
+)
+
+// T is the helper every templ file calls to render a translated
+// string. Accepts a nil *Localizer so tests or detached renderers
+// still work — a nil Localizer echoes the message id wrapped in
+// brackets so the missing translation is visible, never silent.
+//
+// templ templates can't import Go packages directly, so this
+// thin wrapper exists to make `{ partial.T(loc, "id") }` the
+// one-liner call site templ authors use.
+func T(loc *i18n.Localizer, messageID string, templateData ...map[string]any) string {
+	if loc == nil {
+		return "[" + messageID + "]"
+	}
+
+	return loc.T(messageID, templateData...)
+}
+
+// HTMLMessage renders a translated message that legitimately
+// contains HTML (the dev-mode banner uses <code> tags, for
+// instance). The underlying TOML is source-controlled so the
+// content is trusted — we pass it through templ.Raw so the
+// tags survive templ's default auto-escaping.
+//
+// Do NOT use this for anything that includes user data.
+templ HTMLMessage(loc *i18n.Localizer, messageID string) {
+	@templ.Raw(T(loc, messageID))
+}
