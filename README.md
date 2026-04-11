@@ -2,6 +2,21 @@
 
 Web UI for [Cozystack](https://cozystack.io/) platform management.
 
+> **Disclaimer — private initiative, not an official Cozystack project.**
+>
+> Even though the author is a contributor to [cozystack/cozystack](https://github.com/cozystack/cozystack),
+> this implementation is a **personal project** and is **not affiliated
+> with, endorsed by, owned by, or sponsored by** the Cozystack project or
+> the Aenix team. It is not part of the Cozystack roadmap, it ships on
+> its own release cadence, it uses its own CI / release infrastructure,
+> and any bug / feature / security report belongs in this repository's
+> issue tracker — **not** in the upstream Cozystack one.
+>
+> "cozystack" is used only as a technical integration target (this UI
+> talks to the same CRDs upstream ships). Nothing in this repo should
+> be read as representing the views of the Cozystack maintainers or the
+> Aenix company. All trademarks belong to their respective owners.
+
 Go + [templ](https://templ.guide/) + [htmx](https://htmx.org/) + ~25 KB of bundled TypeScript. No SPA framework — every page is server-rendered, htmx handles navigation and mutations, TypeScript only covers genuine client-only concerns (modals, clipboard, progress bar, SSE reducer, click-to-reveal timer, Cmd/Ctrl-K command palette).
 
 ## Quick start

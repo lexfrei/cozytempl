@@ -1,0 +1,12 @@
+# Code owners for cozytempl
+#
+# GitHub auto-requests review from listed owners whenever a PR touches
+# a matched path. Also used by branch protection when CODEOWNERS review
+# is enforced.
+#
+# Single-maintainer repo today — every path falls through to @lexfrei.
+# Subpath-scoped lines can be added below once a domain-specific
+# reviewer shows up (e.g. templ/htmx for the frontend, Helm chart for
+# SRE-leaning contributors).
+
+* @lexfrei
