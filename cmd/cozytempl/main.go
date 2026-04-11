@@ -132,6 +132,7 @@ func run() error {
 		LogSvc:    logSvc,
 		Audit:     auditLog,
 		I18n:      i18nBundle,
+		AuthMode:  cfg.AuthMode,
 		DevMode:   cfg.DevMode,
 		Log:       log,
 	})

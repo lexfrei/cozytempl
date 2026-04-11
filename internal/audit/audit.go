@@ -112,6 +112,7 @@ type Event struct {
 	Resource  string         `json:"resource,omitempty"`
 	Tenant    string         `json:"tenant,omitempty"`
 	Outcome   Outcome        `json:"outcome"`
+	AuthMode  string         `json:"auth_mode,omitempty"`
 	Details   map[string]any `json:"details,omitempty"`
 }
 
@@ -173,6 +174,7 @@ func (logger *SlogLogger) Record(ctx context.Context, event *Event) {
 		slog.String("resource", event.Resource),
 		slog.String("tenant", event.Tenant),
 		slog.String("outcome", string(event.Outcome)),
+		slog.String("auth_mode", event.AuthMode),
 	}
 
 	if len(event.Details) > 0 {

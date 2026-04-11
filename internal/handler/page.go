@@ -11,6 +11,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/auth"
+	"github.com/lexfrei/cozytempl/internal/config"
 	"github.com/lexfrei/cozytempl/internal/i18n"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view"
@@ -42,6 +43,10 @@ type PageHandler struct {
 	// Set at construction time from config so the layout template
 	// does not need to reach into global state.
 	devMode bool
+	// authMode is the mode cozytempl is configured in. Injected
+	// into the profile page and into audit events as the
+	// fallback when RequireAuth did not run (tests, dev mode).
+	authMode config.AuthMode
 }
 
 // PageHandlerDeps groups the constructor arguments. Grew past the
@@ -58,6 +63,7 @@ type PageHandlerDeps struct {
 	Audit     audit.Logger
 	I18n      *i18n.Bundle
 	Log       *slog.Logger
+	AuthMode  config.AuthMode
 	DevMode   bool
 }
 
@@ -80,6 +86,7 @@ func NewPageHandler(deps PageHandlerDeps) *PageHandler {
 		auditLog:   auditLog,
 		i18nBundle: deps.I18n,
 		devMode:    deps.DevMode,
+		authMode:   deps.AuthMode,
 		log:        deps.Log,
 	}
 }
@@ -229,7 +236,15 @@ func (pgh *PageHandler) ProfilePage(writer http.ResponseWriter, req *http.Reques
 
 	tenants, _ := pgh.tenantSvc.List(req.Context(), usr)
 
-	content := page.Profile(usr)
+	mode := auth.ModeFromContext(req.Context())
+	if mode == "" {
+		// Dev mode and tests bypass RequireAuth, so the context
+		// may not carry the mode marker. Fall back to what the
+		// handler itself was configured with.
+		mode = pgh.authMode
+	}
+
+	content := page.Profile(usr, mode)
 	pgh.render(writer, req, usr.Username, tenants, "profile", "", content)
 }
 
@@ -621,6 +636,7 @@ func (pgh *PageHandler) recordAudit(
 		Resource:  resource,
 		Tenant:    tenant,
 		Outcome:   outcome,
+		AuthMode:  string(auth.ModeFromContext(req.Context())),
 		Details:   details,
 	})
 }
