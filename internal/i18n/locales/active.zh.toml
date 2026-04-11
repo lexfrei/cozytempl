@@ -550,6 +550,83 @@ other = "kubeconfig 文件"
 [page.kubeconfig.submit]
 other = "上传并继续"
 
+# --- Toast messages ---
+
+[error.logs.list]
+other = "获取 Pod 列表失败"
+
+[error.logs.read]
+other = "读取 Pod 日志失败"
+
+[empty.pods.body]
+other = "该应用未找到任何 Pod。"
+
+[error.pods.selectedMissing]
+other = "所选 Pod 在该应用中不存在。"
+
+[error.app.invalidName]
+other = "名称无效：仅限小写字母、数字和连字符，必须以字母或数字开头和结尾，最多 53 个字符。"
+
+[error.schema.load]
+other = "无法加载 {{.Kind}} 的 Schema。"
+
+[error.app.create]
+other = "创建 {{.Name}} 失败。请确认名称唯一且您拥有相应权限。"
+
+[error.app.load]
+other = "加载 {{.Name}} 失败。该应用可能不存在或您没有访问权限。"
+
+[error.app.conflict]
+other = "您编辑期间，{{.Name}} 已被其他用户修改。请刷新页面后重试。"
+
+[error.app.update]
+other = "更新 {{.Name}} 失败。请确认您拥有相应权限。"
+
+[error.app.delete]
+other = "删除 {{.Name}} 失败。"
+
+[toast.app.created]
+other = "应用已创建：{{.Name}}"
+
+[toast.app.updated]
+other = "应用已更新：{{.Name}}"
+
+[toast.app.deleted]
+other = "应用已删除：{{.Name}}"
+
+[error.tenant.invalidName]
+other = "名称无效：仅限小写字母和数字，以字母开头，不允许使用连字符——Cozystack Helm Chart 不接受连字符。"
+
+[error.tenant.rootReserved]
+other = "不能创建名为 'root' 的租户——该名称已被保留。"
+
+[error.tenant.create]
+other = "创建租户失败。请确认名称唯一且您在父租户下拥有相应权限。"
+
+[error.tenant.noFields]
+other = "无可更新内容：表单字段与租户 Schema 不匹配。"
+
+[error.tenant.conflict]
+other = "您编辑期间，该租户已被其他用户修改。请刷新页面后重试。"
+
+[error.tenant.update]
+other = "更新租户失败。请确认您拥有修改其规格的权限。"
+
+[error.tenant.rootProtected]
+other = "根租户受保护，无法删除。"
+
+[error.tenant.delete]
+other = "删除租户失败。请确认您拥有权限且没有工作负载依赖于该租户。"
+
+[toast.tenant.created]
+other = "租户已创建：{{.Name}}"
+
+[toast.tenant.updated]
+other = "租户已更新：{{.Name}}"
+
+[toast.tenant.deleted]
+other = "租户已删除：{{.Name}}"
+
 # --- ARIA labels ---
 
 [aria.revealField]

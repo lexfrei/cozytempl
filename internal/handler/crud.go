@@ -77,9 +77,7 @@ func (pgh *PageHandler) CreateApp(writer http.ResponseWriter, req *http.Request)
 	if !validAppName(appName) {
 		pgh.recordAudit(req, usr, audit.ActionAppCreate, appName, tenantNS,
 			audit.OutcomeDenied, map[string]any{"reason": "invalid_name", "kind": appKind})
-		pgh.renderErrorToast(writer, req,
-			"Invalid name: lowercase letters, digits and hyphens only, must "+
-				"start and end with a letter or digit, max 53 characters.")
+		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.invalidName"))
 
 		return
 	}
@@ -97,7 +95,7 @@ func (pgh *PageHandler) doCreateApp(
 	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, appKind)
 	if schemaErr != nil {
 		pgh.log.Error("fetching schema for create", "kind", appKind, "error", schemaErr)
-		pgh.renderErrorToast(writer, req, "Failed to load schema for "+appKind)
+		pgh.renderErrorToast(writer, req, pgh.t(req, "error.schema.load", map[string]any{"Kind": appKind}))
 
 		return
 	}
@@ -118,8 +116,7 @@ func (pgh *PageHandler) doCreateApp(
 		pgh.log.Error("creating app", "tenant", tenantNS, "name", appName, "error", err)
 		pgh.recordAudit(req, usr, audit.ActionAppCreate, appName, tenantNS,
 			audit.OutcomeError, map[string]any{"kind": appKind, "error": err.Error()})
-		pgh.renderErrorToast(writer, req,
-			"Failed to create "+appName+". Check that the name is unique and you have permission.")
+		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.create", map[string]any{"Name": appName}))
 
 		return
 	}
@@ -127,7 +124,7 @@ func (pgh *PageHandler) doCreateApp(
 	pgh.log.Info("app created", "tenant", tenantNS, "name", appName, "kind", appKind)
 	pgh.recordAudit(req, usr, audit.ActionAppCreate, appName, tenantNS,
 		audit.OutcomeSuccess, map[string]any{"kind": appKind})
-	pgh.emitSuccessToast(writer, req, "Application created: "+appName)
+	pgh.emitSuccessToast(writer, req, pgh.t(req, "toast.app.created", map[string]any{"Name": appName}))
 	// Re-render the tenant page so the new row appears in the app table
 	// and the create modal closes (it's inside the tenant template, so
 	// the swap replaces it with a fresh, closed copy).
@@ -240,8 +237,7 @@ func (pgh *PageHandler) doUpdateApp(
 	snap, specErr := pgh.appSvc.GetSpecSnapshot(req.Context(), usr, tenantNS, appName)
 	if specErr != nil {
 		pgh.log.Error("loading app for update", "tenant", tenantNS, "name", appName, "error", specErr)
-		pgh.renderErrorToast(writer, req,
-			"Failed to load "+appName+". It may not exist or you lack permission.")
+		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.load", map[string]any{"Name": appName}))
 
 		return
 	}
@@ -251,7 +247,7 @@ func (pgh *PageHandler) doUpdateApp(
 	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, kind)
 	if schemaErr != nil {
 		pgh.log.Error("loading schema for update", "kind", kind, "error", schemaErr)
-		pgh.renderErrorToast(writer, req, "Failed to load schema for "+kind)
+		pgh.renderErrorToast(writer, req, pgh.t(req, "error.schema.load", map[string]any{"Kind": kind}))
 
 		return
 	}
@@ -273,8 +269,7 @@ func (pgh *PageHandler) doUpdateApp(
 			pgh.log.Info("conflict updating app", "tenant", tenantNS, "name", appName)
 			pgh.recordAudit(req, usr, audit.ActionAppUpdate, appName, tenantNS,
 				audit.OutcomeError, map[string]any{"reason": "conflict", "kind": kind})
-			pgh.renderErrorToast(writer, req,
-				"Another user modified "+appName+" while you were editing. Please reload and try again.")
+			pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.conflict", map[string]any{"Name": appName}))
 
 			return
 		}
@@ -282,7 +277,7 @@ func (pgh *PageHandler) doUpdateApp(
 		pgh.log.Error("updating app", "tenant", tenantNS, "name", appName, "error", err)
 		pgh.recordAudit(req, usr, audit.ActionAppUpdate, appName, tenantNS,
 			audit.OutcomeError, map[string]any{"kind": kind, "error": err.Error()})
-		pgh.renderErrorToast(writer, req, "Failed to update "+appName+". Check that you have permission.")
+		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.update", map[string]any{"Name": appName}))
 
 		return
 	}
@@ -290,7 +285,7 @@ func (pgh *PageHandler) doUpdateApp(
 	pgh.log.Info("app updated", "tenant", tenantNS, "name", appName, "kind", kind)
 	pgh.recordAudit(req, usr, audit.ActionAppUpdate, appName, tenantNS,
 		audit.OutcomeSuccess, map[string]any{"kind": kind, "keys": len(newSpec)})
-	pgh.emitSuccessToast(writer, req, "Application updated: "+appName)
+	pgh.emitSuccessToast(writer, req, pgh.t(req, "toast.app.updated", map[string]any{"Name": appName}))
 	// Re-render so the changed spec values show up immediately in the
 	// app row and the edit slot collapses.
 	pgh.TenantPage(writer, req)
@@ -311,7 +306,7 @@ func (pgh *PageHandler) DeleteApp(writer http.ResponseWriter, req *http.Request)
 		pgh.log.Error("deleting app", "tenant", tenantNS, "name", appName, "error", err)
 		pgh.recordAudit(req, usr, audit.ActionAppDelete, appName, tenantNS,
 			audit.OutcomeError, map[string]any{"error": err.Error()})
-		pgh.renderErrorToast(writer, req, "Failed to delete "+appName)
+		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.delete", map[string]any{"Name": appName}))
 
 		return
 	}
@@ -323,7 +318,7 @@ func (pgh *PageHandler) DeleteApp(writer http.ResponseWriter, req *http.Request)
 	// removed client-side regardless of the response body. Sending
 	// *only* an OOB toast keeps the row-delete animation intact while
 	// still giving the user explicit confirmation.
-	pgh.emitSuccessToast(writer, req, "Application deleted: "+appName)
+	pgh.emitSuccessToast(writer, req, pgh.t(req, "toast.app.deleted", map[string]any{"Name": appName}))
 }
 
 // renderErrorToast writes an OOB error toast without touching the htmx target.

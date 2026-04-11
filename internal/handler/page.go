@@ -485,11 +485,11 @@ func (pgh *PageHandler) fetchAppLogs(
 	if listErr != nil {
 		pgh.log.Debug("listing pods for logs tab", "tenant", tenantNS, "app", appName, "error", listErr)
 
-		return nil, "", "", "", "Failed to list pods: " + listErr.Error()
+		return nil, "", "", "", pgh.t(req, "error.logs.list") + ": " + listErr.Error()
 	}
 
 	if len(pods) == 0 {
-		return pods, "", "", "", "No pods found for this application."
+		return pods, "", "", "", pgh.t(req, "empty.pods.body")
 	}
 
 	selectedPod := req.URL.Query().Get("pod")
@@ -508,7 +508,7 @@ func (pgh *PageHandler) fetchAppLogs(
 	}
 
 	if chosen == nil {
-		return pods, selectedPod, "", "", "Selected pod not found in this application."
+		return pods, selectedPod, "", "", pgh.t(req, "error.pods.selectedMissing")
 	}
 
 	selectedContainer := req.URL.Query().Get("container")
@@ -521,7 +521,7 @@ func (pgh *PageHandler) fetchAppLogs(
 	if tailErr != nil {
 		pgh.log.Debug("tailing logs", "pod", selectedPod, "container", selectedContainer, "error", tailErr)
 
-		return pods, selectedPod, selectedContainer, "", "Failed to read logs: " + tailErr.Error()
+		return pods, selectedPod, selectedContainer, "", pgh.t(req, "error.logs.read") + ": " + tailErr.Error()
 	}
 
 	return pods, selectedPod, selectedContainer, tail, ""
@@ -612,6 +612,20 @@ func (pgh *PageHandler) localizer(req *http.Request) *i18n.Localizer {
 	}
 
 	return pgh.i18nBundle.LocalizerFromContext(req.Context())
+}
+
+// t resolves the request Localizer and returns the translated string
+// for the given message ID. Used by the many handler call sites that
+// format error-toast and success-toast copy — centralising the resolve
+// keeps the call sites a single line and makes it obvious that the
+// string is user-visible.
+func (pgh *PageHandler) t(req *http.Request, messageID string, data ...map[string]any) string {
+	loc := i18n.FromContext(req.Context())
+	if loc == nil {
+		return "[" + messageID + "]"
+	}
+
+	return loc.T(messageID, data...)
 }
 
 // recordAudit is the ergonomic shorthand handlers use to emit an

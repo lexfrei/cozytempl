@@ -551,6 +551,83 @@ other = "kubeconfig файлы"
 [page.kubeconfig.submit]
 other = "Жүктеп, жалғастыру"
 
+# --- Toast messages ---
+
+[error.logs.list]
+other = "Подтар тізімін алу сәтсіз аяқталды"
+
+[error.logs.read]
+other = "Под журналдарын оқу сәтсіз аяқталды"
+
+[empty.pods.body]
+other = "Бұл қолданба үшін подтар табылмады."
+
+[error.pods.selectedMissing]
+other = "Таңдалған под бұл қолданбада табылмады."
+
+[error.app.invalidName]
+other = "Жарамсыз атау: тек кіші әріптер, сандар және сызықшалар; әріп немесе санмен басталып аяқталу керек; ең көбі 53 таңба."
+
+[error.schema.load]
+other = "{{.Kind}} үшін схема жүктелмеді."
+
+[error.app.create]
+other = "{{.Name}} жасалмады. Атаудың бірегейлігін және рұқсатыңыздың барын тексеріңіз."
+
+[error.app.load]
+other = "{{.Name}} жүктелмеді. Қолданба жоқ немесе рұқсатыңыз жеткіліксіз."
+
+[error.app.conflict]
+other = "Сіз өңдеп жатқанда {{.Name}} басқа пайдаланушы өзгертті. Бетті жаңартып, қайталаңыз."
+
+[error.app.update]
+other = "{{.Name}} жаңартылмады. Рұқсатыңыздың барын тексеріңіз."
+
+[error.app.delete]
+other = "{{.Name}} жойылмады."
+
+[toast.app.created]
+other = "Қолданба жасалды: {{.Name}}"
+
+[toast.app.updated]
+other = "Қолданба жаңартылды: {{.Name}}"
+
+[toast.app.deleted]
+other = "Қолданба жойылды: {{.Name}}"
+
+[error.tenant.invalidName]
+other = "Жарамсыз атау: тек кіші әріптер мен сандар, әріптен басталу керек. Сызықшалар рұқсат етілмеген — Cozystack Helm чарты оларды қабылдамайды."
+
+[error.tenant.rootReserved]
+other = "«root» атауымен тенант жасауға болмайды — ол атау брондалған."
+
+[error.tenant.create]
+other = "Тенант жасалмады. Атаудың бірегейлігін және ата-аналық тенантта рұқсатыңыздың барын тексеріңіз."
+
+[error.tenant.noFields]
+other = "Жаңартатын ештеңе жоқ: форма өрістері тенант схемасына сәйкес келмеді."
+
+[error.tenant.conflict]
+other = "Сіз өңдеп жатқанда бұл тенантты басқа пайдаланушы өзгертті. Бетті жаңартып, қайталаңыз."
+
+[error.tenant.update]
+other = "Тенант жаңартылмады. Спекті өзгерту рұқсатыңыздың барын тексеріңіз."
+
+[error.tenant.rootProtected]
+other = "Түбірлік тенант қорғалған және жойылмайды."
+
+[error.tenant.delete]
+other = "Тенант жойылмады. Рұқсатыңыздың барын және ешқандай жұмыс жүктемесі оған тәуелді еместігін тексеріңіз."
+
+[toast.tenant.created]
+other = "Тенант жасалды: {{.Name}}"
+
+[toast.tenant.updated]
+other = "Тенант жаңартылды: {{.Name}}"
+
+[toast.tenant.deleted]
+other = "Тенант жойылды: {{.Name}}"
+
 # --- ARIA labels ---
 
 [aria.revealField]

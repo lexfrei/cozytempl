@@ -553,6 +553,83 @@ other = "Файл kubeconfig"
 [page.kubeconfig.submit]
 other = "Загрузить и продолжить"
 
+# --- Toast messages ---
+
+[error.logs.list]
+other = "Не удалось получить список подов"
+
+[error.logs.read]
+other = "Не удалось прочитать логи пода"
+
+[empty.pods.body]
+other = "Для этого приложения поды не найдены."
+
+[error.pods.selectedMissing]
+other = "Выбранный под не найден в этом приложении."
+
+[error.app.invalidName]
+other = "Недопустимое имя: только строчные буквы, цифры и дефисы; должно начинаться и заканчиваться буквой или цифрой; максимум 53 символа."
+
+[error.schema.load]
+other = "Не удалось загрузить схему для {{.Kind}}."
+
+[error.app.create]
+other = "Не удалось создать {{.Name}}. Проверьте, что имя уникально и у вас есть права."
+
+[error.app.load]
+other = "Не удалось загрузить {{.Name}}. Возможно, приложение не существует или у вас нет прав."
+
+[error.app.conflict]
+other = "Другой пользователь изменил {{.Name}} пока вы редактировали. Обновите страницу и попробуйте снова."
+
+[error.app.update]
+other = "Не удалось обновить {{.Name}}. Проверьте, что у вас есть права."
+
+[error.app.delete]
+other = "Не удалось удалить {{.Name}}."
+
+[toast.app.created]
+other = "Приложение создано: {{.Name}}"
+
+[toast.app.updated]
+other = "Приложение обновлено: {{.Name}}"
+
+[toast.app.deleted]
+other = "Приложение удалено: {{.Name}}"
+
+[error.tenant.invalidName]
+other = "Недопустимое имя: только строчные буквы и цифры, начинается с буквы. Дефисы запрещены — Helm-чарт Cozystack не принимает их."
+
+[error.tenant.rootReserved]
+other = "Нельзя создать тенант с именем «root» — оно зарезервировано."
+
+[error.tenant.create]
+other = "Не удалось создать тенант. Проверьте, что имя уникально и у вас есть права на создание в родительском тенанте."
+
+[error.tenant.noFields]
+other = "Нечего обновлять: ни одно поле формы не соответствует схеме тенанта."
+
+[error.tenant.conflict]
+other = "Другой пользователь изменил этот тенант пока вы редактировали. Обновите страницу и попробуйте снова."
+
+[error.tenant.update]
+other = "Не удалось обновить тенант. Проверьте, что у вас есть права на изменение его спека."
+
+[error.tenant.rootProtected]
+other = "Корневой тенант защищён и не может быть удалён."
+
+[error.tenant.delete]
+other = "Не удалось удалить тенант. Проверьте права и убедитесь, что от него не зависят другие рабочие нагрузки."
+
+[toast.tenant.created]
+other = "Тенант создан: {{.Name}}"
+
+[toast.tenant.updated]
+other = "Тенант обновлён: {{.Name}}"
+
+[toast.tenant.deleted]
+other = "Тенант удалён: {{.Name}}"
+
 # --- ARIA labels ---
 
 [aria.revealField]

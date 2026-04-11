@@ -556,6 +556,83 @@ other = "kubeconfig file"
 [page.kubeconfig.submit]
 other = "Upload and continue"
 
+# --- Toast messages (handler-emitted, not page-level) ---
+
+[error.logs.list]
+other = "Failed to list pods"
+
+[error.logs.read]
+other = "Failed to read pod logs"
+
+[empty.pods.body]
+other = "No pods found for this application."
+
+[error.pods.selectedMissing]
+other = "Selected pod not found in this application."
+
+[error.app.invalidName]
+other = "Invalid name: lowercase letters, digits and hyphens only, must start and end with a letter or digit, max 53 characters."
+
+[error.schema.load]
+other = "Failed to load schema for {{.Kind}}."
+
+[error.app.create]
+other = "Failed to create {{.Name}}. Check that the name is unique and you have permission."
+
+[error.app.load]
+other = "Failed to load {{.Name}}. It may not exist or you lack permission."
+
+[error.app.conflict]
+other = "Another user modified {{.Name}} while you were editing. Please reload and try again."
+
+[error.app.update]
+other = "Failed to update {{.Name}}. Check that you have permission."
+
+[error.app.delete]
+other = "Failed to delete {{.Name}}."
+
+[toast.app.created]
+other = "Application created: {{.Name}}"
+
+[toast.app.updated]
+other = "Application updated: {{.Name}}"
+
+[toast.app.deleted]
+other = "Application deleted: {{.Name}}"
+
+[error.tenant.invalidName]
+other = "Invalid name: lowercase letters and digits only, starting with a letter. No dashes — Cozystack's Helm chart rejects them."
+
+[error.tenant.rootReserved]
+other = "Cannot create a tenant named 'root' — that name is reserved."
+
+[error.tenant.create]
+other = "Failed to create tenant. Check that the name is unique and you have permission under the parent."
+
+[error.tenant.noFields]
+other = "Nothing to update: no recognised form fields match the tenant schema."
+
+[error.tenant.conflict]
+other = "Another user modified this tenant while you were editing. Please reload and try again."
+
+[error.tenant.update]
+other = "Failed to update tenant. Check that you have permission to modify its spec."
+
+[error.tenant.rootProtected]
+other = "Root tenant is protected and cannot be deleted."
+
+[error.tenant.delete]
+other = "Failed to delete tenant. Check that you have permission and that no workload depends on it."
+
+[toast.tenant.created]
+other = "Tenant created: {{.Name}}"
+
+[toast.tenant.updated]
+other = "Tenant updated: {{.Name}}"
+
+[toast.tenant.deleted]
+other = "Tenant deleted: {{.Name}}"
+
 # --- ARIA labels ---
 
 [aria.revealField]
