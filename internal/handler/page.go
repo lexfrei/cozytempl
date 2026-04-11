@@ -245,6 +245,23 @@ func (pgh *PageHandler) MarketplacePage(writer http.ResponseWriter, req *http.Re
 	pgh.render(writer, req, usr.Username, tenants, "marketplace", "", content)
 }
 
+// NotFoundPage is the catch-all 404 handler registered for any
+// GET path not claimed by a more specific route. Without this,
+// Go 1.22's ServeMux would either silently render the Dashboard
+// (because "GET /" is a prefix match) or return a plain-text
+// "404 page not found" body — neither is a good user experience.
+func (pgh *PageHandler) NotFoundPage(writer http.ResponseWriter, req *http.Request) {
+	usr := pgh.requireUser(writer, req)
+	if usr == nil {
+		return
+	}
+
+	tenants, _ := pgh.tenantSvc.List(req.Context(), usr.Username, usr.Groups)
+	pgh.renderError(writer, req, usr.Username, tenants, http.StatusNotFound,
+		"Page not found",
+		"The page '"+req.URL.Path+"' does not exist. Use the navigation on the left or head back to the dashboard.")
+}
+
 func buildMarketplaceData(schemas []k8s.AppSchema, query, categoryFilter, tagFilter string) view.MarketplaceData {
 	filtered := filterSchemas(schemas, query, categoryFilter, tagFilter)
 

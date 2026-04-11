@@ -184,7 +184,14 @@ func Router(cfg *RouterConfig) http.Handler {
 func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {
 	pageMux := http.NewServeMux()
 
-	pageMux.HandleFunc("GET /", pgh.Dashboard)
+	// Note the {$} on the root route: in Go 1.22's ServeMux, a bare
+	// "GET /" pattern matches EVERY path not otherwise claimed by a
+	// more specific handler. That turned /nonexistent into a
+	// silently-rendered Dashboard page which was a real bug — the
+	// user had no idea they'd typed a wrong URL. {$} constrains the
+	// match to exactly "/" so unknown paths fall through to the
+	// NotFoundPage handler below.
+	pageMux.HandleFunc("GET /{$}", pgh.Dashboard)
 	pageMux.HandleFunc("GET /marketplace", pgh.MarketplacePage)
 	pageMux.HandleFunc("GET /profile", pgh.ProfilePage)
 	pageMux.HandleFunc("GET /tenants", pgh.TenantsPage)
@@ -204,6 +211,11 @@ func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {
 	pageMux.HandleFunc("GET /fragments/tenant-edit", pgh.TenantEditFragment)
 	pageMux.HandleFunc("GET /fragments/app-edit", pgh.AppEditFragment)
 	pageMux.HandleFunc("GET /fragments/secrets/reveal", pgh.SecretRevealFragment)
+
+	// Catch-all 404 for unknown GET paths. Placed last so it only
+	// matches when nothing above did. The handler renders the
+	// branded error page with the layout wrapper.
+	pageMux.HandleFunc("GET /", pgh.NotFoundPage)
 
 	return pageMux
 }
