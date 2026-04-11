@@ -11,14 +11,16 @@ import (
 
 // Config holds the application configuration loaded from environment variables.
 type Config struct {
-	ListenAddr       string
-	OIDCIssuerURL    string
-	OIDCClientID     string
-	OIDCClientSecret string
-	OIDCRedirectURL  string
-	SessionSecret    string
-	LogLevel         string
-	DevMode          bool
+	ListenAddr            string
+	OIDCIssuerURL         string
+	OIDCInternalIssuerURL string
+	OIDCClientID          string
+	OIDCClientSecret      string
+	OIDCRedirectURL       string
+	SessionSecret         string
+	LogLevel              string
+	AuthMode              AuthMode
+	DevMode               bool
 }
 
 // ErrMissingEnvVar is returned when a required environment variable is not set.
@@ -35,10 +37,22 @@ var ErrDevModeNotEnabled = errors.New("OIDC_ISSUER_URL is required; set COZYTEMP
 // an attacker could forge cookies and impersonate any user.
 var ErrWeakSessionSecret = errors.New("SESSION_SECRET is required in production and must not be the placeholder dev value")
 
+// ErrAuthModeEmpty signals that no COZYTEMPL_AUTH_MODE env var was provided;
+// the caller decides the default (typically AuthModePassthrough).
+var ErrAuthModeEmpty = errors.New("auth mode is empty")
+
+// ErrAuthModeUnknown is returned when COZYTEMPL_AUTH_MODE holds a value that
+// is not one of the four recognised modes.
+var ErrAuthModeUnknown = errors.New("unknown auth mode")
+
 const (
 	// devModeEnv is the explicit opt-in toggle that allows running without
 	// OIDC. We deliberately refuse the old "OIDC_ISSUER_URL unset" heuristic.
 	devModeEnv = "COZYTEMPL_DEV_MODE"
+
+	// authModeEnv selects one of the four supported authentication modes
+	// at startup. Empty defaults to passthrough when OIDC is configured.
+	authModeEnv = "COZYTEMPL_AUTH_MODE"
 
 	// devSessionSecretPlaceholder is the sentinel value stamped in dev mode;
 	// production configs must override it. It is intentionally recognisable
@@ -52,46 +66,110 @@ const (
 )
 
 // Load reads configuration from environment variables.
-// Dev mode requires an explicit COZYTEMPL_DEV_MODE=true opt-in; just leaving
-// OIDC unset will NOT silently disable auth. A missing SESSION_SECRET in
-// production mode is a fatal error — dev mode uses a per-process random
-// secret so multiple runs do not share signing keys.
+//
+// Authentication mode is selected by COZYTEMPL_AUTH_MODE; if unset the
+// default is passthrough when OIDC is configured, dev when COZYTEMPL_DEV_MODE
+// is explicitly set, or an error otherwise. The legacy COZYTEMPL_DEV_MODE=true
+// opt-in is still honoured and wins over COZYTEMPL_AUTH_MODE to preserve
+// backwards compatibility for existing quickstart setups. A missing
+// SESSION_SECRET in non-dev modes is a fatal error — dev mode uses a
+// per-process random secret so multiple runs do not share signing keys.
 func Load() (*Config, error) {
 	cfg := &Config{
-		ListenAddr:       envOrDefault("LISTEN_ADDR", ":8080"),
-		LogLevel:         envOrDefault("LOG_LEVEL", "info"),
-		OIDCIssuerURL:    os.Getenv("OIDC_ISSUER_URL"),
-		OIDCClientID:     os.Getenv("OIDC_CLIENT_ID"),
-		OIDCClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
-		OIDCRedirectURL:  os.Getenv("OIDC_REDIRECT_URL"),
-		SessionSecret:    os.Getenv("SESSION_SECRET"),
+		ListenAddr:            envOrDefault("LISTEN_ADDR", ":8080"),
+		LogLevel:              envOrDefault("LOG_LEVEL", "info"),
+		OIDCIssuerURL:         os.Getenv("OIDC_ISSUER_URL"),
+		OIDCInternalIssuerURL: os.Getenv("OIDC_INTERNAL_ISSUER_URL"),
+		OIDCClientID:          os.Getenv("OIDC_CLIENT_ID"),
+		OIDCClientSecret:      os.Getenv("OIDC_CLIENT_SECRET"),
+		OIDCRedirectURL:       os.Getenv("OIDC_REDIRECT_URL"),
+		SessionSecret:         os.Getenv("SESSION_SECRET"),
 	}
 
-	devRequested := os.Getenv(devModeEnv) == "true"
+	mode, err := resolveAuthMode(os.Getenv(authModeEnv), os.Getenv(devModeEnv) == "true", cfg.OIDCIssuerURL != "")
+	if err != nil {
+		return nil, err
+	}
 
-	if cfg.OIDCIssuerURL == "" {
-		if !devRequested {
-			return nil, ErrDevModeNotEnabled
+	cfg.AuthMode = mode
+	cfg.DevMode = mode == AuthModeDev
+
+	err = validateForMode(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Dev mode with no SESSION_SECRET → generate a per-process one so
+	// a forgotten env var doesn't silently reuse the placeholder.
+	if cfg.AuthMode == AuthModeDev && (cfg.SessionSecret == "" || cfg.SessionSecret == devSessionSecretPlaceholder) {
+		secret, secretErr := randomSecret(devSessionSecretRandomBytes)
+		if secretErr != nil {
+			return nil, fmt.Errorf("generating dev session secret: %w", secretErr)
 		}
 
-		cfg.DevMode = true
+		cfg.SessionSecret = secret
+	}
 
-		// Dev mode with no SESSION_SECRET → generate a per-process one so
-		// a forgotten env var doesn't silently reuse the placeholder.
+	return cfg, nil
+}
+
+// resolveAuthMode picks the effective AuthMode from the explicit
+// COZYTEMPL_AUTH_MODE value, the legacy COZYTEMPL_DEV_MODE=true flag, and
+// whether OIDC is configured. COZYTEMPL_DEV_MODE=true wins over any
+// COZYTEMPL_AUTH_MODE value — this preserves behaviour for operators who
+// upgraded without touching their env vars.
+func resolveAuthMode(authModeRaw string, devRequested, oidcConfigured bool) (AuthMode, error) {
+	if devRequested {
+		return AuthModeDev, nil
+	}
+
+	if authModeRaw != "" {
+		mode, err := ParseAuthMode(authModeRaw)
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", authModeEnv, err)
+		}
+
+		return mode, nil
+	}
+
+	if oidcConfigured {
+		return AuthModePassthrough, nil
+	}
+
+	return "", ErrDevModeNotEnabled
+}
+
+// validateForMode checks that the configuration has the env vars the chosen
+// AuthMode actually needs. Each mode fails loudly and early rather than
+// silently booting into a half-configured state.
+func validateForMode(cfg *Config) error {
+	switch cfg.AuthMode {
+	case AuthModeDev:
+		return nil
+
+	case AuthModeBYOK:
+		// BYOK has no IdP; only the session secret (used to encrypt the
+		// stored kubeconfig) is required.
 		if cfg.SessionSecret == "" || cfg.SessionSecret == devSessionSecretPlaceholder {
-			secret, err := randomSecret(devSessionSecretRandomBytes)
-			if err != nil {
-				return nil, fmt.Errorf("generating dev session secret: %w", err)
-			}
-
-			cfg.SessionSecret = secret
+			return ErrWeakSessionSecret
 		}
 
-		return cfg, nil
+		return nil
+
+	case AuthModePassthrough, AuthModeImpersonationLegacy:
+		return validateOIDCConfig(cfg)
 	}
 
-	// Production: OIDC configured. All OIDC vars and a real session secret
-	// are required. The placeholder value is treated as if unset.
+	return fmt.Errorf("%w: %q", ErrAuthModeUnknown, cfg.AuthMode)
+}
+
+// validateOIDCConfig enforces that every OIDC-dependent mode has the full
+// set of OIDC env vars and a real session secret.
+func validateOIDCConfig(cfg *Config) error {
+	if cfg.OIDCIssuerURL == "" {
+		return fmt.Errorf("%w: %s", ErrMissingEnvVar, "OIDC_ISSUER_URL")
+	}
+
 	required := map[string]string{
 		"OIDC_CLIENT_ID":     cfg.OIDCClientID,
 		"OIDC_CLIENT_SECRET": cfg.OIDCClientSecret,
@@ -100,15 +178,26 @@ func Load() (*Config, error) {
 
 	for name, val := range required {
 		if val == "" {
-			return nil, fmt.Errorf("%w: %s", ErrMissingEnvVar, name)
+			return fmt.Errorf("%w: %s", ErrMissingEnvVar, name)
 		}
 	}
 
 	if cfg.SessionSecret == "" || cfg.SessionSecret == devSessionSecretPlaceholder {
-		return nil, ErrWeakSessionSecret
+		return ErrWeakSessionSecret
 	}
 
-	return cfg, nil
+	return nil
+}
+
+// InternalIssuerURL returns the backend-to-Keycloak URL used for token
+// endpoint and JWKS calls. When OIDC_INTERNAL_ISSUER_URL is unset, the
+// user-facing OIDC_ISSUER_URL is used for both redirect and token exchange.
+func (c *Config) InternalIssuerURL() string {
+	if c.OIDCInternalIssuerURL != "" {
+		return c.OIDCInternalIssuerURL
+	}
+
+	return c.OIDCIssuerURL
 }
 
 func envOrDefault(key, defaultVal string) string {

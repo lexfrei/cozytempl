@@ -24,6 +24,158 @@ func TestLoad_AllRequiredSet(t *testing.T) {
 	if cfg.DevMode {
 		t.Error("DevMode should be false when OIDC vars are set")
 	}
+
+	// Default mode when OIDC is configured must be passthrough.
+	if cfg.AuthMode != AuthModePassthrough {
+		t.Errorf("AuthMode = %q, want %q", cfg.AuthMode, AuthModePassthrough)
+	}
+}
+
+func TestLoad_DefaultModeIsPassthroughWhenOIDCConfigured(t *testing.T) {
+	setRequiredEnvVars(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.AuthMode != AuthModePassthrough {
+		t.Errorf("AuthMode = %q, want %q", cfg.AuthMode, AuthModePassthrough)
+	}
+}
+
+func TestLoad_ExplicitPassthrough(t *testing.T) {
+	setRequiredEnvVars(t)
+	t.Setenv("COZYTEMPL_AUTH_MODE", "passthrough")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.AuthMode != AuthModePassthrough {
+		t.Errorf("AuthMode = %q, want passthrough", cfg.AuthMode)
+	}
+}
+
+func TestLoad_ExplicitImpersonationLegacy(t *testing.T) {
+	setRequiredEnvVars(t)
+	t.Setenv("COZYTEMPL_AUTH_MODE", "impersonation-legacy")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.AuthMode != AuthModeImpersonationLegacy {
+		t.Errorf("AuthMode = %q, want impersonation-legacy", cfg.AuthMode)
+	}
+}
+
+func TestLoad_ExplicitBYOK_NoOIDCRequired(t *testing.T) {
+	clearEnvVars(t)
+	t.Setenv("COZYTEMPL_AUTH_MODE", "byok")
+	t.Setenv("SESSION_SECRET", "test-session-secret-32bytes-long!")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.AuthMode != AuthModeBYOK {
+		t.Errorf("AuthMode = %q, want byok", cfg.AuthMode)
+	}
+
+	if cfg.DevMode {
+		t.Error("DevMode should be false in byok mode")
+	}
+}
+
+func TestLoad_BYOKRequiresSessionSecret(t *testing.T) {
+	clearEnvVars(t)
+	t.Setenv("COZYTEMPL_AUTH_MODE", "byok")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when byok mode has no SESSION_SECRET")
+	}
+}
+
+func TestLoad_UnknownAuthMode(t *testing.T) {
+	setRequiredEnvVars(t)
+	t.Setenv("COZYTEMPL_AUTH_MODE", "nonsense")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for unknown auth mode")
+	}
+}
+
+func TestLoad_DevModeWinsOverExplicitAuthMode(t *testing.T) {
+	// Legacy env var wins over the new one to preserve backwards compat.
+	clearEnvVars(t)
+	t.Setenv("COZYTEMPL_DEV_MODE", "true")
+	t.Setenv("COZYTEMPL_AUTH_MODE", "passthrough")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.AuthMode != AuthModeDev {
+		t.Errorf("AuthMode = %q, want dev (COZYTEMPL_DEV_MODE should win)", cfg.AuthMode)
+	}
+
+	if !cfg.DevMode {
+		t.Error("DevMode should be true when COZYTEMPL_DEV_MODE=true")
+	}
+}
+
+func TestLoad_ExplicitAuthModeDev(t *testing.T) {
+	clearEnvVars(t)
+	t.Setenv("COZYTEMPL_AUTH_MODE", "dev")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.AuthMode != AuthModeDev {
+		t.Errorf("AuthMode = %q, want dev", cfg.AuthMode)
+	}
+
+	if !cfg.DevMode {
+		t.Error("DevMode should be true when AuthMode=dev")
+	}
+}
+
+func TestLoad_InternalIssuerURL_FallsBackToExternal(t *testing.T) {
+	setRequiredEnvVars(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.InternalIssuerURL() != cfg.OIDCIssuerURL {
+		t.Errorf("InternalIssuerURL() = %q, want fallback to OIDCIssuerURL %q",
+			cfg.InternalIssuerURL(), cfg.OIDCIssuerURL)
+	}
+}
+
+func TestLoad_InternalIssuerURL_OverrideSet(t *testing.T) {
+	setRequiredEnvVars(t)
+	t.Setenv("OIDC_INTERNAL_ISSUER_URL", "http://keycloak.cozy-keycloak.svc:8080/realms/cozystack")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wantInternal := "http://keycloak.cozy-keycloak.svc:8080/realms/cozystack"
+	if cfg.InternalIssuerURL() != wantInternal {
+		t.Errorf("InternalIssuerURL() = %q, want %q", cfg.InternalIssuerURL(), wantInternal)
+	}
 }
 
 func TestLoad_DevMode(t *testing.T) {
@@ -112,8 +264,9 @@ func clearEnvVars(t *testing.T) {
 	t.Helper()
 
 	for _, key := range []string{
-		"OIDC_ISSUER_URL", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET",
-		"OIDC_REDIRECT_URL", "SESSION_SECRET", "LISTEN_ADDR", "LOG_LEVEL",
+		"OIDC_ISSUER_URL", "OIDC_INTERNAL_ISSUER_URL", "OIDC_CLIENT_ID",
+		"OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URL", "SESSION_SECRET",
+		"LISTEN_ADDR", "LOG_LEVEL", "COZYTEMPL_DEV_MODE", "COZYTEMPL_AUTH_MODE",
 	} {
 		t.Setenv(key, "")
 		os.Unsetenv(key)
