@@ -1,0 +1,47 @@
+{{- /*
+  Optional networking.k8s.io/v1 Ingress. Disabled by default —
+  operators with their own ingress story (Gateway API, Cloudflare
+  Tunnel, a separate ingress chart they manage) keep the chart
+  minimal. Enable with `ingress.enabled: true` in values.
+
+  The shape follows the standard bitnami/charts-family conventions
+  so values can be copy-pasted from other charts with minimal
+  edits: ingress.className, annotations, hosts[], tls[].
+*/ -}}
+{{- if .Values.ingress.enabled -}}
+{{- $fullName := include "cozytempl.fullname" . -}}
+{{- $svcPort := .Values.service.port -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path | quote }}
+            pathType: {{ .pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $svcPort }}
+          {{- end }}
+    {{- end }}
+{{- end }}

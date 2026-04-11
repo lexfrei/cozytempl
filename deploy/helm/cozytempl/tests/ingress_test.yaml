@@ -1,0 +1,93 @@
+suite: Ingress
+templates:
+  - ingress.yaml
+release:
+  name: cozytempl
+  namespace: cozy-system
+tests:
+  - it: disabled by default — zero documents
+    set:
+      config.authMode: dev
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: enabled renders one Ingress with the chart fullname
+    set:
+      config.authMode: dev
+      ingress.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Ingress
+      - equal:
+          path: metadata.name
+          value: cozytempl
+
+  - it: className flips into spec.ingressClassName
+    set:
+      config.authMode: dev
+      ingress.enabled: true
+      ingress.className: nginx
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: nginx
+
+  - it: hosts and paths thread through to rules
+    set:
+      config.authMode: dev
+      ingress.enabled: true
+      ingress.hosts:
+        - host: cozy.example.com
+          paths:
+            - path: /
+              pathType: Prefix
+    asserts:
+      - equal:
+          path: spec.rules[0].host
+          value: cozy.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /
+      - equal:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Prefix
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: cozytempl
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.number
+          value: 8080
+
+  - it: TLS block is emitted verbatim
+    set:
+      config.authMode: dev
+      ingress.enabled: true
+      ingress.tls:
+        - secretName: cozy-tls
+          hosts:
+            - cozy.example.com
+    asserts:
+      - equal:
+          path: spec.tls[0].secretName
+          value: cozy-tls
+      - contains:
+          path: spec.tls[0].hosts
+          content: cozy.example.com
+
+  - it: annotations land on the Ingress only
+    set:
+      config.authMode: dev
+      ingress.enabled: true
+      ingress.annotations:
+        cert-manager.io/cluster-issuer: letsencrypt
+        nginx.ingress.kubernetes.io/proxy-body-size: "32m"
+    asserts:
+      - equal:
+          path: metadata.annotations["cert-manager.io/cluster-issuer"]
+          value: letsencrypt
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]
+          value: "32m"

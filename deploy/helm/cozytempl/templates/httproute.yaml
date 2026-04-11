@@ -1,0 +1,63 @@
+{{- /*
+  Optional gateway.networking.k8s.io/v1 HTTPRoute. Disabled by
+  default. Enable for Gateway-API-native clusters: Contour, Envoy
+  Gateway, Cilium with gateway-api, Istio's Gateway API mode, etc.
+
+  Shape follows the rules[] pattern from lexfrei/charts me-site so
+  values can be copy-pasted across charts with zero edits. Each
+  rule entry carries its own matches / filters / weight; when
+  httpRoute.rules is empty we render a single catch-all
+  PathPrefix `/` rule pointing at svc/<fullName>.
+
+  The chart does NOT create the Gateway resource itself — that
+  stays a cluster-level decision owned by the platform team.
+  Provide parentRefs pointing at an already-provisioned Gateway.
+*/ -}}
+{{- if .Values.httpRoute.enabled -}}
+{{- $fullName := include "cozytempl.fullname" . -}}
+{{- $svcPort := .Values.service.port -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+  {{- with .Values.httpRoute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.httpRoute.parentRefs }}
+  parentRefs:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.httpRoute.hostnames }}
+  hostnames:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- if .Values.httpRoute.rules }}
+    {{- range .Values.httpRoute.rules }}
+    - matches:
+        {{- toYaml .matches | nindent 8 }}
+      {{- with .filters }}
+      filters:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      backendRefs:
+        - name: {{ $fullName }}
+          port: {{ $svcPort }}
+          {{- with .weight }}
+          weight: {{ . }}
+          {{- end }}
+    {{- end }}
+    {{- else }}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ $fullName }}
+          port: {{ $svcPort }}
+    {{- end }}
+{{- end }}

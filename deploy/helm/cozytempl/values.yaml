@@ -11,11 +11,74 @@ image:
 replicaCount: 1
 
 # Service resource exposing the pod. ClusterIP is the default
-# because ingress is expected to be handled by a separate
-# Ingress/Gateway resource the operator already manages.
+# because the ingress story is owned either by the optional
+# Ingress / HTTPRoute templates below (ingress.enabled /
+# httpRoute.enabled) or by resources the operator manages
+# outside the chart.
 service:
   type: ClusterIP
   port: 8080
+
+# Optional networking.k8s.io/v1 Ingress. Disabled by default.
+# Enable for the classic nginx-ingress / Traefik / HAProxy-ingress
+# deployment pattern. For Gateway API, see httpRoute below — the
+# two can be enabled simultaneously if you need both during a
+# migration.
+ingress:
+  enabled: false
+  # IngressClass name. Empty leaves the selection to the cluster's
+  # default IngressClass. Common values: nginx, traefik, haproxy.
+  className: ""
+  # Ingress-controller-specific annotations. Kept here (not in
+  # commonAnnotations) so they do not leak onto the Deployment /
+  # Service / ServiceAccount objects.
+  annotations: {}
+  # Host rules. Each entry accepts a list of path rules; pathType
+  # defaults to Prefix if omitted.
+  hosts:
+    - host: cozytempl.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  # TLS block. Leave empty to serve plain HTTP (fine for cluster-
+  # internal setups behind an outer TLS-terminating proxy like
+  # Cloudflare Tunnel).
+  tls: []
+  # Example TLS block:
+  # tls:
+  #   - hosts: [cozytempl.example.com]
+  #     secretName: cozytempl-tls
+
+# Optional gateway.networking.k8s.io/v1 HTTPRoute. Disabled by
+# default. Enable for Gateway-API-native clusters: Contour, Envoy
+# Gateway, Cilium, Istio's Gateway API mode, etc. The chart does
+# NOT create the Gateway resource itself — that is a cluster-
+# level decision owned by the platform team.
+#
+# Shape follows the lexfrei/charts convention (rules[] with
+# per-rule matches / filters / weight) so the same values block
+# copy-pastes between charts.
+httpRoute:
+  enabled: false
+  annotations: {}
+  # List of parentRefs the HTTPRoute attaches to. Each entry maps
+  # to gateway.networking.k8s.io/v1 ParentReference.
+  parentRefs:
+    - name: gateway
+      namespace: gateway-system
+      sectionName: https
+  hostnames:
+    - cozytempl.example.com
+  # List of HTTPRouteRule entries. Empty renders a single default
+  # catch-all PathPrefix `/` rule. A rule with a `weight` drives
+  # canary traffic splitting; a rule with `filters` supports
+  # HeaderModifier / RequestRedirect / URLRewrite from the
+  # standard HTTPRouteFilter set.
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
 
 # Container resource requests and limits. Cozytempl is a thin
 # proxy over the k8s API so the defaults are modest; raise the
