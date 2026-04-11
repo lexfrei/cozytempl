@@ -545,6 +545,61 @@ thead th.sortable:hover {
   color: var(--color-text-secondary);
 }
 
+/* Sortable column header driven by a full-width button. The <th>
+ * itself keeps the existing padding; the button fills it so the
+ * entire cell is clickable, inherits the header font styling, and
+ * does not look like a stand-alone widget. The .th-sort-active
+ * modifier tints the active column so the ▲ indicator doesn't
+ * have to carry the whole visual weight. */
+.th-sort {
+  padding: 0;
+}
+
+.th-sort-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  transition: color var(--transition), background var(--transition);
+}
+
+.th-sort-button:hover {
+  color: var(--color-text-secondary);
+  background: var(--color-bg-hover);
+}
+
+.th-sort-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.th-sort-active .th-sort-button {
+  color: var(--color-text);
+}
+
+.th-sort-indicator {
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.th-sort-indicator-idle {
+  color: var(--color-text-muted);
+  opacity: 0.5;
+}
+
+.th-sort-button:hover .th-sort-indicator-idle {
+  opacity: 1;
+}
+
 tbody td {
   padding: 12px 16px;
   border-bottom: 1px solid var(--color-border-subtle);

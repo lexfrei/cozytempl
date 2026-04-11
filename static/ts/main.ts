@@ -59,10 +59,23 @@ function initActionDelegation(): void {
       case "clear-filters":
         clearAppFilters();
         return;
+      case "set-sort":
+        updateSortInput(target.dataset.sort ?? "name");
+        return;
       default:
         return;
     }
   });
+}
+
+// updateSortInput writes the chosen sort key into the hidden
+// <input name="sort"> on the tenant detail page. The click that
+// triggered the call is already wired to an htmx-fetch on the
+// column header <button>, so this runs purely to keep the q/kind
+// inputs' hx-include in sync for any subsequent refetch.
+function updateSortInput(value: string): void {
+  const sort = document.querySelector<HTMLInputElement>('input[name="sort"]');
+  if (sort) sort.value = value;
 }
 
 // initNamespacePreview wires the create-tenant form's namespace hint.
@@ -90,7 +103,8 @@ function initNamespacePreview(): void {
 function clearAppFilters(): void {
   const q = document.querySelector<HTMLInputElement>('input[name="q"]');
   const kind = document.querySelector<HTMLSelectElement>('select[name="kind"]');
-  const sort = document.querySelector<HTMLSelectElement>('select[name="sort"]');
+  // sort is now a hidden input driven by column-header clicks.
+  const sort = document.querySelector<HTMLInputElement>('input[name="sort"]');
 
   if (q) q.value = "";
   if (kind) kind.value = "";

@@ -113,15 +113,12 @@ templ Tenant(data view.TenantPageData) {
 				<option value={ kind } selected?={ kind == data.KindFilter }>{ kind }</option>
 			}
 		</select>
-		<select class="form-select" name="sort" style="max-width: 150px;"
-			hx-get={ "/fragments/app-table?tenant=" + data.Tenant.Namespace }
-			hx-trigger="change"
-			hx-target="#app-table-body"
-			hx-include="[name='q'],[name='kind']">
-			<option value="name" selected?={ data.SortBy == "name" || data.SortBy == "" }>Name</option>
-			<option value="kind" selected?={ data.SortBy == "kind" }>Type</option>
-			<option value="status" selected?={ data.SortBy == "status" }>Status</option>
-		</select>
+		<!-- Active sort column lives in a hidden field so q/kind can
+		     carry it through hx-include on every refetch. The clickable
+		     column headers in the table below update this value via the
+		     action delegator in main.ts, then dispatch a change event so
+		     the search input's hx-trigger fires. -->
+		<input type="hidden" name="sort" value={ normalisedSort(data.SortBy) }/>
 		<!-- Clear filters: always visible so the user has a stable
 		     affordance. clearAppFilters() lives in main.ts and resets
 		     the q/kind/sort inputs then asks htmx to refetch. -->
@@ -149,9 +146,9 @@ templ Tenant(data view.TenantPageData) {
 			<table>
 				<thead>
 					<tr>
-						<th>Name</th>
-						<th>Type</th>
-						<th>Status</th>
+						@sortableHeader(data.Tenant.Namespace, "name", "Name", data.SortBy)
+						@sortableHeader(data.Tenant.Namespace, "kind", "Type", data.SortBy)
+						@sortableHeader(data.Tenant.Namespace, "status", "Status", data.SortBy)
 						<th>Created</th>
 						<th></th>
 					</tr>
@@ -390,4 +387,44 @@ func usedOrDash(used string) string {
 		return "—"
 	}
 	return used
+}
+
+// sortableHeader renders a <th> whose label is a full-width button.
+// Clicking the button updates the hidden sort input (see
+// data-action="set-sort" handler in main.ts) and re-issues the
+// htmx fragment fetch so the table reorders in place. The active
+// column shows an ▲ glyph; inactive columns show a subtle ↕ so the
+// affordance stays discoverable even on a fresh page load.
+templ sortableHeader(tenant, key, label, activeSort string) {
+	<th class={ "th-sort", templ.KV("th-sort-active", normalisedSort(activeSort) == key) }>
+		<button type="button" class="th-sort-button"
+			data-action="set-sort"
+			data-sort={ key }
+			hx-get={ "/fragments/app-table?tenant=" + tenant }
+			hx-target="#app-table-body"
+			hx-include="[name='q'],[name='kind']"
+			hx-vals={ `{"sort":"` + key + `"}` }
+			aria-label={ "Sort by " + label }
+			aria-pressed?={ normalisedSort(activeSort) == key }>
+			<span>{ label }</span>
+			if normalisedSort(activeSort) == key {
+				<span class="th-sort-indicator" aria-hidden="true">▲</span>
+			} else {
+				<span class="th-sort-indicator th-sort-indicator-idle" aria-hidden="true">↕</span>
+			}
+		</button>
+	</th>
+}
+
+// normalisedSort collapses the empty string to "name" so the sort
+// key is always one of the three recognised values. Used in both
+// the hidden input and the sortable header component so "no sort
+// set yet" consistently renders as "sorted by name".
+func normalisedSort(sortBy string) string {
+	switch sortBy {
+	case "kind", "status":
+		return sortBy
+	default:
+		return "name"
+	}
 }
