@@ -177,6 +177,21 @@ func (pgh *PageHandler) AppDetailPage(writer http.ResponseWriter, req *http.Requ
 	pgh.render(writer, req, usr.Username, tenants, "appDetail", tenantNS, content)
 }
 
+// ProfilePage renders the current user's identity details.
+func (pgh *PageHandler) ProfilePage(writer http.ResponseWriter, req *http.Request) {
+	usr := auth.UserFromContext(req.Context())
+	if usr == nil {
+		http.Error(writer, "unauthorized", http.StatusUnauthorized)
+
+		return
+	}
+
+	tenants, _ := pgh.tenantSvc.List(req.Context(), usr.Username, usr.Groups)
+
+	content := page.Profile(usr)
+	pgh.render(writer, req, usr.Username, tenants, "profile", "", content)
+}
+
 // MarketplacePage renders the marketplace catalog.
 func (pgh *PageHandler) MarketplacePage(writer http.ResponseWriter, req *http.Request) {
 	usr := auth.UserFromContext(req.Context())

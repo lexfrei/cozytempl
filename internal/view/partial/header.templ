@@ -24,7 +24,13 @@ templ Header(username string) {
 			</a>
 		</div>
 		<div class="header-actions">
-			<span class="text-sm text-muted">{ username }</span>
+			<a href="/profile"
+				hx-get="/profile"
+				hx-target="#main-content"
+				hx-push-url="true"
+				class="text-sm text-muted"
+				style="text-decoration: none;"
+				title="View profile and group membership">{ username }</a>
 			<a href="/auth/logout" class="btn btn-sm">Logout</a>
 		</div>
 	</header>

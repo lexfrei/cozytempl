@@ -1,0 +1,48 @@
+package page
+
+import "github.com/lexfrei/cozytempl/internal/auth"
+
+// Profile renders the current user's identity and group membership.
+// Helps users and admins understand what the backend sees about their
+// session — which groups drive impersonated RBAC on every k8s call.
+templ Profile(usr *auth.UserContext) {
+	<div class="page-header">
+		<h1 class="page-title">Profile</h1>
+	</div>
+	<div class="card">
+		<dl class="flex flex-col gap-3">
+			<div class="flex justify-between">
+				<dt class="text-muted">Username</dt>
+				<dd class="text-mono">{ usr.Username }</dd>
+			</div>
+			<div class="flex justify-between">
+				<dt class="text-muted">Groups</dt>
+				<dd class="text-mono text-sm" style="max-width: 60%; text-align: right; word-break: break-all;">
+					if len(usr.Groups) == 0 {
+						<span class="text-muted">(none)</span>
+					} else {
+						for idx, g := range usr.Groups {
+							if idx > 0 {
+								,
+							}
+							{ g }
+						}
+					}
+				</dd>
+			</div>
+		</dl>
+	</div>
+	<div class="card mt-4">
+		<div class="card-header">
+			<div class="card-title">How RBAC is enforced</div>
+		</div>
+		<p class="text-sm text-muted" style="line-height: 1.6;">
+			Every Kubernetes call made on your behalf is impersonated:
+			cozytempl sends <code>Impersonate-User</code> and
+			<code>Impersonate-Group</code> headers equal to the values
+			above. The API server evaluates RBAC as you, not as the
+			service account running cozytempl, so you only see
+			resources you have real access to.
+		</p>
+	</div>
+}
