@@ -115,40 +115,7 @@ func (pgh *PageHandler) TenantPage(writer http.ResponseWriter, req *http.Request
 		return
 	}
 
-	apps, _ := pgh.appSvc.List(req.Context(), usr.Username, usr.Groups, tenantNS)
-	schemas, _ := pgh.schemaSvc.List(req.Context(), usr.Username, usr.Groups)
-
-	// Direct children of this tenant, scoped to what the user can see: we
-	// reuse the already-listed tenants slice so the child list inherits the
-	// caller's RBAC view without a second impersonated call.
-	var children []k8s.Tenant
-
-	for idx := range tenants {
-		if tenants[idx].Parent == tenantNS {
-			children = append(children, tenants[idx])
-		}
-	}
-
-	// Recent namespace events feed the audit / activity card. Errors are
-	// tolerated — if the user lacks events-list permission, the card
-	// simply shows an empty state.
-	events, evtErr := pgh.eventSvc.ListInNamespace(
-		req.Context(), usr.Username, usr.Groups, tenantNS, tenantEventLimit,
-	)
-	if evtErr != nil {
-		pgh.log.Debug("listing tenant events", "tenant", tenantNS, "error", evtErr)
-	}
-
-	data := view.TenantPageData{
-		Tenant:     *tenant,
-		Children:   children,
-		Apps:       apps,
-		Schemas:    schemas,
-		Events:     events,
-		Query:      req.URL.Query().Get("q"),
-		KindFilter: req.URL.Query().Get("kind"),
-		SortBy:     req.URL.Query().Get("sort"),
-	}
+	data := pgh.buildTenantPageData(req, usr, tenantNS, tenant, tenants)
 
 	content := page.Tenant(data)
 	pgh.render(writer, req, usr.Username, tenants, "tenant", tenantNS, content)
@@ -351,6 +318,55 @@ func groupByCategory(schemas []k8s.AppSchema) []view.CategoryGroup {
 	}
 
 	return groups
+}
+
+// buildTenantPageData gathers every per-tenant collection (apps,
+// schemas, children, events, usage) in one place so TenantPage stays
+// under the function-length linter limit and the read path is easy to
+// follow. Errors on the optional collections are logged and dropped —
+// the UI renders an empty section instead of failing the whole page.
+// Tenant is passed by pointer because k8s.Tenant is ~150 bytes of
+// metadata and the linter flags the by-value copy.
+func (pgh *PageHandler) buildTenantPageData(
+	req *http.Request, usr *auth.UserContext, tenantNS string, tenant *k8s.Tenant, allTenants []k8s.Tenant,
+) view.TenantPageData {
+	apps, _ := pgh.appSvc.List(req.Context(), usr.Username, usr.Groups, tenantNS)
+	schemas, _ := pgh.schemaSvc.List(req.Context(), usr.Username, usr.Groups)
+
+	// Direct children of this tenant, scoped to what the user can see:
+	// reuse the already-listed tenants slice so the child list inherits
+	// the caller's RBAC view without a second impersonated call.
+	var children []k8s.Tenant
+
+	for idx := range allTenants {
+		if allTenants[idx].Parent == tenantNS {
+			children = append(children, allTenants[idx])
+		}
+	}
+
+	events, evtErr := pgh.eventSvc.ListInNamespace(
+		req.Context(), usr.Username, usr.Groups, tenantNS, tenantEventLimit,
+	)
+	if evtErr != nil {
+		pgh.log.Debug("listing tenant events", "tenant", tenantNS, "error", evtErr)
+	}
+
+	usage, usageErr := pgh.usageSvc.Collect(req.Context(), usr.Username, usr.Groups, tenantNS)
+	if usageErr != nil {
+		pgh.log.Debug("collecting tenant usage", "tenant", tenantNS, "error", usageErr)
+	}
+
+	return view.TenantPageData{
+		Tenant:     *tenant,
+		Usage:      usage,
+		Children:   children,
+		Apps:       apps,
+		Schemas:    schemas,
+		Events:     events,
+		Query:      req.URL.Query().Get("q"),
+		KindFilter: req.URL.Query().Get("kind"),
+		SortBy:     req.URL.Query().Get("sort"),
+	}
 }
 
 func (pgh *PageHandler) aggregateApps(

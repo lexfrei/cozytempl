@@ -51,44 +51,8 @@ templ Tenant(data view.TenantPageData) {
 			</button>
 		</div>
 	</div>
-	if len(data.Events) > 0 {
-		<div class="card mb-4">
-			<div class="card-header">
-				<div class="card-title">Recent activity</div>
-				<span class="text-sm text-muted">{ fmt.Sprint(len(data.Events)) } events</span>
-			</div>
-			<div class="table-container">
-				<table>
-					<thead>
-						<tr>
-							<th>Type</th>
-							<th>Reason</th>
-							<th>Object</th>
-							<th>Message</th>
-							<th>Last seen</th>
-						</tr>
-					</thead>
-					<tbody>
-						for _, evt := range data.Events {
-							<tr>
-								<td>
-									if evt.Type == "Warning" {
-										<span class="badge badge-failed">{ evt.Type }</span>
-									} else {
-										<span class="badge badge-ready">{ evt.Type }</span>
-									}
-								</td>
-								<td class="text-mono text-sm">{ evt.Reason }</td>
-								<td class="text-sm text-muted">{ evt.Object }</td>
-								<td class="text-sm">{ evt.Message }</td>
-								<td class="text-sm text-muted">{ formatTime(evt.LastSeen) }</td>
-							</tr>
-						}
-					</tbody>
-				</table>
-			</div>
-		</div>
-	}
+	<!-- Resources card: top-of-page summary of what this tenant consumes. -->
+	@tenantResources(data.Usage)
 	if len(data.Children) > 0 {
 		<div class="card mb-4">
 			<div class="card-header">
@@ -158,7 +122,7 @@ templ Tenant(data view.TenantPageData) {
 	</div>
 
 	<!-- App table -->
-	<div class="card">
+	<div class="card mb-4">
 		<div class="table-container">
 			<table>
 				<thead>
@@ -179,6 +143,55 @@ templ Tenant(data view.TenantPageData) {
 			<div class="empty-state">
 				<div class="empty-state-title">No applications found</div>
 				<p class="text-muted">Create your first application to get started.</p>
+			</div>
+		}
+	</div>
+
+	<!-- Recent activity: placed below the app table so the primary list
+	     stays above the fold. An empty-state is rendered here too so
+	     users understand the section exists even on a quiet namespace. -->
+	<div class="card">
+		<div class="card-header">
+			<div class="card-title">Recent activity</div>
+			if len(data.Events) > 0 {
+				<span class="text-sm text-muted">{ fmt.Sprint(len(data.Events)) } events</span>
+			}
+		</div>
+		if len(data.Events) == 0 {
+			<div class="empty-state">
+				<div class="empty-state-title">No recent events</div>
+				<p class="text-muted">Kubernetes has no recent events for this namespace, or you lack permission to list them.</p>
+			</div>
+		} else {
+			<div class="table-container">
+				<table>
+					<thead>
+						<tr>
+							<th>Type</th>
+							<th>Reason</th>
+							<th>Object</th>
+							<th>Message</th>
+							<th>Last seen</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, evt := range data.Events {
+							<tr>
+								<td>
+									if evt.Type == "Warning" {
+										<span class="badge badge-failed">{ evt.Type }</span>
+									} else {
+										<span class="badge badge-ready">{ evt.Type }</span>
+									}
+								</td>
+								<td class="text-mono text-sm">{ evt.Reason }</td>
+								<td class="text-sm text-muted">{ evt.Object }</td>
+								<td class="text-sm">{ evt.Message }</td>
+								<td class="text-sm text-muted">{ formatTime(evt.LastSeen) }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
 			</div>
 		}
 	</div>
@@ -230,4 +243,65 @@ func uniqueKinds(apps []k8s.Application) []string {
 		}
 	}
 	return kinds
+}
+
+// tenantResources renders the top-of-page summary card with Pods, CPU,
+// Memory and Storage. The primary number for CPU and Memory is ALWAYS
+// the requested value (stable, predictable) and the caption shows the
+// live metrics-server number underneath when one is available. This
+// avoids the confusion of the primary cell swapping between "real" and
+// "requested" depending on whether workloads happen to be idle.
+templ tenantResources(usage k8s.TenantUsage) {
+	<div class="card mb-4">
+		<div class="card-header">
+			<div class="card-title">Resources</div>
+			if hasLiveMetrics(usage) {
+				<span class="text-sm text-muted">live usage from metrics-server</span>
+			} else if usage.MetricsEnabled {
+				<span class="text-sm text-muted">metrics-server connected, no live usage yet</span>
+			} else {
+				<span class="text-sm text-muted">requested values only — metrics-server unavailable</span>
+			}
+		</div>
+		<div class="stats-grid">
+			@resourceStat("Pods", fmt.Sprint(usage.PodCount), "")
+			@resourceStat("CPU requested", k8s.FormatCPU(usage.CPURequestsMi), cpuRealCaption(usage))
+			@resourceStat("Memory requested", k8s.FormatMem(usage.MemRequestsMi), memRealCaption(usage))
+			@resourceStat("Storage", k8s.FormatStorage(usage.StorageGi), "PVC requested")
+		</div>
+	</div>
+}
+
+templ resourceStat(label, value, caption string) {
+	<div class="stat-card">
+		<div class="stat-value">{ value }</div>
+		<div class="stat-label">{ label }</div>
+		if caption != "" {
+			<div class="text-sm text-muted" style="margin-top: 2px;">{ caption }</div>
+		}
+	</div>
+}
+
+// hasLiveMetrics reports whether at least one of the live metrics
+// numbers is non-zero, so the header can distinguish "metrics-server is
+// up but workloads are idle" from "we actually see usage".
+func hasLiveMetrics(usage k8s.TenantUsage) bool {
+	return usage.MetricsEnabled && (usage.CPUUsageMi > 0 || usage.MemUsageMi > 0)
+}
+
+// cpuRealCaption renders "real X" under the requested value when
+// metrics-server reports a non-zero usage for this namespace.
+func cpuRealCaption(usage k8s.TenantUsage) string {
+	if !usage.MetricsEnabled || usage.CPUUsageMi == 0 {
+		return ""
+	}
+	return "real " + k8s.FormatCPU(usage.CPUUsageMi)
+}
+
+// memRealCaption mirrors cpuRealCaption for the memory stat.
+func memRealCaption(usage k8s.TenantUsage) string {
+	if !usage.MetricsEnabled || usage.MemUsageMi == 0 {
+		return ""
+	}
+	return "real " + k8s.FormatMem(usage.MemUsageMi)
 }
