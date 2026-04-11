@@ -106,6 +106,17 @@ jobs:
       - name: Generate templ sources
         run: templ generate
 
+      - name: Build TypeScript bundles
+        # static/static.go embeds `dist` via go:embed, so an empty
+        # static/dist/ directory trips golangci-lint's typecheck
+        # pass with 'pattern dist: no matching files found'. The
+        # dist directory is gitignored, so we have to recreate it
+        # here before the linter runs — same shape as the test
+        # job, just pulled forward into lint.
+        run: |
+          npx esbuild static/ts/main.ts --bundle --outfile=static/dist/bundle.js --minify --sourcemap
+          npx esbuild static/ts/theme-early.ts --bundle --outfile=static/dist/theme-early.js --minify
+
       - name: golangci-lint
         # v9 of the action is required for golangci-lint v2, which
         # in turn is required because our .golangci.yml uses the
