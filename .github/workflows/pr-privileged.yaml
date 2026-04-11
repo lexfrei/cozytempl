@@ -44,11 +44,19 @@ jobs:
 
       - name: Upload SARIF to GitHub Security
         if: steps.download-sarif.outcome == 'success'
-        uses: github/codeql-action/upload-sarif@v3
+        # v4 is the current stable; v3 deprecates in December 2026.
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-fs-results.sarif
           category: trivy-filesystem
-          ref: refs/pull/${{ github.event.workflow_run.pull_requests[0].number }}/merge
+          # (ref, sha) must correspond: refs/pull/N/head → PR head
+          # commit SHA (which is what workflow_run.head_sha gives us).
+          # Using /merge here demands the virtual merge commit SHA,
+          # which GitHub creates separately and is not exposed via
+          # workflow_run — the API then rejects the upload with
+          # 'ref is a pull request merge but commit_oid is not a
+          # merge commit'.
+          ref: refs/pull/${{ github.event.workflow_run.pull_requests[0].number }}/head
           sha: ${{ github.event.workflow_run.head_sha }}
 
   notify:
