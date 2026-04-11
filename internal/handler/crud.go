@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -16,7 +17,29 @@ const (
 	formFieldKind = "kind"
 	sortByName    = "name"
 	sortByKind    = "kind"
+
+	// maxAppNameLength mirrors Helm's 53-character cap on release
+	// names. Cozystack applications are materialised as HelmReleases,
+	// so anything longer is rejected downstream with an opaque error.
+	// We catch it here and give the user a precise message instead.
+	maxAppNameLength = 53
 )
+
+// appNameRegex is the DNS-1123 label regex that Kubernetes enforces on
+// object names. We validate client-side (via the <input pattern=...>)
+// and again server-side so that non-browser clients don't slip past.
+var appNameRegex = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+
+// validAppName reports whether s is a valid application name. Matches
+// the tenant.templ create form's client-side pattern so the two
+// validators never diverge.
+func validAppName(s string) bool {
+	if s == "" || len(s) > maxAppNameLength {
+		return false
+	}
+
+	return appNameRegex.MatchString(s)
+}
 
 // CreateApp handles POST to create a new application.
 func (pgh *PageHandler) CreateApp(writer http.ResponseWriter, req *http.Request) {
@@ -41,6 +64,14 @@ func (pgh *PageHandler) CreateApp(writer http.ResponseWriter, req *http.Request)
 
 	if appName == "" || appKind == "" {
 		http.Error(writer, "name and kind required", http.StatusBadRequest)
+
+		return
+	}
+
+	if !validAppName(appName) {
+		pgh.renderErrorToast(writer, req,
+			"Invalid name: lowercase letters, digits and hyphens only, must "+
+				"start and end with a letter or digit, max 53 characters.")
 
 		return
 	}

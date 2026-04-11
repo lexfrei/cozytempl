@@ -293,3 +293,42 @@ func TestFilterAndSortAppsSortOrder(t *testing.T) {
 		t.Errorf("sort by status: %v", byStatus)
 	}
 }
+
+// TestValidAppName is the server-side safety net for the
+// <input pattern="..."> regex in the create-application form. Any
+// change to one must match the other, otherwise the UI and the
+// server diverge and the user sees the generic "Failed to create"
+// error toast instead of a precise message.
+func TestValidAppName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"empty rejected", "", false},
+		{"simple ok", "my-app", true},
+		{"alphanum only ok", "redis1", true},
+		{"single char ok", "a", true},
+		{"leading hyphen rejected", "-foo", false},
+		{"trailing hyphen rejected", "foo-", false},
+		{"uppercase rejected", "MyApp", false},
+		{"underscore rejected", "my_app", false},
+		{"dot rejected", "my.app", false},
+		{"space rejected", "my app", false},
+		{"max length ok", strings.Repeat("a", 53), true},
+		{"over max length rejected", strings.Repeat("a", 54), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := validAppName(tt.input)
+			if got != tt.want {
+				t.Errorf("validAppName(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
