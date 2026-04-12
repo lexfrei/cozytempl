@@ -1,17 +1,11 @@
-# syntax=docker/dockerfile:1.7
-
-# Multi-arch builds run through a classic cross-compile pattern:
-# every builder stage runs on $BUILDPLATFORM (the host's native arch,
-# so no QEMU/Rosetta emulation), and only the final binary is targeted
-# at $TARGETPLATFORM via GOOS/GOARCH. This is the only way to avoid
-# the Rosetta + Go-runtime panics that fire on Apple Silicon hosts
-# whenever amd64 tries to run `go install` under emulation.
+# syntax=docker/dockerfile:1.23
 
 # --- TypeScript bundle stage ---------------------------------------------
-# Runs on the native host arch. esbuild is pure JS, arch-independent,
-# and the output is byte-for-byte the same for every target platform —
-# so it's safe to build once and reuse.
-FROM --platform=$BUILDPLATFORM node:20-alpine AS webbuilder
+# esbuild is pure JS and arch-agnostic, so this stage pins to
+# $BUILDPLATFORM and runs natively on the host runner. The output
+# (static/dist/bundle.js + theme-early.js) is byte-for-byte identical
+# for every target platform and gets copied into the Go builder below.
+FROM --platform=$BUILDPLATFORM docker.io/library/node:24.14.1-alpine@sha256:01743339035a5c3c11a373cd7c83aeab6ed1457b55da6a69e014a95ac4e4700b AS webbuilder
 
 WORKDIR /src
 COPY package.json package-lock.json ./
@@ -25,15 +19,24 @@ RUN npx esbuild static/ts/main.ts --bundle --outfile=static/dist/bundle.js --min
 
 # --- Go builder stage ----------------------------------------------------
 # Pinned to $BUILDPLATFORM so the Go toolchain and templ generator run
-# natively. ARG TARGETOS / TARGETARCH come from buildx and drive the
-# cross-compile flags below.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+# natively on the host runner. ARG TARGETOS / TARGETARCH come from buildx
+# and drive the cross-compile flags at the final go build call.
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26-alpine@sha256:c2a1f7b2095d046ae14b286b18413a05bb82c9bca9b25fe7ff5efef0f0826166 AS builder
 
-RUN apk add --no-cache git
+ARG VERSION=development
+ARG REVISION=development
 
-# templ is pinned to the same version go.mod uses for the runtime
-# library so the generator and the runtime never drift. Bumping this
-# is a single grep across go.mod + Containerfile.
+# Build a minimal /etc/passwd entry for 'nobody'. The final scratch
+# image needs this so a process running as UID 65534 has a proper
+# name→uid mapping; without it, anything calling user.Current() or
+# os/user.LookupId would break. 65534 is the standard nobody UID
+# across virtually every Linux distro.
+RUN echo 'nobody:x:65534:65534:Nobody:/:' > /tmp/passwd
+
+# templ pinned to the runtime library version from go.mod so the
+# generator and the runtime library can never drift. Bump this
+# together with the go.mod dependency — Renovate will do so via the
+# regex manager in .github/renovate.json5.
 RUN go install github.com/a-h/templ/cmd/templ@v0.3.1001
 
 WORKDIR /src
@@ -51,16 +54,22 @@ ARG TARGETARCH
 RUN --mount=type=cache,target=/root/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-      go build -ldflags="-s -w" -o /cozytempl ./cmd/cozytempl
+      go build \
+        -ldflags="-s -w -X main.Version=${VERSION} -X main.Revision=${REVISION}" \
+        -trimpath \
+        -o /cozytempl ./cmd/cozytempl
 
 # --- Runtime stage -------------------------------------------------------
-# Distroless/static is published as a multi-arch manifest list, so
-# buildx selects the matching image for $TARGETPLATFORM automatically.
-FROM gcr.io/distroless/static-debian12:nonroot
+# FROM scratch is the smallest possible base — nothing but our binary
+# plus the two files a CGO-less Go HTTPS client needs to talk to the
+# k8s API and OIDC provider: ca-certificates (TLS root store) and
+# /etc/passwd (UID→name mapping for the non-root user).
+FROM scratch
 
-COPY --from=builder /cozytempl /cozytempl
+COPY --from=builder /tmp/passwd /etc/passwd
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder --chmod=555 /cozytempl /cozytempl
 
-USER nonroot:nonroot
-EXPOSE 8080
-
+USER 65534
+EXPOSE 8080/tcp
 ENTRYPOINT ["/cozytempl"]
