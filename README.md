@@ -58,47 +58,16 @@ The chart has its own [README](deploy/helm/cozytempl/README.md) with a full valu
 make install-tools   # templ, air, govulncheck, helm-unittest, eslint
 make build           # templ generate → esbuild → go build
 
-KUBECONFIG=~/.kube/config COZYTEMPL_DEV_MODE=true ./bin/cozytempl
+KUBECONFIG=~/.kube/config COZYTEMPL_AUTH_MODE=dev ./bin/cozytempl
 ```
 
 ## Architecture
-
-```text
-Browser (htmx 2.0.8 bundled + EventSource + ~22 KB TypeScript)
-        │
-        ▼
-Go HTTP Server
-├── GET  /                       → Dashboard
-├── GET  /marketplace            → Application catalog
-├── GET  /tenants                → Tenant management
-├── POST /tenants                → create tenant
-├── PUT  /tenants/{name}?ns=X    → edit tenant spec (with optimistic locking)
-├── DELETE /tenants/{name}?ns=X  → delete tenant
-├── GET  /tenants/{tenant}       → tenant detail (apps + events + sub-tenants)
-├── GET  /tenants/{tenant}/apps/{name}  → app detail
-├── POST /tenants/{tenant}/apps  → create app
-├── PUT  /tenants/{tenant}/apps/{name}  → edit app spec
-├── DELETE /tenants/{tenant}/apps/{name}  → delete app
-├── GET  /fragments/*            → htmx partial swaps (app-table, marketplace,
-│                                   schema-fields, tenant-edit, app-edit,
-│                                   secrets/reveal)
-├── GET  /api/tenants            → JSON API
-├── GET  /api/events?tenant=X    → SSE stream (authorized per tenant)
-├── GET  /metrics                → Prometheus exposition (unauthenticated,
-│                                   protect at network layer)
-├── GET  /healthz, /readyz       → k8s liveness / readiness
-├── /auth/*                      → OIDC flow (prod) or dev bypass (opt-in)
-└── /static/*                    → embedded css + TS bundle + fonts
-        │
-        ▼
-Kubernetes API (dynamic client, user impersonation on every call)
-```
 
 - **Backend**: thin credential forwarder to the Kubernetes API. In the recommended `passthrough` mode the user's OIDC ID token is used as a Bearer credential on every k8s call, and the cozytempl pod's ServiceAccount has zero cluster permissions — a compromise of the cozytempl process cannot impersonate anyone. See [`docs/auth-architecture.md`](docs/auth-architecture.md) for the per-mode threat model.
 - **Frontend**: server-rendered templ pages. htmx wires navigation and mutations. A small TypeScript bundle drives the top progress bar, modal lifecycle, clipboard copy, toast dismissal, the unified SSE resource-change reducer, and the click-to-reveal auto-hide timer.
 - **Auth**: four modes selected via `COZYTEMPL_AUTH_MODE`. `passthrough` (default) forwards the OIDC ID token as a Bearer; `byok` lets the user upload a kubeconfig stored encrypted in the session cookie; `impersonation-legacy` keeps the old Impersonate-headers model (deprecated); `dev` disables auth entirely and prints a loud banner. OIDC ID tokens are refreshed automatically shortly before they expire.
 - **Real-time**: Server-Sent Events for HelmRelease changes. The server emits a unified `{op, name, html}` message; the client runs one upsert/delete reducer keyed by a stable `row-{name}` id, so create / update / delete go through the same DOM path regardless of whether htmx or SSE triggers the change.
-- **Deployment**: single static binary, distroless container, all CSS + TS bundle + fonts embedded via `go:embed` with a SHA-256 cache-busting query string. The Helm chart is the canonical install path.
+- **Deployment**: single static binary, `FROM scratch` container (ca-certificates + hand-built `/etc/passwd` for UID 65534, nothing else), all CSS + TS bundle + fonts embedded via `go:embed` with a SHA-256 cache-busting query string. Released on every `v*` git tag as a multi-arch image at `ghcr.io/lexfrei/cozytempl` and an OCI chart at `ghcr.io/lexfrei/charts/cozytempl`, both cosign-signed through GitHub OIDC. The Helm chart is the canonical install path.
 
 ## Features
 
@@ -141,7 +110,7 @@ Kubernetes API (dynamic client, user impersonation on every call)
 - `SESSION_SECRET` is required in production; a placeholder or missing value is a fatal load error.
 - `Cache-Control: no-store` on app detail pages so the Connection tab's credentials never hit an intermediate cache.
 - Per-request `context.WithTimeout` plus a k8s client-side transport timeout so a hung control plane can't park a goroutine.
-- `govulncheck` in `make lint`, Dependabot for Go + npm + GitHub Actions.
+- `govulncheck` in `make lint`, Trivy filesystem scan in CI with results uploaded to GitHub Code Scanning, Renovate for Go + npm + GitHub Actions + Containerfile base images (weekly schedule with patch auto-merge for safe ecosystems).
 
 ### Platform
 
@@ -150,7 +119,7 @@ Kubernetes API (dynamic client, user impersonation on every call)
 - Profile page showing the impersonated username and groups.
 - **Command palette**: `Cmd/Ctrl-K` (or `/`) opens an overlay with the top-level actions — Go to Dashboard, Go to Tenants, Go to Marketplace, Go to Profile, Toggle theme, Create tenant, plus per-tenant actions when you're on a tenant-scoped page. Arrow keys navigate, Enter runs, Esc closes.
 - Dark theme, responsive layout, mobile burger menu, branded 404 error pages.
-- Dev-mode banner — a loud red strip at the top of every page whenever `COZYTEMPL_DEV_MODE=true` so an accidentally-exposed dev instance is impossible to miss.
+- Dev-mode banner — a loud red strip at the top of every page whenever `COZYTEMPL_AUTH_MODE=dev` (or the legacy `COZYTEMPL_DEV_MODE=true`) so an accidentally-exposed dev instance is impossible to miss.
 
 ## Prerequisites
 
@@ -263,9 +232,21 @@ make lint            # golangci-lint + govulncheck + eslint
 
 ## Container
 
+Pre-built multi-arch image from the release pipeline:
+
 ```bash
-docker build --file Containerfile --tag cozytempl .
+podman pull ghcr.io/lexfrei/cozytempl:0.1.0
+# Available tags: <version>, <major>.<minor>, <major>, latest.
+```
+
+Or build locally:
+
+```bash
+docker build --file Containerfile --tag cozytempl \
+  --build-arg VERSION=local --build-arg REVISION=$(git rev-parse --short HEAD) .
+
 docker run --publish 8080:8080 \
+  --env COZYTEMPL_AUTH_MODE=passthrough \
   --env OIDC_ISSUER_URL=... \
   --env OIDC_CLIENT_ID=... \
   --env OIDC_CLIENT_SECRET=... \
@@ -274,39 +255,7 @@ docker run --publish 8080:8080 \
   cozytempl
 ```
 
-## Project Structure
-
-```text
-cmd/cozytempl/           Entry point, DI wiring
-deploy/helm/cozytempl/   Helm chart (Deployment, Service, ServiceAccount,
-                         ClusterRole, Secret), values.schema.json, unit tests
-internal/
-  api/                   Router, middleware stack (request ID → metrics →
-                         access log → security headers → timeout),
-                         rate limiting, /metrics endpoint
-  audit/                 Structured audit event types + JSON slog logger +
-                         request-ID context helpers (shared by api/handler)
-  auth/                  OIDC, sessions, dev-mode bypass, middleware
-  config/                Environment-based configuration with strict
-                         production validation
-  handler/               HTML page handlers that render templ pages
-  k8s/                   Impersonated Kubernetes client: tenant service,
-                         application service (with optimistic locking),
-                         schema service, event service, usage collector,
-                         HelmRelease watcher, deep-merge for spec updates
-  view/
-    layout/              Base + app shell templates
-    page/                Full-page templates
-    fragment/            htmx partial templates
-    partial/             Shared components (header, sidebar, toast, ...)
-static/
-  css/                   Dark theme + loading-state classes + truncation
-                         banner + click-to-reveal styles
-  ts/                    TypeScript source (main, sse, htmx progress bar,
-                         modal, toast, clipboard, reveal)
-  fonts/                 Self-hosted Inter woff2
-  dist/                  esbuild output — bundled & minified (gitignored)
-```
+The image runs as UID 65534 (`nobody`) in a `FROM scratch` base — no shell, no package manager, no OS libs. Only the binary, `/etc/ssl/certs/ca-certificates.crt` and `/etc/passwd`.
 
 ## License
 

@@ -35,6 +35,18 @@ const (
 	idleTimeout     = 120 * time.Second
 )
 
+// Version and Revision are stamped at build time via
+// -ldflags "-X main.Version=... -X main.Revision=..." — see the
+// Containerfile build stage. Left at the "development" default
+// for local `go build` / `go run` so nothing crashes when the
+// ldflags are absent. Surfaced in the startup log line and
+// available to any future /version endpoint or profile-page
+// footer that wants to display the running build.
+var (
+	Version  = "development"
+	Revision = "development"
+)
+
 func main() {
 	if err := run(); err != nil {
 		slog.Error("fatal", "error", err)
@@ -45,6 +57,8 @@ func main() {
 func run() error {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(log)
+
+	log.Info("cozytempl starting", "version", Version, "revision", Revision)
 
 	cfg, err := config.Load()
 	if err != nil {

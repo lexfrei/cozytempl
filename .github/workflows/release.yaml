@@ -42,17 +42,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: latest
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -98,7 +98,7 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -109,10 +109,10 @@ jobs:
           echo "pair=${platform//\//-}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -120,9 +120,16 @@ jobs:
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE_REPO }}
+          # IMPORTANT: `type=semver,pattern={{version}}` STRIPS the
+          # `v` prefix from the git tag. A git tag of `v0.1.0`
+          # produces image tag `0.1.0` (no `v`), matching the
+          # OCI convention used by gateway-controller and stock
+          # docker/metadata-action semantics. Use `type=ref` or
+          # `type=semver,pattern={{raw}}` if you ever need the raw
+          # `v0.1.0` form — we don't.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -133,9 +140,23 @@ jobs:
             org.opencontainers.image.description=Web UI for Cozystack platform management
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
+      - name: Echo resolved image tags
+        # Visibility step: fails-safe verification that the meta
+        # action produced tags without the `v` prefix. Any drift
+        # shows up in the job log before buildx actually pushes.
+        run: |
+          echo "Resolved image tags for $GITHUB_REF_NAME:"
+          echo "${{ steps.meta.outputs.tags }}"
+          {
+            echo "### Resolved image tags (${{ matrix.arch }})"
+            echo '```text'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build and Push by Digest
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Containerfile
@@ -152,7 +173,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digests-${{ steps.platform.outputs.pair }}
           path: /tmp/digests/*
@@ -165,17 +186,17 @@ jobs:
     needs: build-and-push
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: digests-*
           path: /tmp/digests
           merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -183,14 +204,28 @@ jobs:
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE_REPO }}
+          # Same {{version}} semantics as build-and-push: `v0.1.0`
+          # git tag → `0.1.0` image tag. See the long comment
+          # there for the why.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest
+
+      - name: Echo resolved image tags
+        run: |
+          echo "Resolved image tags for manifest list:"
+          echo "${{ steps.meta.outputs.tags }}"
+          {
+            echo "### Manifest list tags"
+            echo '```text'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
@@ -230,23 +265,36 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Extract version
         id: version
+        # ${GITHUB_REF_NAME#v} strips the leading `v` if present.
+        # Git tag v0.1.0 → VERSION=0.1.0. Same normalisation that
+        # docker/metadata-action's {{version}} template applies to
+        # the container image tags in build-and-push, so chart
+        # version, chart appVersion, values.yaml image.tag and the
+        # image tag on ghcr all line up on 0.1.0.
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved VERSION=${VERSION} (from git tag ${GITHUB_REF_NAME})"
+          {
+            echo "### Release version"
+            echo ""
+            echo "- Git tag: \`${GITHUB_REF_NAME}\`"
+            echo "- Chart version / appVersion / image tag: \`${VERSION}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: latest
 
       - name: Install oras
-        uses: oras-project/setup-oras@v1
+        uses: oras-project/setup-oras@v2
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
@@ -339,7 +387,7 @@ jobs:
           yq eval ".image.tag = \"${VERSION}\"" --inplace "${CHART_PATH}/values.yaml"
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -415,7 +463,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload chart artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: helm-chart
           path: "*.tgz"
@@ -427,7 +475,7 @@ jobs:
     needs: [merge-manifests, publish-chart]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -515,7 +563,7 @@ jobs:
           } > release-notes.md
 
       - name: Download chart artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: helm-chart
           path: ./artifacts

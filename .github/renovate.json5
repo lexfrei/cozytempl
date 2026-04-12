@@ -182,6 +182,5 @@
   // Helm chart tracking: the chart in deploy/helm/cozytempl has no
   // Chart.yaml dependencies today (it only ships its own resources).
   // If we ever add `dependencies:` to Chart.yaml, flip this on.
-  helm: { enabled: false },
   helmv3: { enabled: false },
 }
