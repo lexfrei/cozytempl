@@ -63,37 +63,6 @@ KUBECONFIG=~/.kube/config COZYTEMPL_AUTH_MODE=dev ./bin/cozytempl
 
 ## Architecture
 
-```text
-Browser (htmx 2.x bundled + EventSource + ~25 KB TypeScript)
-        │
-        ▼
-Go HTTP Server
-├── GET  /                       → Dashboard
-├── GET  /marketplace            → Application catalog
-├── GET  /tenants                → Tenant management
-├── POST /tenants                → create tenant
-├── PUT  /tenants/{name}?ns=X    → edit tenant spec (with optimistic locking)
-├── DELETE /tenants/{name}?ns=X  → delete tenant
-├── GET  /tenants/{tenant}       → tenant detail (apps + events + sub-tenants)
-├── GET  /tenants/{tenant}/apps/{name}  → app detail
-├── POST /tenants/{tenant}/apps  → create app
-├── PUT  /tenants/{tenant}/apps/{name}  → edit app spec
-├── DELETE /tenants/{tenant}/apps/{name}  → delete app
-├── GET  /fragments/*            → htmx partial swaps (app-table, marketplace,
-│                                   schema-fields, tenant-edit, app-edit,
-│                                   secrets/reveal)
-├── GET  /api/tenants            → JSON API
-├── GET  /api/events?tenant=X    → SSE stream (authorized per tenant)
-├── GET  /metrics                → Prometheus exposition (unauthenticated,
-│                                   protect at network layer)
-├── GET  /healthz, /readyz       → k8s liveness / readiness
-├── /auth/*                      → OIDC flow (prod) or dev bypass (opt-in)
-└── /static/*                    → embedded css + TS bundle + fonts
-        │
-        ▼
-Kubernetes API (dynamic client; credential vehicle picked per authMode)
-```
-
 - **Backend**: thin credential forwarder to the Kubernetes API. In the recommended `passthrough` mode the user's OIDC ID token is used as a Bearer credential on every k8s call, and the cozytempl pod's ServiceAccount has zero cluster permissions — a compromise of the cozytempl process cannot impersonate anyone. See [`docs/auth-architecture.md`](docs/auth-architecture.md) for the per-mode threat model.
 - **Frontend**: server-rendered templ pages. htmx wires navigation and mutations. A small TypeScript bundle drives the top progress bar, modal lifecycle, clipboard copy, toast dismissal, the unified SSE resource-change reducer, and the click-to-reveal auto-hide timer.
 - **Auth**: four modes selected via `COZYTEMPL_AUTH_MODE`. `passthrough` (default) forwards the OIDC ID token as a Bearer; `byok` lets the user upload a kubeconfig stored encrypted in the session cookie; `impersonation-legacy` keeps the old Impersonate-headers model (deprecated); `dev` disables auth entirely and prints a loud banner. OIDC ID tokens are refreshed automatically shortly before they expire.
@@ -287,59 +256,6 @@ docker run --publish 8080:8080 \
 ```
 
 The image runs as UID 65534 (`nobody`) in a `FROM scratch` base — no shell, no package manager, no OS libs. Only the binary, `/etc/ssl/certs/ca-certificates.crt` and `/etc/passwd`.
-
-## Project Structure
-
-```text
-cmd/cozytempl/           Entry point, DI wiring, build-stamped Version + Revision
-deploy/helm/cozytempl/   Helm chart. Always-on Deployment / Service /
-                         ServiceAccount; mode-conditional RBAC + Secret;
-                         opt-in Ingress / HTTPRoute / NetworkPolicy /
-                         PodDisruptionBudget / HPA / ServiceMonitor / VPA.
-                         values.schema.json with strict additionalProperties,
-                         11 helm-unittest suites (79 cases), artifacthub-repo.yml.
-internal/
-  api/                   Router, middleware stack (request ID → metrics →
-                         access log → security headers → timeout),
-                         rate limiting, /metrics endpoint, SSE handler with
-                         60-minute stream cap + Last-Event-ID replay
-  audit/                 Structured audit event types + JSON slog logger +
-                         request-ID context helpers (shared by api/handler).
-                         Events carry the active auth mode in auth_mode field.
-  auth/                  OIDC with refresh loop, cookie sessions, BYOK
-                         kubeconfig upload handler, RequireAuth middleware
-                         that dispatches per COZYTEMPL_AUTH_MODE, dev bypass
-  config/                Environment-based configuration. AuthMode type,
-                         per-mode validation, OIDC_INTERNAL_ISSUER_URL split,
-                         COZYTEMPL_DEBUG_PPROF_ADDR opt-in
-  handler/               HTML page handlers that render templ pages.
-                         pgh.t() helper routes toast / error strings through
-                         i18n per request locale.
-  i18n/                  go-i18n bundle, 4 locales (en/ru/kk/zh), per-request
-                         middleware, standalone FromContext helper used by
-                         templ components without threading a loc parameter
-  k8s/                   Kubernetes client dispatched by AuthMode:
-                         buildUserRESTConfig switches between OIDC Bearer,
-                         uploaded-kubeconfig, Impersonate headers, and raw
-                         baseCfg. Tenant / Application / Schema / Usage /
-                         Event / Log services with optimistic locking,
-                         HelmRelease watcher under a narrow watcher SA.
-  view/
-    layout/              Base + app shell templates (html lang driven by
-                         active locale)
-    page/                Full-page templates
-    fragment/            htmx partial templates
-    partial/             Shared components (header, sidebar, toast, …)
-    authpage/            BYOK kubeconfig upload form in its own package to
-                         avoid an internal/auth ↔ internal/view import cycle
-static/
-  css/                   Dark + light theme, form controls, command-palette
-                         overlay, marketplace cards, sort indicators
-  ts/                    TypeScript source (main, sse, htmx progress bar,
-                         modal, toast, clipboard, reveal, palette, theme-early)
-  fonts/                 Self-hosted Inter woff2
-  dist/                  esbuild output — bundled & minified (gitignored)
-```
 
 ## License
 
