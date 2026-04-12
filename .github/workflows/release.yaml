@@ -161,6 +161,9 @@ jobs:
           context: .
           file: ./Containerfile
           platforms: ${{ matrix.platform }}
+          build-args: |
+            VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+            REVISION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
           outputs: type=image,name=${{ env.IMAGE_REPO }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=build-${{ steps.platform.outputs.pair }}
           cache-to: type=gha,scope=build-${{ steps.platform.outputs.pair }},mode=max
@@ -411,8 +414,12 @@ jobs:
 
           # Push chart with oras so we have full path control over
           # the OCI reference. Media types per Helm OCI spec.
+          # --annotation org.opencontainers.image.source links the
+          # ghcr package to the GitHub repository so the Actions
+          # GITHUB_TOKEN (packages:write) can tag and sign it.
           oras push "${{ env.CHART_OCI_REPO }}:${VERSION}" \
             --config "${{ env.CHART_NAME }}/config.json:application/vnd.cncf.helm.config.v1+json" \
+            --annotation "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             "${CHART_FILE}:application/vnd.cncf.helm.chart.content.v1.tar+gzip"
 
           rm --recursive --force "${{ env.CHART_NAME }}"
@@ -433,6 +440,7 @@ jobs:
 
           oras push "${{ env.CHART_OCI_REPO }}:artifacthub.io" \
             --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
+            --annotation "org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
             "${CHART_PATH}/artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml"
 
       - name: Sign Helm chart with cosign
