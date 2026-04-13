@@ -154,9 +154,9 @@ func validateForMode(cfg *Config) error {
 	case AuthModeDev:
 		return nil
 
-	case AuthModeBYOK:
-		// BYOK has no IdP; only the session secret (used to encrypt the
-		// stored kubeconfig) is required.
+	case AuthModeBYOK, AuthModeToken:
+		// Neither mode talks to an IdP; only the session secret (used to
+		// encrypt the stored kubeconfig or bearer token) is required.
 		if cfg.SessionSecret == "" || cfg.SessionSecret == devSessionSecretPlaceholder {
 			return ErrWeakSessionSecret
 		}
