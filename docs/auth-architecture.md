@@ -81,7 +81,7 @@ Browser ──(6) cookie (carrying encrypted token)──▶ cozytempl
 cozytempl ──(7) Authorization: Bearer <token>──▶ k8s API
 ```
 
-Token mode skips OIDC entirely — the apiserver treats the Bearer token the same way it treats any other (ServiceAccount token, client-certificate-backed token, OIDC ID token, etc.). Size is capped at 4 KB; the probe step is detailed in [Token-upload validation probe](#token-upload-validation-probe). A revoked token fails at the next k8s call after revocation, not at session-refresh time — sessions have no clock; log out and paste a fresh token if operations stop working after a rotation.
+Token mode skips OIDC entirely — the apiserver treats the Bearer token the same way it treats any other (ServiceAccount token, client-certificate-backed token, OIDC ID token, etc.). Size is capped at 1.5 KB (the largest raw token that still fits a single gorilla/securecookie cookie after gob+encrypt+base64); a real-world Kubernetes ServiceAccount token is typically 900–1500 bytes so this is comfortable. Operators whose IdP mints larger tokens should use byok instead. The probe step is detailed in [Token-upload validation probe](#token-upload-validation-probe). A revoked token fails at the next k8s call after revocation, not at session-refresh time — sessions have no clock; log out and paste a fresh token if operations stop working after a rotation.
 
 ### dev
 

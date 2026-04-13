@@ -20,14 +20,35 @@ import (
 // The HTML in token_upload.templ must match.
 const tokenFormField = "token"
 
-// tokenMaxBytes bounds the accepted Bearer token size. Real-world
-// Kubernetes service-account tokens are well under 2 KB; 4 KB leaves
-// headroom without bloating the cookie. The gorilla/sessions cookie
-// store splits payloads larger than 4 KB across multiple cookies, so
-// a 4 KB token still fits one chunk after gob+encrypt+base64 inflation
-// only if the rest of the session is small — which it is in token mode
-// (no OIDC tokens, no kubeconfig).
-const tokenMaxBytes int64 = 4 * 1024
+// tokenMaxBytes bounds the accepted Bearer token size.
+//
+// The hard ceiling is gorilla/securecookie's default maxLength of
+// 4096 bytes for the *encoded* cookie value. Encoding a session that
+// carries a raw N-byte token produces roughly:
+//
+//	gob(session)       ≈ N + 250   (map + 5 other keys + gob headers)
+//	+ IV               + 16        (AES-CFB does not pad but prepends IV)
+//	= cipher           ≈ N + 266
+//	base64(cipher)     ≈ (N + 266) * 4/3
+//	+ "name|date|"     + 21
+//	+ HMAC             + 32
+//	final base64       ≈ (base64(cipher) + 53) * 4/3
+//
+// Substituting N = 1500 lands at ~3900 encoded bytes — comfortably
+// under both gorilla's 4096 default and RFC 6265's 4096-per-cookie
+// guidance for browsers. Anything materially larger starts tripping
+// securecookie's errEncodedValueTooLong, which store.Save surfaces
+// as a generic session-save error (a 500 for the user with no hint
+// what went wrong).
+//
+// Real-world Kubernetes service-account tokens are ~900-1500 bytes,
+// so this cap is comfortable for every common case. Operators whose
+// IdP mints tokens larger than 1.5 KB should use byok (kubeconfig
+// mode) instead. CookieStore does NOT split a single session across
+// multiple cookies, so raising this cap without also calling
+// MaxLength on the underlying securecookie codecs would produce a
+// 500 on first paste of an oversized token.
+const tokenMaxBytes int64 = 1500
 
 // ErrTokenEmpty is returned when the upload form arrives with no
 // non-whitespace content in the token field.
@@ -37,7 +58,7 @@ var ErrTokenEmpty = errors.New("paste a Kubernetes Bearer token")
 // tokenMaxBytes. Surfaced verbatim so the user knows to check whether
 // they pasted a kubeconfig or a multi-line blob by mistake.
 var ErrTokenTooLarge = errors.New(
-	"token is larger than 4 KB; paste a single Bearer token rather than a kubeconfig blob",
+	"token is larger than 1.5 KB; paste a single Bearer token rather than a kubeconfig blob",
 )
 
 // ErrTokenUnreachable is returned when the pasted token parses as a

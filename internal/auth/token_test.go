@@ -151,6 +151,54 @@ func TestHandleTokenUpload_ProbeFailureReRendersForm(t *testing.T) {
 	}
 }
 
+// TestHandleTokenUpload_NearMaxSizeFitsCookie asserts that a token
+// at the documented maximum size actually persists to the session
+// cookie without tripping gorilla/securecookie's internal
+// maxLength on the encoded value. This guards against future
+// changes to tokenMaxBytes that look innocent but produce a 500 on
+// first paste because the encoded payload no longer fits one cookie.
+func TestHandleTokenUpload_NearMaxSizeFitsCookie(t *testing.T) {
+	hnd := newTokenHandler()
+
+	stubTokenProbe(t, func(_ context.Context, _ *rest.Config, _ string) error { return nil })
+
+	// Use a token exactly at the cap. A single-byte over cap is
+	// covered by TestHandleTokenUpload_OversizedRejected.
+	bigToken := strings.Repeat("x", int(tokenMaxBytes))
+	rec := postTokenForm(t, hnd, url.Values{"token": {bigToken}}.Encode())
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303; body = %q", rec.Code, rec.Body.String())
+	}
+
+	cookies := rec.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("no session cookie after near-max-size upload — securecookie probably rejected the encoded value")
+	}
+
+	// Round-trip: the stored cookie must decode back to the same
+	// token. If securecookie truncated or dropped the value we'd
+	// read an empty string back here instead of bigToken.
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	for _, c := range cookies {
+		req2.AddCookie(c)
+	}
+
+	session, err := hnd.store.Get(req2)
+	if err != nil {
+		t.Fatalf("reading session back: %v", err)
+	}
+
+	stored, ok := GetBearerToken(session)
+	if !ok {
+		t.Fatal("session has no bearer token after near-max upload")
+	}
+
+	if stored != bigToken {
+		t.Errorf("stored token length = %d, want %d (near-max token got truncated)", len(stored), len(bigToken))
+	}
+}
+
 // TestProbeToken_NilBaseConfig asserts the probe returns the static
 // sentinel when it is called without a base rest.Config. This is a
 // wiring bug, not a user-actionable condition, but the sentinel lets
