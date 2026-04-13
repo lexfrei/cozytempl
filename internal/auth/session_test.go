@@ -102,6 +102,77 @@ func TestSessionStore_Clear(t *testing.T) {
 	}
 }
 
+func TestSessionStore_BearerTokenRoundTrip(t *testing.T) {
+	store := NewSessionStore(testSessionKey)
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+
+	session, err := store.Get(req)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+
+	SetBearerToken(session, "abc.def.ghi")
+
+	if err := store.Save(req, recorder, session); err != nil {
+		t.Fatalf("save session: %v", err)
+	}
+
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	for _, cookie := range recorder.Result().Cookies() {
+		req2.AddCookie(cookie)
+	}
+
+	session2, err := store.Get(req2)
+	if err != nil {
+		t.Fatalf("get session from cookie: %v", err)
+	}
+
+	got, ok := GetBearerToken(session2)
+	if !ok {
+		t.Fatal("GetBearerToken ok = false, want true")
+	}
+
+	if got != "abc.def.ghi" {
+		t.Errorf("token = %q, want %q", got, "abc.def.ghi")
+	}
+}
+
+func TestSessionStore_BearerTokenAbsent(t *testing.T) {
+	store := NewSessionStore(testSessionKey)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+
+	session, err := store.Get(req)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+
+	got, ok := GetBearerToken(session)
+	if ok {
+		t.Errorf("GetBearerToken ok = true on empty session, want false (got %q)", got)
+	}
+}
+
+func TestSessionStore_BearerTokenClearedByClear(t *testing.T) {
+	store := NewSessionStore(testSessionKey)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+
+	session, err := store.Get(req)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+
+	SetBearerToken(session, "to-be-wiped")
+	Clear(session)
+
+	if _, ok := GetBearerToken(session); ok {
+		t.Error("GetBearerToken ok = true after Clear, want false")
+	}
+}
+
 func TestGetUser_EmptySession(t *testing.T) {
 	store := NewSessionStore(testSessionKey)
 
