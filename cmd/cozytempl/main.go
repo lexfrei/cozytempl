@@ -171,11 +171,14 @@ func run() error {
 	case config.AuthModeDev:
 		log.Warn("running in dev mode — authentication disabled")
 
-	case config.AuthModeBYOK:
-		// BYOK mode skips OIDC entirely; the upload flow is the
-		// only authentication surface. Session cookie encrypts the
-		// uploaded kubeconfig.
-		routerCfg.SessionStore = auth.NewSessionStore(cfg.SessionSecret)
+	case config.AuthModeBYOK, config.AuthModeToken:
+		// Both modes skip OIDC entirely; the upload / paste flow is
+		// the only authentication surface. Session cookie encrypts
+		// the uploaded kubeconfig (BYOK) or the pasted Bearer token
+		// (Token).
+		sessionStore := auth.NewSessionStore(cfg.SessionSecret)
+		routerCfg.AuthHandler = auth.NewHandler(nil, sessionStore, log)
+		routerCfg.SessionStore = sessionStore
 
 	case config.AuthModePassthrough, config.AuthModeImpersonationLegacy:
 		issuerForBackend := cfg.InternalIssuerURL()

@@ -123,9 +123,9 @@ func buildAuthMiddleware(
 	}
 
 	// OIDC endpoints are only meaningful when an OIDC provider is
-	// actually configured. BYOK mode skips them and relies on the
-	// kubeconfig upload flow instead.
-	if cfg.AuthMode != config.AuthModeBYOK {
+	// actually configured. BYOK and Token modes skip them and rely
+	// on their own upload / paste flow instead.
+	if cfg.AuthMode == config.AuthModePassthrough || cfg.AuthMode == config.AuthModeImpersonationLegacy {
 		mux.HandleFunc("GET /auth/login", cfg.AuthHandler.HandleLogin)
 		mux.HandleFunc("GET /auth/callback", cfg.AuthHandler.HandleCallback)
 	}
@@ -137,6 +137,13 @@ func buildAuthMiddleware(
 	if cfg.AuthMode == config.AuthModeBYOK && cfg.AuthHandler != nil {
 		mux.HandleFunc("GET /auth/kubeconfig", cfg.AuthHandler.HandleKubeconfigUploadForm)
 		mux.HandleFunc("POST /auth/kubeconfig", cfg.AuthHandler.HandleKubeconfigUpload)
+	}
+
+	// Token mode paste form. Same rationale as the BYOK routes above
+	// — the paste form must be reachable without a stored token.
+	if cfg.AuthMode == config.AuthModeToken && cfg.AuthHandler != nil {
+		mux.HandleFunc("GET /auth/token", cfg.AuthHandler.HandleTokenUploadForm)
+		mux.HandleFunc("POST /auth/token", cfg.AuthHandler.HandleTokenUpload)
 	}
 
 	if cfg.AuthHandler != nil {
