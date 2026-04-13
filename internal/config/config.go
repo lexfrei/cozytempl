@@ -27,6 +27,16 @@ type Config struct {
 	DebugPprofAddr string
 	AuthMode       AuthMode
 	DevMode        bool
+
+	// TrustForwardedHeaders gates whether the IP rate limiter on the
+	// pre-auth upload endpoints (/auth/kubeconfig, /auth/token)
+	// honours X-Forwarded-For. Only enable it when cozytempl runs
+	// behind a trusted reverse proxy (Ingress, Cloudflare Tunnel)
+	// that strips client-supplied XFF values. When false (the
+	// default), the limiter keys strictly on req.RemoteAddr so an
+	// attacker cannot spoof XFF to bypass the bucket. Controlled
+	// by COZYTEMPL_TRUST_FORWARDED_HEADERS=true.
+	TrustForwardedHeaders bool
 }
 
 // ErrMissingEnvVar is returned when a required environment variable is not set.
@@ -48,7 +58,7 @@ var ErrWeakSessionSecret = errors.New("SESSION_SECRET is required in production 
 var ErrAuthModeEmpty = errors.New("auth mode is empty")
 
 // ErrAuthModeUnknown is returned when COZYTEMPL_AUTH_MODE holds a value that
-// is not one of the four recognised modes.
+// is not one of the five recognised modes.
 var ErrAuthModeUnknown = errors.New("unknown auth mode")
 
 const (
@@ -56,7 +66,7 @@ const (
 	// OIDC. We deliberately refuse the old "OIDC_ISSUER_URL unset" heuristic.
 	devModeEnv = "COZYTEMPL_DEV_MODE"
 
-	// authModeEnv selects one of the four supported authentication modes
+	// authModeEnv selects one of the five supported authentication modes
 	// at startup. Empty defaults to passthrough when OIDC is configured.
 	authModeEnv = "COZYTEMPL_AUTH_MODE"
 
@@ -69,6 +79,12 @@ const (
 	// used as a dev-mode fallback so sessions survive a single run without
 	// being predictable. Picked for crypto-rand output length.
 	devSessionSecretRandomBytes = 32
+
+	// envTrue is the single accepted affirmative value for cozytempl's
+	// bool env vars. Non-matching values (including "TRUE", "yes", "1")
+	// are treated as false — we do not try to be clever about
+	// alternative encodings; operators get one well-known string.
+	envTrue = "true"
 )
 
 // Load reads configuration from environment variables.
@@ -91,9 +107,10 @@ func Load() (*Config, error) {
 		OIDCRedirectURL:       os.Getenv("OIDC_REDIRECT_URL"),
 		SessionSecret:         os.Getenv("SESSION_SECRET"),
 		DebugPprofAddr:        os.Getenv("COZYTEMPL_DEBUG_PPROF_ADDR"),
+		TrustForwardedHeaders: os.Getenv("COZYTEMPL_TRUST_FORWARDED_HEADERS") == envTrue,
 	}
 
-	mode, err := resolveAuthMode(os.Getenv(authModeEnv), os.Getenv(devModeEnv) == "true", cfg.OIDCIssuerURL != "")
+	mode, err := resolveAuthMode(os.Getenv(authModeEnv), os.Getenv(devModeEnv) == envTrue, cfg.OIDCIssuerURL != "")
 	if err != nil {
 		return nil, err
 	}
@@ -154,9 +171,9 @@ func validateForMode(cfg *Config) error {
 	case AuthModeDev:
 		return nil
 
-	case AuthModeBYOK:
-		// BYOK has no IdP; only the session secret (used to encrypt the
-		// stored kubeconfig) is required.
+	case AuthModeBYOK, AuthModeToken:
+		// Neither mode talks to an IdP; only the session secret (used to
+		// encrypt the stored kubeconfig or bearer token) is required.
 		if cfg.SessionSecret == "" || cfg.SessionSecret == devSessionSecretPlaceholder {
 			return ErrWeakSessionSecret
 		}

@@ -27,12 +27,22 @@ const clientTimeout = 10 * time.Second
 // error in the caller rather than a user-actionable condition.
 var ErrUnknownAuthMode = errors.New("unknown auth mode")
 
+// ErrEmptyUserCredential is returned when buildUserRESTConfig runs
+// in a mode that requires a user-supplied credential (token,
+// passthrough) but the UserContext carries an empty value.
+// Defence-in-depth: the middleware already short-circuits empty
+// credentials, but if a regression there slipped through, we prefer
+// a loud failure to silently sending an anonymous request to the
+// apiserver (which would match stock system:unauthenticated RBAC).
+var ErrEmptyUserCredential = errors.New("empty user credential")
+
 // NewUserClient builds a dynamic Kubernetes client that acts on
 // behalf of the user described by usr. The exact authentication
 // vehicle depends on mode:
 //
 //   - passthrough:        Bearer = usr.IDToken (k8s API validates via OIDC).
 //   - byok:               rest.Config derived from usr.KubeconfigBytes.
+//   - token:              Bearer = usr.BearerToken (apiserver URL/CA from baseCfg).
 //   - impersonation-legacy: Impersonate headers from Username / Groups.
 //   - dev:                baseCfg unchanged (effectively cozytempl's own SA).
 //
@@ -78,6 +88,22 @@ func buildUserRESTConfig(baseCfg *rest.Config, usr *auth.UserContext, mode confi
 		if err != nil {
 			return nil, fmt.Errorf("building rest config from uploaded kubeconfig: %w", err)
 		}
+
+		return cfg, nil
+
+	case config.AuthModeToken:
+		// The pasted Bearer token IS the identity. Apiserver URL and
+		// CA come from baseCfg (in-cluster); BearerTokenFile is
+		// cleared explicitly so client-go does not fall back to the
+		// pod's mounted SA token.
+		if usr.BearerToken == "" {
+			return nil, ErrEmptyUserCredential
+		}
+
+		cfg := rest.CopyConfig(baseCfg)
+		cfg.BearerToken = usr.BearerToken
+		cfg.BearerTokenFile = ""
+		cfg.Impersonate = rest.ImpersonationConfig{}
 
 		return cfg, nil
 

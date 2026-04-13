@@ -9,10 +9,11 @@
   - authMode=impersonation-legacy → ClusterRole with cluster-wide
                                   impersonate on users/groups/SAs,
                                   bound to the main cozytempl SA.
-  - authMode=passthrough / byok → NO role for the main SA. The
-                                  main pod SA has zero permissions.
-                                  The watcher SA below is rendered
-                                  instead (subject to watcher.enabled).
+  - authMode=passthrough / byok / token → NO role for the main SA.
+                                  The main pod SA has zero permissions
+                                  in all three modes. The watcher SA
+                                  below is rendered instead (subject
+                                  to watcher.enabled).
 
   The selfsubjectaccessreview grant that lived in every mode is
   deliberately dropped: every authenticated user already has those

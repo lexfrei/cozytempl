@@ -92,6 +92,22 @@ tests:
           path: metadata.name
           value: cozytempl-watcher
 
+  - it: token mode is shaped identically to passthrough for RBAC
+    template: rbac.yaml
+    set:
+      config.authMode: token
+      config.oidc.sessionSecret: testtesttesttesttesttesttesttest
+    asserts:
+      - hasDocuments:
+          count: 3
+      - documentIndex: 0
+        isKind:
+          of: ServiceAccount
+      - documentIndex: 0
+        equal:
+          path: metadata.name
+          value: cozytempl-watcher
+
   - it: dev mode renders zero RBAC documents
     template: rbac.yaml
     set:

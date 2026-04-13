@@ -33,15 +33,24 @@ const (
 	// API server is not OIDC-configured yet. Will be removed two minor
 	// releases after the passthrough release.
 	AuthModeImpersonationLegacy AuthMode = "impersonation-legacy"
+
+	// AuthModeToken accepts a Kubernetes Bearer token pasted by the
+	// user, encrypts it into the session cookie, and uses it as the
+	// Bearer credential on every k8s call. Cozytempl's own
+	// ServiceAccount carries zero RBAC; all permissions come from the
+	// pasted token. Suited to clusters without an OIDC IdP where
+	// operators want a one-paste login flow rather than the full
+	// kubeconfig upload BYOK requires.
+	AuthModeToken AuthMode = "token"
 )
 
 // String satisfies fmt.Stringer so the value renders cleanly in logs.
 func (m AuthMode) String() string { return string(m) }
 
-// Valid reports whether m is one of the four recognised auth modes.
+// Valid reports whether m is one of the five recognised auth modes.
 func (m AuthMode) Valid() bool {
 	switch m {
-	case AuthModePassthrough, AuthModeBYOK, AuthModeDev, AuthModeImpersonationLegacy:
+	case AuthModePassthrough, AuthModeBYOK, AuthModeDev, AuthModeImpersonationLegacy, AuthModeToken:
 		return true
 	}
 

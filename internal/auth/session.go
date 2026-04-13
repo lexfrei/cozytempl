@@ -17,6 +17,7 @@ const (
 	sessionKeyUser          = "username"
 	sessionKeyGroups        = "groups"
 	sessionKeyKubeconfig    = "kubeconfig"
+	sessionKeyBearerToken   = "bearer_token"
 	sessionKeyIDTokenExpiry = "id_token_expiry" //nolint:gosec // session map key, not a credential
 
 	aes256KeySize     = 32
@@ -165,6 +166,24 @@ func GetKubeconfig(session *sessions.Session) ([]byte, bool) {
 	return val, true
 }
 
+// SetBearerToken stores a Kubernetes Bearer token in the session.
+// Used only in token mode, where the token IS the user's identity and
+// every k8s call uses it as the Bearer credential.
+func SetBearerToken(session *sessions.Session, token string) {
+	session.Values[sessionKeyBearerToken] = token
+}
+
+// GetBearerToken retrieves the stored Bearer token from the session.
+// The second return is false when nothing is stored or the value is empty.
+func GetBearerToken(session *sessions.Session) (string, bool) {
+	val, ok := session.Values[sessionKeyBearerToken].(string)
+	if !ok || val == "" {
+		return "", false
+	}
+
+	return val, true
+}
+
 // Clear removes all user data from the session.
 func Clear(session *sessions.Session) {
 	delete(session.Values, sessionKeyUser)
@@ -173,5 +192,6 @@ func Clear(session *sessions.Session) {
 	delete(session.Values, sessionKeyRefreshToken)
 	delete(session.Values, sessionKeyIDTokenExpiry)
 	delete(session.Values, sessionKeyKubeconfig)
+	delete(session.Values, sessionKeyBearerToken)
 	session.Options.MaxAge = -1
 }

@@ -151,6 +151,59 @@ func TestBuildUserRESTConfig_Dev(t *testing.T) {
 	}
 }
 
+func TestBuildUserRESTConfig_Token(t *testing.T) {
+	t.Parallel()
+
+	base := &rest.Config{
+		Host:            "https://k.example.com",
+		BearerToken:     "sa-token",
+		BearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token",
+	}
+	usr := &auth.UserContext{
+		Username:    "token-user",
+		BearerToken: "user-pasted-token",
+	}
+
+	cfg, err := buildUserRESTConfig(base, usr, config.AuthModeToken)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.Host != base.Host {
+		t.Errorf("Host = %q, want %q (token mode keeps base host)", cfg.Host, base.Host)
+	}
+
+	if cfg.BearerToken != "user-pasted-token" {
+		t.Errorf("BearerToken = %q, want %q", cfg.BearerToken, "user-pasted-token")
+	}
+
+	if cfg.BearerTokenFile != "" {
+		t.Errorf("BearerTokenFile = %q, want empty (must not fall back to SA token file)", cfg.BearerTokenFile)
+	}
+
+	// Mutating the returned config must not touch baseCfg — buildUserRESTConfig
+	// owes the caller an isolated copy.
+	if base.BearerToken != "sa-token" {
+		t.Errorf("baseCfg mutated: BearerToken = %q", base.BearerToken)
+	}
+}
+
+func TestBuildUserRESTConfig_TokenWithEmptyBearerToken(t *testing.T) {
+	t.Parallel()
+
+	base := &rest.Config{Host: "https://k.example.com"}
+	usr := &auth.UserContext{Username: "token-user"} // BearerToken intentionally empty
+
+	_, err := buildUserRESTConfig(base, usr, config.AuthModeToken)
+	if err == nil {
+		t.Fatal("expected error for empty BearerToken in token mode, got nil")
+	}
+
+	if !errors.Is(err, ErrEmptyUserCredential) {
+		t.Errorf("err = %v, want ErrEmptyUserCredential", err)
+	}
+}
+
 func TestBuildUserRESTConfig_Unknown(t *testing.T) {
 	t.Parallel()
 

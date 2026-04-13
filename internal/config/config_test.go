@@ -101,6 +101,35 @@ func TestLoad_BYOKRequiresSessionSecret(t *testing.T) {
 	}
 }
 
+func TestLoad_ExplicitToken_NoOIDCRequired(t *testing.T) {
+	clearEnvVars(t)
+	t.Setenv("COZYTEMPL_AUTH_MODE", "token")
+	t.Setenv("SESSION_SECRET", "test-session-secret-32bytes-long!")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.AuthMode != AuthModeToken {
+		t.Errorf("AuthMode = %q, want token", cfg.AuthMode)
+	}
+
+	if cfg.DevMode {
+		t.Error("DevMode should be false in token mode")
+	}
+}
+
+func TestLoad_TokenRequiresSessionSecret(t *testing.T) {
+	clearEnvVars(t)
+	t.Setenv("COZYTEMPL_AUTH_MODE", "token")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when token mode has no SESSION_SECRET")
+	}
+}
+
 func TestLoad_UnknownAuthMode(t *testing.T) {
 	setRequiredEnvVars(t)
 	t.Setenv("COZYTEMPL_AUTH_MODE", "nonsense")
