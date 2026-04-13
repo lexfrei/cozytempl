@@ -122,7 +122,7 @@ func (hnd *Handler) HandleTokenUpload(writer http.ResponseWriter, req *http.Requ
 	probeErr := probeTokenFn(req.Context(), hnd.baseCfg, token)
 	if probeErr != nil {
 		hnd.log.Info("token upload rejected", "error", probeErr)
-		renderTokenForm(writer, req, probeErr.Error())
+		renderTokenForm(writer, req, userFacingProbeError(probeErr))
 
 		return
 	}
@@ -155,6 +155,22 @@ func (hnd *Handler) persistTokenSession(writer http.ResponseWriter, req *http.Re
 
 	hnd.log.Info("token uploaded", "bytes", len(token))
 	http.Redirect(writer, req, "/", http.StatusSeeOther)
+}
+
+// userFacingProbeError strips upstream detail from probe failures
+// that wrap ErrTokenUnreachable. Raw client-go network errors
+// embed the apiserver address (e.g. 'dial tcp 10.96.0.1:443: i/o
+// timeout') which leaks cluster topology to anyone who can reach
+// the paste form. Full error detail still goes to the server log.
+// Misconfiguration errors (ErrTokenProbeMisconfigured) describe
+// our own wiring bug rather than a cluster address, so we surface
+// them unchanged.
+func userFacingProbeError(err error) string {
+	if errors.Is(err, ErrTokenUnreachable) {
+		return ErrTokenUnreachable.Error()
+	}
+
+	return err.Error()
 }
 
 // probeToken runs one cheap SelfSubjectAccessReview against the
@@ -190,7 +206,13 @@ func probeToken(ctx context.Context, baseCfg *rest.Config, token string) error {
 
 	_, err = client.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, review, metav1.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrTokenUnreachable, err) //nolint:errorlint // wrap upstream as detail
+		// %v keeps the upstream error out of the error chain
+		// (errors.Is callers match the sentinel, not the transient
+		// network detail) while preserving the text for the server
+		// log. The user-facing path strips this detail anyway — see
+		// userFacingProbeError — so the leak risk is bounded even if
+		// someone flips to errors.Unwrap later.
+		return fmt.Errorf("%w: %v", ErrTokenUnreachable, err) //nolint:errorlint // see comment above: deliberate %v
 	}
 
 	return nil

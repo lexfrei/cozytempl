@@ -27,6 +27,15 @@ const clientTimeout = 10 * time.Second
 // error in the caller rather than a user-actionable condition.
 var ErrUnknownAuthMode = errors.New("unknown auth mode")
 
+// ErrEmptyUserCredential is returned when buildUserRESTConfig runs
+// in a mode that requires a user-supplied credential (token,
+// passthrough) but the UserContext carries an empty value.
+// Defence-in-depth: the middleware already short-circuits empty
+// credentials, but if a regression there slipped through, we prefer
+// a loud failure to silently sending an anonymous request to the
+// apiserver (which would match stock system:unauthenticated RBAC).
+var ErrEmptyUserCredential = errors.New("empty user credential")
+
 // NewUserClient builds a dynamic Kubernetes client that acts on
 // behalf of the user described by usr. The exact authentication
 // vehicle depends on mode:
@@ -87,6 +96,10 @@ func buildUserRESTConfig(baseCfg *rest.Config, usr *auth.UserContext, mode confi
 		// CA come from baseCfg (in-cluster); BearerTokenFile is
 		// cleared explicitly so client-go does not fall back to the
 		// pod's mounted SA token.
+		if usr.BearerToken == "" {
+			return nil, ErrEmptyUserCredential
+		}
+
 		cfg := rest.CopyConfig(baseCfg)
 		cfg.BearerToken = usr.BearerToken
 		cfg.BearerTokenFile = ""

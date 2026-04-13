@@ -188,6 +188,22 @@ func TestBuildUserRESTConfig_Token(t *testing.T) {
 	}
 }
 
+func TestBuildUserRESTConfig_TokenWithEmptyBearerToken(t *testing.T) {
+	t.Parallel()
+
+	base := &rest.Config{Host: "https://k.example.com"}
+	usr := &auth.UserContext{Username: "token-user"} // BearerToken intentionally empty
+
+	_, err := buildUserRESTConfig(base, usr, config.AuthModeToken)
+	if err == nil {
+		t.Fatal("expected error for empty BearerToken in token mode, got nil")
+	}
+
+	if !errors.Is(err, ErrEmptyUserCredential) {
+		t.Errorf("err = %v, want ErrEmptyUserCredential", err)
+	}
+}
+
 func TestBuildUserRESTConfig_Unknown(t *testing.T) {
 	t.Parallel()
 

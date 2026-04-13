@@ -90,7 +90,12 @@ func (hnd *Handler) HandleKubeconfigUpload(writer http.ResponseWriter, req *http
 	validateErr := validateKubeconfigBytes(req.Context(), bytes)
 	if validateErr != nil {
 		hnd.log.Info("kubeconfig upload rejected", "error", validateErr)
-		renderKubeconfigForm(writer, req, validateErr.Error())
+		// ErrKubeconfigUnreachable wraps a client-go network error
+		// whose message embeds the apiserver host and port — sanitize
+		// to the generic sentinel so the paste form never leaks
+		// internal cluster topology. Parse / exec-plugin errors
+		// describe the user's own kubeconfig, so they pass through.
+		renderKubeconfigForm(writer, req, sanitizeKubeconfigError(validateErr))
 
 		return
 	}
@@ -116,6 +121,18 @@ func (hnd *Handler) HandleKubeconfigUpload(writer http.ResponseWriter, req *http
 
 	hnd.log.Info("kubeconfig uploaded", "bytes", len(bytes))
 	http.Redirect(writer, req, "/", http.StatusSeeOther)
+}
+
+// sanitizeKubeconfigError hides the wrapped client-go network detail
+// from probe failures that reach the user-facing form. Non-probe
+// errors (parse failures, exec-plugin rejections, empty-context
+// errors) describe the user's own input and pass through unchanged.
+func sanitizeKubeconfigError(err error) string {
+	if errors.Is(err, ErrKubeconfigUnreachable) {
+		return ErrKubeconfigUnreachable.Error()
+	}
+
+	return err.Error()
 }
 
 // readKubeconfigUpload pulls the raw bytes out of the multipart

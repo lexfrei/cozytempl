@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -148,6 +149,38 @@ func TestHandleTokenUpload_ProbeFailureReRendersForm(t *testing.T) {
 
 	if !strings.Contains(rec.Body.String(), "apiserver unreachable") {
 		t.Errorf("body missing probe error; body = %q", rec.Body.String())
+	}
+}
+
+// TestHandleTokenUpload_ProbeNetworkErrorDoesNotLeakInternalAddress
+// asserts that when the probe fails with a wrapped network error
+// carrying an apiserver address (typical client-go shape), the
+// user-facing form re-renders with the GENERIC ErrTokenUnreachable
+// sentinel and NOT the wrapped detail. This is defence against
+// inadvertent cluster-topology leaks on any paste-form that happens
+// to be reachable outside a trusted network.
+func TestHandleTokenUpload_ProbeNetworkErrorDoesNotLeakInternalAddress(t *testing.T) {
+	hnd := newTokenHandler()
+
+	const internalAddr = "10.96.0.1:6443"
+
+	stubTokenProbe(t, func(_ context.Context, _ *rest.Config, _ string) error {
+		// Shape mirrors real client-go output.
+		return fmt.Errorf("%w: dial tcp %s: i/o timeout", ErrTokenUnreachable, internalAddr)
+	})
+
+	rec := postTokenForm(t, hnd, url.Values{"token": {"abc"}}.Encode())
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (re-render with generic error)", rec.Code)
+	}
+
+	if strings.Contains(rec.Body.String(), internalAddr) {
+		t.Errorf("response body leaked internal address %q; body = %q", internalAddr, rec.Body.String())
+	}
+
+	if !strings.Contains(rec.Body.String(), ErrTokenUnreachable.Error()) {
+		t.Errorf("response body missing generic error sentinel; body = %q", rec.Body.String())
 	}
 }
 

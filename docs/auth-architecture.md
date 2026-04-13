@@ -83,6 +83,8 @@ cozytempl ──(7) Authorization: Bearer <token>──▶ k8s API
 
 Token mode skips OIDC entirely — the apiserver treats the Bearer token the same way it treats any other (ServiceAccount token, client-certificate-backed token, OIDC ID token, etc.). Size is capped at 1.5 KB (the largest raw token that still fits a single gorilla/securecookie cookie after gob+encrypt+base64); a real-world Kubernetes ServiceAccount token is typically 900–1500 bytes so this is comfortable. Operators whose IdP mints larger tokens should use byok instead. The probe step is detailed in [Token-upload validation probe](#token-upload-validation-probe). A revoked token fails at the next k8s call after revocation, not at session-refresh time — sessions have no clock; log out and paste a fresh token if operations stop working after a rotation.
 
+**Identity in logs.** Cozytempl does not decode the pasted Bearer token, so it has no way to distinguish two users who both paste valid tokens — every token-mode session gets the synthetic username `token-user` in audit log lines and the UI. The apiserver still sees the real identity (the SA or user the token belongs to) and evaluates RBAC against it, so authorisation is not affected; only cozytempl-level attribution is. The same design choice applies to byok (`kubeconfig-user`). Operators who need per-user attribution at the UI layer should prefer passthrough instead, where the OIDC claims carry a username.
+
 ### dev
 
 ```text
