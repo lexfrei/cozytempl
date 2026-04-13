@@ -63,10 +63,43 @@ function initActionDelegation(): void {
       case "set-sort":
         updateSortInput(target.dataset.sort ?? "name");
         return;
+      case "tenant-navigate":
+        // Whole-row navigation on the tenants table. Guarded by the
+        // "original target inside button/link" check so the Edit /
+        // Delete buttons and the name cell's anchor keep their
+        // primary click semantics — this handler only fires on cells
+        // with no other click target.
+        handleTenantNavigate(evt, target);
+        return;
       default:
         return;
     }
   });
+}
+
+// handleTenantNavigate runs the whole-row click on the tenants list.
+// Suppresses itself when the real click target was a button or link
+// so the action cells and the name anchor keep working. Otherwise
+// uses htmx.ajax to swap #main-content and pushes history so browser
+// back / reload land on the tenant page.
+function handleTenantNavigate(evt: Event, row: HTMLElement): void {
+  const clicked = evt.target as HTMLElement | null;
+  if (clicked?.closest("button, a")) return;
+
+  const href = row.dataset.href;
+  if (!href) return;
+
+  const htmxAPI = (window as unknown as { htmx?: { ajax: (method: string, url: string, opts: Record<string, unknown>) => void } }).htmx;
+  if (htmxAPI) {
+    htmxAPI.ajax("GET", href, { target: "#main-content", swap: "innerHTML" });
+    window.history.pushState({}, "", href);
+
+    return;
+  }
+
+  // Fallback for the rare case htmx isn't loaded yet — full nav still
+  // reaches the destination, just without the SPA-style swap.
+  window.location.href = href;
 }
 
 // updateSortInput writes the chosen sort key into the hidden
