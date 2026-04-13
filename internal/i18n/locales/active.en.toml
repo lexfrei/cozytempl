@@ -574,7 +574,7 @@ other = "Sign in with token"
 other = "cozytempl is running in token-paste mode. Paste a Kubernetes Bearer token that gives you access to your cluster; it will be stored encrypted inside your session cookie and used as the Bearer credential for every request until you log out."
 
 [page.token.hint1]
-other = "Any static Kubernetes Bearer token works — a ServiceAccount token, an OIDC ID token, or a token minted with kubectl create token."
+other = "Any Kubernetes Bearer token works — typically a ServiceAccount token or one minted with kubectl create token. Short-lived tokens (OIDC ID tokens, kubectl create token with --duration) expire at the embedded time and cozytempl will start returning errors on k8s calls when they do; paste a fresh one and continue."
 
 [page.token.hint2]
 other = "The token is tested against the apiserver with a SelfSubjectAccessReview before it lands in your session, so an invalid or expired token is rejected up front."

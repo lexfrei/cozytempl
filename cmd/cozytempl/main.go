@@ -154,17 +154,18 @@ func run() error {
 	})
 
 	routerCfg := &api.RouterConfig{
-		TenantHandler: api.NewTenantHandler(tenantSvc, log),
-		AppHandler:    api.NewApplicationHandler(appSvc, log),
-		SchemaHandler: api.NewSchemaHandler(schemaSvc, log),
-		SSEHandler:    api.NewSSEHandler(watcher, k8sCfg, cfg.AuthMode, log),
-		PageHandler:   pageHandler,
-		I18n:          i18nBundle,
-		StaticFS:      static.FS,
-		Log:           log,
-		AuthMode:      cfg.AuthMode,
-		DevMode:       cfg.DevMode,
-		DevUsername:   "dev-admin",
+		TenantHandler:         api.NewTenantHandler(tenantSvc, log),
+		AppHandler:            api.NewApplicationHandler(appSvc, log),
+		SchemaHandler:         api.NewSchemaHandler(schemaSvc, log),
+		SSEHandler:            api.NewSSEHandler(watcher, k8sCfg, cfg.AuthMode, log),
+		PageHandler:           pageHandler,
+		I18n:                  i18nBundle,
+		StaticFS:              static.FS,
+		Log:                   log,
+		AuthMode:              cfg.AuthMode,
+		DevMode:               cfg.DevMode,
+		DevUsername:           "dev-admin",
+		TrustForwardedHeaders: cfg.TrustForwardedHeaders,
 	}
 
 	switch cfg.AuthMode {

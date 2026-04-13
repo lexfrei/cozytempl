@@ -148,6 +148,15 @@ config:
   # for backwards compatibility with older values files.
   devMode: false
 
+  # trustForwardedHeaders enables X-Forwarded-For parsing for the
+  # pre-auth IP rate limiter on /auth/kubeconfig and /auth/token.
+  # Only set to true when cozytempl runs behind a reverse proxy
+  # that strips client-supplied XFF (Ingress, Cloudflare Tunnel,
+  # service mesh). Leaving it false means the limiter keys strictly
+  # on TCP RemoteAddr so a hostile client cannot spoof XFF to spin
+  # up fresh buckets. Maps to COZYTEMPL_TRUST_FORWARDED_HEADERS.
+  trustForwardedHeaders: false
+
   # When non-empty, cozytempl starts a SEPARATE HTTP listener on
   # this address and mounts net/http/pprof on /debug/pprof/*. The
   # public listener never exposes pprof. Typical value:

@@ -571,7 +571,7 @@ other = "Вход по токену"
 other = "cozytempl работает в режиме вставки токена. Вставьте Bearer-токен Kubernetes, дающий доступ к вашему кластеру; он будет зашифрован в cookie сессии и использован как Bearer для каждого запроса до выхода из системы."
 
 [page.token.hint1]
-other = "Подойдёт любой статический Bearer-токен Kubernetes — токен ServiceAccount, OIDC ID token или токен от kubectl create token."
+other = "Подойдёт любой Bearer-токен Kubernetes — обычно это токен ServiceAccount или токен от kubectl create token. Короткоживущие токены (OIDC ID token, kubectl create token с --duration) истекают в зашитое в них время; cozytempl начнёт возвращать ошибки на k8s-запросах — вставьте свежий токен и продолжайте."
 
 [page.token.hint2]
 other = "Перед сохранением токен проверяется обращением SelfSubjectAccessReview к apiserver; невалидный или просроченный токен будет отклонён сразу."

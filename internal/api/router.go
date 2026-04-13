@@ -37,6 +37,11 @@ type RouterConfig struct {
 	AuthMode      config.AuthMode
 	DevMode       bool
 	DevUsername   string
+	// TrustForwardedHeaders is threaded through to the pre-auth IP
+	// rate limiter. Only set when cozytempl runs behind a trusted
+	// reverse proxy that strips client-supplied XFF. Mirrors
+	// config.Config.TrustForwardedHeaders.
+	TrustForwardedHeaders bool
 }
 
 // contentSecurityPolicy is the CSP header applied to every response.
@@ -139,7 +144,8 @@ func buildAuthMiddleware(
 	if cfg.AuthMode == config.AuthModeBYOK && cfg.AuthHandler != nil {
 		mux.HandleFunc("GET /auth/kubeconfig", cfg.AuthHandler.HandleKubeconfigUploadForm)
 		mux.Handle("POST /auth/kubeconfig",
-			withIPRateLimit(rateStore, http.HandlerFunc(cfg.AuthHandler.HandleKubeconfigUpload)))
+			withIPRateLimit(rateStore, cfg.TrustForwardedHeaders,
+				http.HandlerFunc(cfg.AuthHandler.HandleKubeconfigUpload)))
 	}
 
 	// Token mode paste form. Same rationale as the BYOK routes above
@@ -148,7 +154,8 @@ func buildAuthMiddleware(
 	if cfg.AuthMode == config.AuthModeToken && cfg.AuthHandler != nil {
 		mux.HandleFunc("GET /auth/token", cfg.AuthHandler.HandleTokenUploadForm)
 		mux.Handle("POST /auth/token",
-			withIPRateLimit(rateStore, http.HandlerFunc(cfg.AuthHandler.HandleTokenUpload)))
+			withIPRateLimit(rateStore, cfg.TrustForwardedHeaders,
+				http.HandlerFunc(cfg.AuthHandler.HandleTokenUpload)))
 	}
 
 	if cfg.AuthHandler != nil {

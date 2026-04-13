@@ -568,7 +568,7 @@ other = "使用令牌登录"
 other = "cozytempl 正在以令牌粘贴模式运行。粘贴可访问 Kubernetes 集群的 Bearer 令牌；它将加密存储在会话 Cookie 中，并在每次请求中用作 Bearer 凭据，直到您退出登录。"
 
 [page.token.hint1]
-other = "任何静态 Kubernetes Bearer 令牌均可使用 — ServiceAccount 令牌、OIDC ID 令牌，或 kubectl create token 生成的令牌。"
+other = "任何 Kubernetes Bearer 令牌均可使用 — 通常是 ServiceAccount 令牌或 kubectl create token 生成的令牌。短期令牌（OIDC ID 令牌、带 --duration 的 kubectl create token）会在其内嵌时间过期，届时 cozytempl 将在 k8s 调用上返回错误；请粘贴新的令牌继续使用。"
 
 [page.token.hint2]
 other = "在写入会话之前，令牌会通过 SelfSubjectAccessReview 向 apiserver 发起一次校验；无效或过期的令牌会被立刻拒绝。"
