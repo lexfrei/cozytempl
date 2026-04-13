@@ -46,6 +46,13 @@ var ErrTokenTooLarge = errors.New(
 // invalid, expired, or the apiserver rejected it.
 var ErrTokenUnreachable = errors.New("apiserver rejected the token")
 
+// ErrTokenProbeMisconfigured is returned when the probe has no
+// base rest.Config to build its client from. Indicates a wiring
+// error in main.go rather than a user-actionable condition.
+var ErrTokenProbeMisconfigured = errors.New(
+	"probe base config missing; wire k8sCfg into auth.NewHandler",
+)
+
 // probeTokenFn is the package-level seam that probeToken uses to talk
 // to the apiserver. Tests overwrite it with a stub so the upload
 // handler can be exercised without a live cluster.
@@ -91,7 +98,7 @@ func (hnd *Handler) HandleTokenUpload(writer http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	probeErr := probeTokenFn(req.Context(), token)
+	probeErr := probeTokenFn(req.Context(), hnd.baseCfg, token)
 	if probeErr != nil {
 		hnd.log.Info("token upload rejected", "error", probeErr)
 		renderTokenForm(writer, req, probeErr.Error())
@@ -130,16 +137,18 @@ func (hnd *Handler) persistTokenSession(writer http.ResponseWriter, req *http.Re
 }
 
 // probeToken runs one cheap SelfSubjectAccessReview against the
-// in-cluster apiserver using the pasted token as the Bearer
-// credential. The check itself doesn't matter — the round-trip is
-// the signal we care about.
-func probeToken(ctx context.Context, token string) error {
-	cfg, err := rest.InClusterConfig()
-	if err != nil {
-		return fmt.Errorf("loading in-cluster config: %w", err)
+// apiserver described by baseCfg, using the pasted token as the
+// Bearer credential. The check itself doesn't matter — the
+// round-trip is the signal we care about. baseCfg comes from
+// main.go's loadKubeConfig() so the probe targets the same apiserver
+// the rest of cozytempl talks to (in-cluster or $KUBECONFIG,
+// whichever loadKubeConfig picked).
+func probeToken(ctx context.Context, baseCfg *rest.Config, token string) error {
+	if baseCfg == nil {
+		return ErrTokenProbeMisconfigured
 	}
 
-	cfg = rest.CopyConfig(cfg)
+	cfg := rest.CopyConfig(baseCfg)
 	cfg.BearerToken = token
 	cfg.BearerTokenFile = ""
 

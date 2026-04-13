@@ -9,12 +9,15 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"k8s.io/client-go/rest"
 )
 
 func newTokenHandler() *Handler {
 	return &Handler{
-		store: NewSessionStore(testSessionKey),
-		log:   slog.New(slog.DiscardHandler),
+		store:   NewSessionStore(testSessionKey),
+		log:     slog.New(slog.DiscardHandler),
+		baseCfg: &rest.Config{Host: "https://test-apiserver.invalid"},
 	}
 }
 
@@ -38,7 +41,7 @@ func postTokenForm(t *testing.T, hnd *Handler, body string) *httptest.ResponseRe
 // guarantees the global is restored even if the test fails with
 // t.FailNow / FatalOpen, so neighbouring tests never observe a
 // leaked stub.
-func stubTokenProbe(t *testing.T, fn func(context.Context, string) error) {
+func stubTokenProbe(t *testing.T, fn func(context.Context, *rest.Config, string) error) {
 	t.Helper()
 
 	probeTokenFn = fn
@@ -86,7 +89,7 @@ func TestHandleTokenUpload_TrimsWhitespace(t *testing.T) {
 
 	var capturedToken string
 
-	stubTokenProbe(t, func(_ context.Context, token string) error {
+	stubTokenProbe(t, func(_ context.Context, _ *rest.Config, token string) error {
 		capturedToken = token
 
 		return nil
@@ -132,7 +135,7 @@ func TestHandleTokenUpload_TrimsWhitespace(t *testing.T) {
 func TestHandleTokenUpload_ProbeFailureReRendersForm(t *testing.T) {
 	hnd := newTokenHandler()
 
-	stubTokenProbe(t, func(_ context.Context, _ string) error {
+	stubTokenProbe(t, func(_ context.Context, _ *rest.Config, _ string) error {
 		return errors.New("apiserver unreachable")
 	})
 
@@ -148,6 +151,22 @@ func TestHandleTokenUpload_ProbeFailureReRendersForm(t *testing.T) {
 	}
 }
 
+// TestProbeToken_NilBaseConfig asserts the probe returns the static
+// sentinel when it is called without a base rest.Config. This is a
+// wiring bug, not a user-actionable condition, but the sentinel lets
+// main.go / tests tell the two apart instead of the probe silently
+// reaching for rest.InClusterConfig() (which used to hardcode
+// in-cluster detection and failed outside a cluster).
+func TestProbeToken_NilBaseConfig(t *testing.T) {
+	t.Parallel()
+
+	err := probeToken(context.Background(), nil, "whatever")
+
+	if !errors.Is(err, ErrTokenProbeMisconfigured) {
+		t.Errorf("err = %v, want ErrTokenProbeMisconfigured", err)
+	}
+}
+
 // TestHandleTokenUpload_SessionStoreGetFailure exercises the error
 // branch in persistTokenSession when store.Get returns an error.
 // A session cookie signed with a different key decrypts to an error,
@@ -156,7 +175,7 @@ func TestHandleTokenUpload_ProbeFailureReRendersForm(t *testing.T) {
 func TestHandleTokenUpload_SessionStoreGetFailure(t *testing.T) {
 	hnd := newTokenHandler()
 
-	stubTokenProbe(t, func(_ context.Context, _ string) error { return nil })
+	stubTokenProbe(t, func(_ context.Context, _ *rest.Config, _ string) error { return nil })
 
 	// Build a cookie signed by a DIFFERENT store so hnd.store.Get
 	// rejects it as tampered.

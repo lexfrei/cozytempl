@@ -33,12 +33,14 @@ const usernameTokenMode = "token-user"
 // RequireAuth is middleware that checks for a valid session and, in
 // passthrough mode, proactively refreshes the ID token before it
 // expires. In byok mode, a missing kubeconfig redirects the user to
-// the upload form. In all authenticated modes the resolved UserContext
-// is attached to the request context for downstream handlers.
+// the upload form; in token mode, a missing Bearer token redirects
+// to the paste form. In all authenticated modes the resolved
+// UserContext is attached to the request context for downstream
+// handlers.
 //
 // The oidc argument may be nil in modes that do not use OIDC (byok,
-// dev) — the middleware only dereferences it when running in a mode
-// that needs token refresh.
+// token, dev) — the middleware only dereferences it when running in
+// a mode that needs token refresh.
 func RequireAuth(
 	store *SessionStore,
 	oidc *OIDCProvider,

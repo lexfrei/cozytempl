@@ -175,9 +175,10 @@ func run() error {
 		// Both modes skip OIDC entirely; the upload / paste flow is
 		// the only authentication surface. Session cookie encrypts
 		// the uploaded kubeconfig (BYOK) or the pasted Bearer token
-		// (Token).
+		// (Token). The token probe needs k8sCfg to build a rest.Config
+		// pointing at the same apiserver cozytempl itself talks to.
 		sessionStore := auth.NewSessionStore(cfg.SessionSecret)
-		routerCfg.AuthHandler = auth.NewHandler(nil, sessionStore, log)
+		routerCfg.AuthHandler = auth.NewHandler(nil, sessionStore, log, cfg.AuthMode, k8sCfg)
 		routerCfg.SessionStore = sessionStore
 
 	case config.AuthModePassthrough, config.AuthModeImpersonationLegacy:
@@ -190,7 +191,7 @@ func run() error {
 		}
 
 		sessionStore := auth.NewSessionStore(cfg.SessionSecret)
-		routerCfg.AuthHandler = auth.NewHandler(oidcProvider, sessionStore, log)
+		routerCfg.AuthHandler = auth.NewHandler(oidcProvider, sessionStore, log, cfg.AuthMode, k8sCfg)
 		routerCfg.SessionStore = sessionStore
 		routerCfg.OIDCProvider = oidcProvider
 

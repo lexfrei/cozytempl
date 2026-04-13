@@ -48,7 +48,7 @@ var ErrWeakSessionSecret = errors.New("SESSION_SECRET is required in production 
 var ErrAuthModeEmpty = errors.New("auth mode is empty")
 
 // ErrAuthModeUnknown is returned when COZYTEMPL_AUTH_MODE holds a value that
-// is not one of the four recognised modes.
+// is not one of the five recognised modes.
 var ErrAuthModeUnknown = errors.New("unknown auth mode")
 
 const (
@@ -56,7 +56,7 @@ const (
 	// OIDC. We deliberately refuse the old "OIDC_ISSUER_URL unset" heuristic.
 	devModeEnv = "COZYTEMPL_DEV_MODE"
 
-	// authModeEnv selects one of the four supported authentication modes
+	// authModeEnv selects one of the five supported authentication modes
 	// at startup. Empty defaults to passthrough when OIDC is configured.
 	authModeEnv = "COZYTEMPL_AUTH_MODE"
 

@@ -47,7 +47,7 @@ const (
 // String satisfies fmt.Stringer so the value renders cleanly in logs.
 func (m AuthMode) String() string { return string(m) }
 
-// Valid reports whether m is one of the four recognised auth modes.
+// Valid reports whether m is one of the five recognised auth modes.
 func (m AuthMode) Valid() bool {
 	switch m {
 	case AuthModePassthrough, AuthModeBYOK, AuthModeDev, AuthModeImpersonationLegacy, AuthModeToken:
