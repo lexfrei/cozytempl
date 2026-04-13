@@ -584,8 +584,24 @@ func (pgh *PageHandler) buildTenantPageData(
 		Query:         req.URL.Query().Get("q"),
 		KindFilter:    req.URL.Query().Get("kind"),
 		SortBy:        req.URL.Query().Get("sort"),
-		CreateKind:    selectKnownKind(req.URL.Query().Get("createKind"), schemas),
+		CreateKind:    extractCreateKindFromQuery(req, schemas),
 	}
+}
+
+// createKindQueryParam is the single source of truth for the query
+// parameter name the marketplace flow uses. Defined as a constant so
+// the test for extractCreateKindFromQuery can pin it: any rename in
+// production code that doesn't update both the constant and the test
+// expectation surfaces as a compile failure.
+const createKindQueryParam = "createKind"
+
+// extractCreateKindFromQuery reads the createKind query param and
+// validates it against the supplied schema list. Wraps two operations
+// — the param read and the whitelist check — into a single helper so
+// the test for it covers both, including a typo guard for the param
+// name itself.
+func extractCreateKindFromQuery(req *http.Request, schemas []k8s.AppSchema) string {
+	return selectKnownKind(req.URL.Query().Get(createKindQueryParam), schemas)
 }
 
 // selectKnownKind returns raw only when it exactly matches one of the

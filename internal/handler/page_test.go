@@ -121,11 +121,28 @@ func TestResolveKindParamUnknownKind(t *testing.T) {
 func TestResolveKindParamSchemaListError(t *testing.T) {
 	t.Parallel()
 
-	lister := &fakeSchemaLister{err: errors.New("boom")}
+	lister := &fakeSchemaLister{
+		schemas: []k8s.AppSchema{{Kind: "Etcd"}}, // would otherwise allow Etcd
+		err:     errors.New("boom"),
+	}
 
 	got := resolveKindParam(context.Background(), nil, "Etcd", lister, silentLogger())
 	if got != "" {
 		t.Errorf("resolveKindParam on List error = %q, want empty (fail-closed)", got)
+	}
+}
+
+// TestResolveKindParamNilListerPassesThrough covers the opt-out path
+// callers use when the downstream renderer is already escape-safe and
+// schema validation would just cost an API round-trip. Pass-through
+// is intentional and must not silently start dropping values if a
+// future refactor flips the nil-check.
+func TestResolveKindParamNilListerPassesThrough(t *testing.T) {
+	t.Parallel()
+
+	got := resolveKindParam(context.Background(), nil, "Etcd", nil, silentLogger())
+	if got != "Etcd" {
+		t.Errorf("resolveKindParam(nil lister) = %q, want pass-through Etcd", got)
 	}
 }
 
@@ -175,11 +192,23 @@ func TestBuildTenantPageDataReadsCreateKindParam(t *testing.T) {
 			t.Parallel()
 
 			req := httptest.NewRequestWithContext(context.Background(), "GET", rawURL, nil)
-			got := selectKnownKind(req.URL.Query().Get("createKind"), schemas)
+			got := extractCreateKindFromQuery(req, schemas)
 
 			if got != want {
-				t.Errorf("createKind for %q = %q, want %q", rawURL, got, want)
+				t.Errorf("extractCreateKindFromQuery for %q = %q, want %q", rawURL, got, want)
 			}
 		})
+	}
+}
+
+// TestCreateKindQueryParamConstant pins the literal param name. If
+// production drifts to a different spelling, this test fails — the
+// extractCreateKindFromQuery callers and the marketplace flow all use
+// the same constant.
+func TestCreateKindQueryParamConstant(t *testing.T) {
+	t.Parallel()
+
+	if createKindQueryParam != "createKind" {
+		t.Errorf("createKindQueryParam = %q, want %q — renaming this breaks every marketplace card link", createKindQueryParam, "createKind")
 	}
 }

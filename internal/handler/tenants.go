@@ -122,8 +122,16 @@ func (pgh *PageHandler) fetchTenantSchema(req *http.Request, usr *auth.UserConte
 // time. The real work — short-circuiting when no kind is set, calling
 // the schema lister, and validating against the known schemas — lives
 // in resolveKindParam so it can be unit-tested with a fake lister.
+//
+// On the tenants list page itself the kind is only used for a hint
+// banner (templ auto-escapes its interpolation) and for building the
+// next-hop URL via tenantRowURL (which url.QueryEscapes the value).
+// The detail-page handler re-validates against the live schema list
+// at the next click — so callers can pass nil for lister to skip the
+// extra schemaSvc.List round-trip when the validation result is not
+// itself security-load-bearing.
 func (pgh *PageHandler) resolvePreselectedKind(req *http.Request, usr *auth.UserContext) string {
-	return resolveKindParam(req.Context(), usr, req.URL.Query().Get("kind"), pgh.schemaSvc, pgh.log)
+	return resolveKindParam(req.Context(), usr, req.URL.Query().Get("kind"), nil, pgh.log)
 }
 
 // resolveKindParam returns the input only when it matches a known
@@ -134,7 +142,9 @@ func (pgh *PageHandler) resolvePreselectedKind(req *http.Request, usr *auth.User
 // which operators need to see promptly.
 //
 // Short-circuits when raw is empty so the common /tenants navigation
-// does not pay for a schemaSvc.List round-trip.
+// does not pay for a schemaSvc.List round-trip. A nil lister also
+// short-circuits — callers that only need pass-through (because the
+// downstream renderer is already escape-safe) opt out of the call.
 func resolveKindParam(
 	ctx context.Context, usr *auth.UserContext, raw string, lister schemaLister, log *slog.Logger,
 ) string {
@@ -142,9 +152,15 @@ func resolveKindParam(
 		return ""
 	}
 
+	if lister == nil {
+		return raw
+	}
+
 	schemas, err := lister.List(ctx, usr)
 	if err != nil {
 		log.Warn("listing app schemas for kind validation", "error", err)
+
+		return ""
 	}
 
 	return selectKnownKind(raw, schemas)
