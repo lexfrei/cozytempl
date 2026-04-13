@@ -25,6 +25,11 @@ const (
 // apiserver, but short enough that we don't pressure the OIDC provider.
 const refreshLeadTime = 60 * time.Second
 
+// usernameTokenMode is the synthetic username assigned to sessions in
+// AuthModeToken — the actual identity is the pasted Bearer token, but
+// the UI still wants a string to display.
+const usernameTokenMode = "token-user"
+
 // RequireAuth is middleware that checks for a valid session and, in
 // passthrough mode, proactively refreshes the ID token before it
 // expires. In byok mode, a missing kubeconfig redirects the user to
@@ -60,35 +65,60 @@ func RequireAuth(
 			return
 		}
 
-		if info.Username == "" {
-			http.Error(writer, `{"error":"not authenticated"}`, http.StatusUnauthorized)
+		// Token mode: same shape as BYOK but the credential is a
+		// pasted Bearer token rather than a kubeconfig file.
+		if mode == config.AuthModeToken {
+			serveToken(writer, req, session, &info, next)
 
 			return
 		}
 
-		idToken := info.IDToken
-
-		if mode == config.AuthModePassthrough {
-			refreshed, refreshErr := refreshIfNeeded(req.Context(), session, store, oidc, log, writer, req, &info)
-			if refreshErr != nil {
-				// The helper already took care of redirect/401 so
-				// the downstream handler must NOT run.
-				return
-			}
-
-			idToken = refreshed
-		}
-
-		usr := &UserContext{
-			Username: info.Username,
-			Groups:   info.Groups,
-			IDToken:  idToken,
-		}
-
-		ctx := ContextWithUser(req.Context(), usr)
-		ctx = ContextWithAuthMode(ctx, mode)
-		next.ServeHTTP(writer, req.WithContext(ctx))
+		serveOIDC(writer, req, session, store, oidc, log, mode, &info, next)
 	})
+}
+
+// serveOIDC handles the passthrough / impersonation-legacy request flow.
+// Extracted from RequireAuth so the latter stays under the funlen limit
+// once additional auth modes are dispatched at the top.
+func serveOIDC(
+	writer http.ResponseWriter,
+	req *http.Request,
+	session *sessions.Session,
+	store *SessionStore,
+	oidc *OIDCProvider,
+	log *slog.Logger,
+	mode config.AuthMode,
+	info *UserSession,
+	next http.Handler,
+) {
+	if info.Username == "" {
+		http.Error(writer, `{"error":"not authenticated"}`, http.StatusUnauthorized)
+
+		return
+	}
+
+	idToken := info.IDToken
+
+	if mode == config.AuthModePassthrough {
+		refreshed, refreshErr := refreshIfNeeded(req.Context(), session, store, oidc, log, writer, req, info)
+		if refreshErr != nil {
+			// The helper already took care of redirect/401 so
+			// the downstream handler must NOT run.
+			return
+		}
+
+		idToken = refreshed
+	}
+
+	usr := &UserContext{
+		Username: info.Username,
+		Groups:   info.Groups,
+		IDToken:  idToken,
+	}
+
+	ctx := ContextWithUser(req.Context(), usr)
+	ctx = ContextWithAuthMode(ctx, mode)
+	next.ServeHTTP(writer, req.WithContext(ctx))
 }
 
 // serveBYOK wires the BYOK-mode request flow. A user with no stored
@@ -129,6 +159,45 @@ func serveBYOK(
 
 	ctx := ContextWithUser(req.Context(), usr)
 	ctx = ContextWithAuthMode(ctx, config.AuthModeBYOK)
+	next.ServeHTTP(writer, req.WithContext(ctx))
+}
+
+// serveToken wires the token-mode request flow. A user with no stored
+// Bearer token is bounced to the paste form; a user who already has one
+// proceeds to the handler with BearerToken populated.
+func serveToken(
+	writer http.ResponseWriter,
+	req *http.Request,
+	session *sessions.Session,
+	info *UserSession,
+	next http.Handler,
+) {
+	token, ok := GetBearerToken(session)
+	if !ok {
+		if isAPIRequest(req) {
+			http.Error(writer, `{"error":"token not provided"}`, http.StatusUnauthorized)
+
+			return
+		}
+
+		http.Redirect(writer, req, "/auth/token", http.StatusFound)
+
+		return
+	}
+
+	username := info.Username
+	if username == "" {
+		username = usernameTokenMode
+	}
+
+	usr := &UserContext{
+		Username:    username,
+		Groups:      info.Groups,
+		BearerToken: token,
+	}
+
+	ctx := ContextWithUser(req.Context(), usr)
+	ctx = ContextWithAuthMode(ctx, config.AuthModeToken)
 	next.ServeHTTP(writer, req.WithContext(ctx))
 }
 
@@ -277,14 +346,16 @@ func isAPIRequest(req *http.Request) bool {
 // UserContext holds the authenticated user's identity in request context.
 //
 // IDToken is populated in passthrough mode only; KubeconfigBytes in byok
-// mode only. In dev and impersonation-legacy modes both are empty and
-// the NewUserClient factory dispatches on AuthMode rather than the
-// presence of these fields.
+// mode only; BearerToken in token mode only. In dev and
+// impersonation-legacy modes all credential fields are empty and the
+// NewUserClient factory dispatches on AuthMode rather than the presence
+// of these fields.
 type UserContext struct {
 	Username        string
 	Groups          []string
 	IDToken         string
 	KubeconfigBytes []byte
+	BearerToken     string
 }
 
 // UserFromContext extracts the authenticated user from the request context.

@@ -17,7 +17,7 @@ const (
 	sessionKeyUser          = "username"
 	sessionKeyGroups        = "groups"
 	sessionKeyKubeconfig    = "kubeconfig"
-	sessionKeyBearerToken   = "bearer_token"    //nolint:gosec // session map key, not a credential
+	sessionKeyBearerToken   = "bearer_token"
 	sessionKeyIDTokenExpiry = "id_token_expiry" //nolint:gosec // session map key, not a credential
 
 	aes256KeySize     = 32
