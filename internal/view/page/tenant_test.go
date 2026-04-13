@@ -66,6 +66,45 @@ func TestTenantAutoOpensCreateModalWithCreateKind(t *testing.T) {
 	}
 }
 
+// TestCreateAppModalStyle switches between the two inline styles based
+// on whether a kind was preselected. The helper only ever returns
+// SafeCSS literals, but locking the mapping keeps a future edit from
+// silently flipping the default state.
+func TestCreateAppModalStyle(t *testing.T) {
+	t.Parallel()
+
+	if got := string(createAppModalStyle("Etcd")); got != "display: flex;" {
+		t.Errorf("createAppModalStyle(non-empty) = %q, want display: flex;", got)
+	}
+	if got := string(createAppModalStyle("")); got != "display: none;" {
+		t.Errorf("createAppModalStyle(empty) = %q, want display: none;", got)
+	}
+}
+
+// TestSchemaFieldsAutoLoadURL covers the htmx fetch target builder.
+// The handler already strips unknown kinds via selectKnownKind, but the
+// helper still escapes so any leak emits a safe query string.
+func TestSchemaFieldsAutoLoadURL(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"Etcd":        "/fragments/schema-fields?kind=Etcd",
+		"Etcd&evil=1": "/fragments/schema-fields?kind=Etcd%26evil%3D1",
+		"Et cd":       "/fragments/schema-fields?kind=Et+cd",
+	}
+
+	for input, want := range cases {
+		t.Run(input, func(t *testing.T) {
+			t.Parallel()
+
+			got := schemaFieldsAutoLoadURL(input)
+			if got != want {
+				t.Errorf("schemaFieldsAutoLoadURL(%q) = %q, want %q", input, got, want)
+			}
+		})
+	}
+}
+
 // TestTenantModalHiddenByDefault locks in the untouched behaviour when a
 // user navigates directly to /tenants/{ns} without the createKind query
 // param — no modal pops open and no automatic schema fetch fires.

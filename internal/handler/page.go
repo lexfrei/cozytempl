@@ -580,8 +580,27 @@ func (pgh *PageHandler) buildTenantPageData(
 		Query:         req.URL.Query().Get("q"),
 		KindFilter:    req.URL.Query().Get("kind"),
 		SortBy:        req.URL.Query().Get("sort"),
-		CreateKind:    req.URL.Query().Get("createKind"),
+		CreateKind:    selectKnownKind(req.URL.Query().Get("createKind"), schemas),
 	}
+}
+
+// selectKnownKind returns raw only when it exactly matches one of the
+// AppSchema kinds. Any empty, unknown, or injection-crafted value
+// collapses to "", so downstream templates stay closed and no
+// parameter-spoofed URL ever reaches the browser. Defence-in-depth on
+// top of url.QueryEscape at the rendering layer.
+func selectKnownKind(raw string, schemas []k8s.AppSchema) string {
+	if raw == "" {
+		return ""
+	}
+
+	for idx := range schemas {
+		if schemas[idx].Kind == raw {
+			return raw
+		}
+	}
+
+	return ""
 }
 
 func (pgh *PageHandler) aggregateApps(

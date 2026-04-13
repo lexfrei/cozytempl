@@ -3,6 +3,7 @@ package page
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/lexfrei/cozytempl/internal/k8s"
@@ -28,6 +29,15 @@ func createAppModalStyle(createKind string) templ.SafeCSS {
 	}
 
 	return templ.SafeCSS("display: none;")
+}
+
+// schemaFieldsAutoLoadURL builds the htmx fetch target for the create-app
+// modal when a kind is preselected. The kind is URL-escaped so any
+// stray character emits a well-formed query string — the handler
+// already filters against known schemas, this is defence-in-depth at
+// the rendering boundary.
+func schemaFieldsAutoLoadURL(kind string) string {
+	return "/fragments/schema-fields?kind=" + url.QueryEscape(kind)
 }
 
 func tenantBreadcrumb(t k8s.Tenant) []partial.BreadcrumbItem {
@@ -276,7 +286,7 @@ templ Tenant(data view.TenantPageData) {
 				</div>
 				if data.CreateKind != "" {
 					<div id="schema-fields"
-						hx-get={ "/fragments/schema-fields?kind=" + data.CreateKind }
+						hx-get={ schemaFieldsAutoLoadURL(data.CreateKind) }
 						hx-trigger="load"></div>
 				} else {
 					<div id="schema-fields"></div>

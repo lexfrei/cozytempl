@@ -84,26 +84,40 @@ func (pgh *PageHandler) TenantsPage(writer http.ResponseWriter, req *http.Reques
 		})
 	}
 
-	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, tenantSchemaKind)
-	if schemaErr != nil {
-		pgh.log.Debug("fetching tenant schema", "error", schemaErr)
-	}
-
-	// Marketplace cards forward the chosen kind via ?kind=<k> so the
-	// tenants page can render a hint banner and make it obvious what
-	// the user is about to create. Unknown / empty values are
-	// dropped silently — no banner, no error.
-	preselectedKind := req.URL.Query().Get("kind")
-
 	data := view.TenantsPageData{
 		Tenants:         items,
-		TenantSchema:    schema,
+		TenantSchema:    pgh.fetchTenantSchema(req, usr),
 		MetricsEnabled:  metricsEnabled,
-		PreselectedKind: preselectedKind,
+		PreselectedKind: pgh.resolvePreselectedKind(req, usr),
 	}
 
 	content := page.Tenants(data)
 	pgh.render(writer, req, usr.Username, tenants, "tenants", "", content)
+}
+
+// fetchTenantSchema loads the Tenant CRD schema used by the create-tenant
+// modal. Errors are logged and dropped — a nil schema just means the
+// modal renders without schema-driven fields.
+func (pgh *PageHandler) fetchTenantSchema(req *http.Request, usr *auth.UserContext) *k8s.AppSchema {
+	schema, err := pgh.schemaSvc.Get(req.Context(), usr, tenantSchemaKind)
+	if err != nil {
+		pgh.log.Debug("fetching tenant schema", "error", err)
+	}
+
+	return schema
+}
+
+// resolvePreselectedKind accepts ?kind=<k> forwarded by a marketplace
+// card click and returns it only if it maps to a known AppSchema. This
+// keeps user-controlled URL input off the rendered page for both the
+// hint banner and every downstream tenant-row link.
+func (pgh *PageHandler) resolvePreselectedKind(req *http.Request, usr *auth.UserContext) string {
+	schemas, err := pgh.schemaSvc.List(req.Context(), usr)
+	if err != nil {
+		pgh.log.Debug("listing app schemas for kind validation", "error", err)
+	}
+
+	return selectKnownKind(req.URL.Query().Get("kind"), schemas)
 }
 
 // CreateTenant handles POST /tenants to create a new tenant.

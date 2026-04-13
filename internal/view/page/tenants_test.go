@@ -40,6 +40,35 @@ func TestTenantRowCarriesCreateKind(t *testing.T) {
 	}
 }
 
+// TestTenantRowURL covers the small pure helper that builds the link
+// target. Unknown / injection-crafted kinds are filtered upstream by
+// selectKnownKind, but the helper still URL-escapes its input so any
+// leak downstream emits a well-formed query string rather than a
+// parameter-injected one.
+func TestTenantRowURL(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name, ns, kind, want string
+	}{
+		{"no kind", "tenant-demo", "", "/tenants/tenant-demo"},
+		{"simple kind", "tenant-demo", "Etcd", "/tenants/tenant-demo?createKind=Etcd"},
+		{"kind with ampersand", "tenant-demo", "Etcd&evil=1", "/tenants/tenant-demo?createKind=Etcd%26evil%3D1"},
+		{"kind with space", "tenant-demo", "Et cd", "/tenants/tenant-demo?createKind=Et+cd"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := tenantRowURL(tc.ns, tc.kind)
+			if got != tc.want {
+				t.Errorf("tenantRowURL(%q, %q) = %q, want %q", tc.ns, tc.kind, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestTenantRowWithoutPreselectedKind makes sure the default case (no
 // createKind) still produces the bare tenant URL — no stray query param
 // leaks into the link.

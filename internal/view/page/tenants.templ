@@ -2,6 +2,7 @@ package page
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/lexfrei/cozytempl/internal/k8s"
@@ -177,14 +178,16 @@ templ Tenants(data view.TenantsPageData) {
 // tenantRowURL returns the link target for a tenant row. When the page
 // was reached from a marketplace card (preselectedKind != ""), the link
 // carries ?createKind=X so the tenant detail page auto-opens the
-// create-app modal. Without a kind, it's the plain tenant URL.
+// create-app modal. The kind is URL-escaped so any value — validated or
+// not — emits a well-formed query string and cannot inject extra
+// parameters.
 func tenantRowURL(namespace, preselectedKind string) string {
 	base := "/tenants/" + namespace
 	if preselectedKind == "" {
 		return base
 	}
 
-	return base + "?createKind=" + preselectedKind
+	return base + "?createKind=" + url.QueryEscape(preselectedKind)
 }
 
 templ tenantRow(item view.TenantWithUsage, metrics bool, preselectedKind string) {
