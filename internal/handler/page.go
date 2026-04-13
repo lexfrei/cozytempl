@@ -580,6 +580,7 @@ func (pgh *PageHandler) buildTenantPageData(
 		Query:         req.URL.Query().Get("q"),
 		KindFilter:    req.URL.Query().Get("kind"),
 		SortBy:        req.URL.Query().Get("sort"),
+		CreateKind:    req.URL.Query().Get("createKind"),
 	}
 }
 

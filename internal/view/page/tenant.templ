@@ -17,6 +17,19 @@ const tenantNSPrefix = "tenant-"
 // so the crumb reads "root" rather than "tenant-root". That matches the
 // display name we'd get from a full Tenant lookup without the extra API
 // round-trip.
+// createAppModalStyle returns the inline style for the create-app modal
+// backdrop. When CreateKind is set (arrival from marketplace), the modal
+// opens immediately; otherwise it stays hidden and the user opens it via
+// the header button. Returned as templ.SafeCSS so the dynamic value is
+// allowed in the style attribute.
+func createAppModalStyle(createKind string) templ.SafeCSS {
+	if createKind != "" {
+		return templ.SafeCSS("display: flex;")
+	}
+
+	return templ.SafeCSS("display: none;")
+}
+
 func tenantBreadcrumb(t k8s.Tenant) []partial.BreadcrumbItem {
 	crumbs := []partial.BreadcrumbItem{
 		{Label: "Dashboard", URL: "/"},
@@ -228,7 +241,7 @@ templ Tenant(data view.TenantPageData) {
 	</div>
 
 	<!-- Create modal -->
-	<div id="create-app-modal" class="modal-backdrop" style="display: none;"
+	<div id="create-app-modal" class="modal-backdrop" style={ createAppModalStyle(data.CreateKind) }
 		role="dialog" aria-modal="true" aria-labelledby="create-app-title">
 		<div class="modal">
 			<div class="modal-header">
@@ -249,7 +262,7 @@ templ Tenant(data view.TenantPageData) {
 						hx-include="this">
 						<option value="">{ partial.Tc(ctx, "page.tenant.selectType") }</option>
 						for _, schema := range data.Schemas {
-							<option value={ schema.Kind }>{ schema.DisplayName }</option>
+							<option value={ schema.Kind } selected?={ schema.Kind == data.CreateKind }>{ schema.DisplayName }</option>
 						}
 					</select>
 				</div>
@@ -261,7 +274,13 @@ templ Tenant(data view.TenantPageData) {
 						maxlength="53"
 						title={ partial.Tc(ctx, "page.tenant.appNameTitle") }/>
 				</div>
-				<div id="schema-fields"></div>
+				if data.CreateKind != "" {
+					<div id="schema-fields"
+						hx-get={ "/fragments/schema-fields?kind=" + data.CreateKind }
+						hx-trigger="load"></div>
+				} else {
+					<div id="schema-fields"></div>
+				}
 				<div class="modal-footer">
 					<button type="button" class="btn"
 						data-action="modal-close" data-modal="create-app-modal">{ partial.Tc(ctx, "action.cancel") }</button>

@@ -108,7 +108,7 @@ templ Tenants(data view.TenantsPageData) {
 				</thead>
 				<tbody id="tenants-table-body">
 					for _, item := range data.Tenants {
-						@tenantRow(item, data.MetricsEnabled)
+						@tenantRow(item, data.MetricsEnabled, data.PreselectedKind)
 					}
 				</tbody>
 			</table>
@@ -174,11 +174,24 @@ templ Tenants(data view.TenantsPageData) {
 	</div>
 }
 
-templ tenantRow(item view.TenantWithUsage, metrics bool) {
+// tenantRowURL returns the link target for a tenant row. When the page
+// was reached from a marketplace card (preselectedKind != ""), the link
+// carries ?createKind=X so the tenant detail page auto-opens the
+// create-app modal. Without a kind, it's the plain tenant URL.
+func tenantRowURL(namespace, preselectedKind string) string {
+	base := "/tenants/" + namespace
+	if preselectedKind == "" {
+		return base
+	}
+
+	return base + "?createKind=" + preselectedKind
+}
+
+templ tenantRow(item view.TenantWithUsage, metrics bool, preselectedKind string) {
 	<tr id={ "tenant-row-" + item.Tenant.ParentNamespace + "-" + item.Tenant.Name }>
 		<td>
-			<a href={ templ.SafeURL("/tenants/" + item.Tenant.Namespace) }
-				hx-get={ "/tenants/" + item.Tenant.Namespace }
+			<a href={ templ.SafeURL(tenantRowURL(item.Tenant.Namespace, preselectedKind)) }
+				hx-get={ tenantRowURL(item.Tenant.Namespace, preselectedKind) }
 				hx-target="#main-content"
 				hx-push-url="true"
 				style="color: inherit; text-decoration: none;">
