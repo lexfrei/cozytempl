@@ -565,6 +565,26 @@ other = "kubeconfig file"
 [page.kubeconfig.submit]
 other = "Upload and continue"
 
+# --- Token paste page (authpage + page) ---
+
+[page.token.title]
+other = "Sign in with token"
+
+[page.token.modeIntro]
+other = "cozytempl is running in token-paste mode. Paste a Kubernetes Bearer token that gives you access to your cluster; it will be stored encrypted inside your session cookie and used as the Bearer credential for every request until you log out."
+
+[page.token.hint1]
+other = "Any static Kubernetes Bearer token works — a ServiceAccount token, an OIDC ID token, or a token minted with kubectl create token."
+
+[page.token.hint2]
+other = "The token is tested against the apiserver with a SelfSubjectAccessReview before it lands in your session, so an invalid or expired token is rejected up front."
+
+[page.token.fieldLabel]
+other = "Bearer token"
+
+[page.token.submit]
+other = "Sign in"
+
 # --- Toast messages (handler-emitted, not page-level) ---
 
 [error.logs.list]
