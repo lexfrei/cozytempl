@@ -77,11 +77,15 @@ func TestHandleTokenUpload_OversizedRejected(t *testing.T) {
 	huge := strings.Repeat("a", int(tokenMaxBytes)+1)
 	rec := postTokenForm(t, hnd, url.Values{"token": {huge}}.Encode())
 
-	// Either the MaxBytesReader 413 or the in-handler size check is
-	// acceptable — both stop the oversized payload before it lands in
-	// the session.
-	if rec.Code == http.StatusSeeOther {
-		t.Errorf("oversized token accepted (303 redirect); want rejection")
+	// Oversized payload must re-render the form with the
+	// ErrTokenTooLarge sentinel — NOT accept the upload (303) and
+	// NOT fall through to a 500 that would mask the rejection path.
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (re-render with ErrTokenTooLarge)", rec.Code)
+	}
+
+	if !strings.Contains(rec.Body.String(), ErrTokenTooLarge.Error()) {
+		t.Errorf("body missing oversize error sentinel; body = %q", rec.Body.String())
 	}
 }
 
@@ -136,8 +140,14 @@ func TestHandleTokenUpload_TrimsWhitespace(t *testing.T) {
 func TestHandleTokenUpload_ProbeFailureReRendersForm(t *testing.T) {
 	hnd := newTokenHandler()
 
+	// Stub returns an error WRAPPED with the sentinel so the
+	// sanitiser strips the wrapped detail. This is the shape every
+	// production probe failure must take — a raw errors.New would
+	// slip the detail through to the browser, which is exactly the
+	// hole TestHandleTokenUpload_ProbeNetworkErrorDoesNotLeakInternalAddress
+	// covers.
 	stubTokenProbe(t, func(_ context.Context, _ *rest.Config, _ string) error {
-		return errors.New("apiserver unreachable")
+		return fmt.Errorf("%w: wrapped detail", ErrTokenUnreachable)
 	})
 
 	rec := postTokenForm(t, hnd, url.Values{"token": {"abc"}}.Encode())
@@ -147,8 +157,8 @@ func TestHandleTokenUpload_ProbeFailureReRendersForm(t *testing.T) {
 		t.Errorf("status = %d, want 200 (intentional re-render with error)", rec.Code)
 	}
 
-	if !strings.Contains(rec.Body.String(), "apiserver unreachable") {
-		t.Errorf("body missing probe error; body = %q", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), ErrTokenUnreachable.Error()) {
+		t.Errorf("body missing ErrTokenUnreachable sentinel; body = %q", rec.Body.String())
 	}
 }
 
@@ -181,6 +191,33 @@ func TestHandleTokenUpload_ProbeNetworkErrorDoesNotLeakInternalAddress(t *testin
 
 	if !strings.Contains(rec.Body.String(), ErrTokenUnreachable.Error()) {
 		t.Errorf("response body missing generic error sentinel; body = %q", rec.Body.String())
+	}
+}
+
+// TestHandleTokenUpload_ClientsetBuildErrorDoesNotLeak asserts that
+// a probe failure originating from kubernetes.NewForConfig (a
+// different error shape than network I/O: it echoes the apiserver
+// host straight out of the bad config) is still funneled through
+// the ErrTokenUnreachable sanitiser. Exists because an earlier
+// revision wrapped this path with a plain fmt.Errorf, slipping the
+// host into the browser-visible error message.
+func TestHandleTokenUpload_ClientsetBuildErrorDoesNotLeak(t *testing.T) {
+	hnd := newTokenHandler()
+
+	const internalAddr = "10.96.0.1:6443"
+
+	stubTokenProbe(t, func(_ context.Context, _ *rest.Config, _ string) error {
+		return fmt.Errorf("%w: malformed host %s", ErrTokenUnreachable, internalAddr)
+	})
+
+	rec := postTokenForm(t, hnd, url.Values{"token": {"abc"}}.Encode())
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	if strings.Contains(rec.Body.String(), internalAddr) {
+		t.Errorf("clientset-build error leaked %q into response; body = %q", internalAddr, rec.Body.String())
 	}
 }
 

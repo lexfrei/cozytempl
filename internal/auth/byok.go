@@ -217,7 +217,11 @@ func rejectExecPluginUsers(cfg *clientcmdapi.Config) error {
 func probeKubeconfig(ctx context.Context, restCfg *rest.Config) error {
 	client, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
-		return fmt.Errorf("building clientset for probe: %w", err)
+		// Wrap under ErrKubeconfigUnreachable so sanitizeKubeconfigError
+		// strips the detail before it reaches the user-facing form —
+		// NewForConfig errors may echo the kubeconfig's apiserver
+		// host otherwise.
+		return fmt.Errorf("%w: %v", ErrKubeconfigUnreachable, err) //nolint:errorlint // deliberate %v, see SAR wrap below
 	}
 
 	review := &authv1.SelfSubjectAccessReview{

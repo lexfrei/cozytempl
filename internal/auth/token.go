@@ -191,7 +191,11 @@ func probeToken(ctx context.Context, baseCfg *rest.Config, token string) error {
 
 	client, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
-		return fmt.Errorf("building clientset for probe: %w", err)
+		// Wrap under ErrTokenUnreachable so userFacingProbeError
+		// sanitises the detail. NewForConfig errors typically
+		// surface when baseCfg.Host is malformed and the raw error
+		// would echo that host to the browser.
+		return fmt.Errorf("%w: %v", ErrTokenUnreachable, err) //nolint:errorlint // deliberate %v, see probeToken wrap note
 	}
 
 	review := &authv1.SelfSubjectAccessReview{
