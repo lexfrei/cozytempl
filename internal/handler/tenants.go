@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 
@@ -11,6 +13,14 @@ import (
 	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/internal/view/page"
 )
+
+// schemaLister is the narrow contract resolveKindParam needs: given a
+// user context it returns the caller-visible AppSchema list. *k8s.SchemaService
+// already satisfies it; the interface exists so tests can substitute a
+// fake without building the full service stack.
+type schemaLister interface {
+	List(ctx context.Context, usr *auth.UserContext) ([]k8s.AppSchema, error)
+}
 
 const (
 	tenantSchemaKind = "Tenant"
@@ -84,26 +94,76 @@ func (pgh *PageHandler) TenantsPage(writer http.ResponseWriter, req *http.Reques
 		})
 	}
 
-	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, tenantSchemaKind)
-	if schemaErr != nil {
-		pgh.log.Debug("fetching tenant schema", "error", schemaErr)
-	}
-
-	// Marketplace cards forward the chosen kind via ?kind=<k> so the
-	// tenants page can render a hint banner and make it obvious what
-	// the user is about to create. Unknown / empty values are
-	// dropped silently — no banner, no error.
-	preselectedKind := req.URL.Query().Get("kind")
-
 	data := view.TenantsPageData{
 		Tenants:         items,
-		TenantSchema:    schema,
+		TenantSchema:    pgh.fetchTenantSchema(req, usr),
 		MetricsEnabled:  metricsEnabled,
-		PreselectedKind: preselectedKind,
+		PreselectedKind: pgh.resolvePreselectedKind(req, usr),
 	}
 
 	content := page.Tenants(data)
 	pgh.render(writer, req, usr.Username, tenants, "tenants", "", content)
+}
+
+// fetchTenantSchema loads the Tenant CRD schema used by the create-tenant
+// modal. Errors are logged and dropped — a nil schema just means the
+// modal renders without schema-driven fields.
+func (pgh *PageHandler) fetchTenantSchema(req *http.Request, usr *auth.UserContext) *k8s.AppSchema {
+	schema, err := pgh.schemaSvc.Get(req.Context(), usr, tenantSchemaKind)
+	if err != nil {
+		pgh.log.Debug("fetching tenant schema", "error", err)
+	}
+
+	return schema
+}
+
+// resolvePreselectedKind is a thin method wrapper around resolveKindParam
+// so PageHandler callers do not need to pass the schemaSvc / logger each
+// time. The real work — short-circuiting when no kind is set, calling
+// the schema lister, and validating against the known schemas — lives
+// in resolveKindParam so it can be unit-tested with a fake lister.
+//
+// On the tenants list page itself the kind is only used for a hint
+// banner (templ auto-escapes its interpolation) and for building the
+// next-hop URL via tenantRowURL (which url.QueryEscapes the value).
+// The detail-page handler re-validates against the live schema list
+// at the next click — so callers can pass nil for lister to skip the
+// extra schemaSvc.List round-trip when the validation result is not
+// itself security-load-bearing.
+func (pgh *PageHandler) resolvePreselectedKind(req *http.Request, usr *auth.UserContext) string {
+	return resolveKindParam(req.Context(), usr, req.URL.Query().Get("kind"), nil, pgh.log)
+}
+
+// resolveKindParam returns the input only when it matches a known
+// AppSchema kind. Fail-closed: when schemaSvc.List errors out, the
+// fallback is the empty string — no kind is ever accepted on a nil /
+// partial schema list. The error is logged at Warn because a silent
+// validation failure here downgrades to an "all kinds unknown" state,
+// which operators need to see promptly.
+//
+// Short-circuits when raw is empty so the common /tenants navigation
+// does not pay for a schemaSvc.List round-trip. A nil lister also
+// short-circuits — callers that only need pass-through (because the
+// downstream renderer is already escape-safe) opt out of the call.
+func resolveKindParam(
+	ctx context.Context, usr *auth.UserContext, raw string, lister schemaLister, log *slog.Logger,
+) string {
+	if raw == "" {
+		return ""
+	}
+
+	if lister == nil {
+		return raw
+	}
+
+	schemas, err := lister.List(ctx, usr)
+	if err != nil {
+		log.Warn("listing app schemas for kind validation", "error", err)
+
+		return ""
+	}
+
+	return selectKnownKind(raw, schemas)
 }
 
 // CreateTenant handles POST /tenants to create a new tenant.

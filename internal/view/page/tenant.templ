@@ -3,6 +3,7 @@ package page
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/lexfrei/cozytempl/internal/k8s"
@@ -11,6 +12,28 @@ import (
 )
 
 const tenantNSPrefix = "tenant-"
+
+// createAppModalStyle returns the inline style for the create-app modal
+// backdrop. When CreateKind is set (arrival from marketplace), the modal
+// opens immediately; otherwise it stays hidden and the user opens it via
+// the header button. Returned as templ.SafeCSS so the dynamic value is
+// allowed in the style attribute.
+func createAppModalStyle(createKind string) templ.SafeCSS {
+	if createKind != "" {
+		return templ.SafeCSS("display: flex;")
+	}
+
+	return templ.SafeCSS("display: none;")
+}
+
+// schemaFieldsAutoLoadURL builds the htmx fetch target for the create-app
+// modal when a kind is preselected. The kind is URL-escaped so any
+// stray character emits a well-formed query string — the handler
+// already filters against known schemas, this is defence-in-depth at
+// the rendering boundary.
+func schemaFieldsAutoLoadURL(kind string) string {
+	return "/fragments/schema-fields?kind=" + url.QueryEscape(kind)
+}
 
 // tenantBreadcrumb builds the crumb trail from dashboard down to the tenant.
 // The parent label is the parent namespace with the "tenant-" prefix stripped
@@ -228,7 +251,7 @@ templ Tenant(data view.TenantPageData) {
 	</div>
 
 	<!-- Create modal -->
-	<div id="create-app-modal" class="modal-backdrop" style="display: none;"
+	<div id="create-app-modal" class="modal-backdrop" style={ createAppModalStyle(data.CreateKind) }
 		role="dialog" aria-modal="true" aria-labelledby="create-app-title">
 		<div class="modal">
 			<div class="modal-header">
@@ -249,7 +272,7 @@ templ Tenant(data view.TenantPageData) {
 						hx-include="this">
 						<option value="">{ partial.Tc(ctx, "page.tenant.selectType") }</option>
 						for _, schema := range data.Schemas {
-							<option value={ schema.Kind }>{ schema.DisplayName }</option>
+							<option value={ schema.Kind } selected?={ schema.Kind == data.CreateKind }>{ schema.DisplayName }</option>
 						}
 					</select>
 				</div>
@@ -259,9 +282,20 @@ templ Tenant(data view.TenantPageData) {
 						placeholder={ partial.Tc(ctx, "page.tenant.appNamePlaceholder") }
 						pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"
 						maxlength="53"
+						autofocus?={ data.CreateKind != "" }
 						title={ partial.Tc(ctx, "page.tenant.appNameTitle") }/>
 				</div>
-				<div id="schema-fields"></div>
+				if data.CreateKind != "" {
+					<div id="schema-fields"
+						hx-get={ schemaFieldsAutoLoadURL(data.CreateKind) }
+						hx-trigger="load">
+						<div class="text-muted text-sm">
+							{ partial.Tc(ctx, "page.tenant.loadingFields") }
+						</div>
+					</div>
+				} else {
+					<div id="schema-fields"></div>
+				}
 				<div class="modal-footer">
 					<button type="button" class="btn"
 						data-action="modal-close" data-modal="create-app-modal">{ partial.Tc(ctx, "action.cancel") }</button>

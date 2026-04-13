@@ -47,6 +47,11 @@ type TenantPageData struct {
 	Query         string
 	KindFilter    string
 	SortBy        string
+	// CreateKind is non-empty when the page is opened with
+	// ?createKind=X (the marketplace→tenants→tenant redirect chain).
+	// The template auto-opens the create-app modal pre-populated
+	// with this kind so the user lands directly on the form.
+	CreateKind string
 }
 
 // AppDetailData holds data for the application detail page.

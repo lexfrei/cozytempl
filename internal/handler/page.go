@@ -538,7 +538,11 @@ func (pgh *PageHandler) buildTenantPageData(
 	req *http.Request, usr *auth.UserContext, tenantNS string, tenant *k8s.Tenant, allTenants []k8s.Tenant,
 ) view.TenantPageData {
 	appList, _ := pgh.appSvc.List(req.Context(), usr, tenantNS)
-	schemas, _ := pgh.schemaSvc.List(req.Context(), usr)
+
+	schemas, schemasErr := pgh.schemaSvc.List(req.Context(), usr)
+	if schemasErr != nil {
+		pgh.log.Warn("listing app schemas for kind validation", "error", schemasErr)
+	}
 
 	// Direct children of this tenant, scoped to what the user can see:
 	// reuse the already-listed tenants slice so the child list inherits
@@ -580,7 +584,43 @@ func (pgh *PageHandler) buildTenantPageData(
 		Query:         req.URL.Query().Get("q"),
 		KindFilter:    req.URL.Query().Get("kind"),
 		SortBy:        req.URL.Query().Get("sort"),
+		CreateKind:    extractCreateKindFromQuery(req, schemas),
 	}
+}
+
+// createKindQueryParam is the single source of truth for the query
+// parameter name the marketplace flow uses. Defined as a constant so
+// the test for extractCreateKindFromQuery can pin it: any rename in
+// production code that doesn't update both the constant and the test
+// expectation surfaces as a compile failure.
+const createKindQueryParam = "createKind"
+
+// extractCreateKindFromQuery reads the createKind query param and
+// validates it against the supplied schema list. Wraps two operations
+// — the param read and the whitelist check — into a single helper so
+// the test for it covers both, including a typo guard for the param
+// name itself.
+func extractCreateKindFromQuery(req *http.Request, schemas []k8s.AppSchema) string {
+	return selectKnownKind(req.URL.Query().Get(createKindQueryParam), schemas)
+}
+
+// selectKnownKind returns raw only when it exactly matches one of the
+// AppSchema kinds. Any empty, unknown, or injection-crafted value
+// collapses to "", so downstream templates stay closed and no
+// parameter-spoofed URL ever reaches the browser. Defence-in-depth on
+// top of url.QueryEscape at the rendering layer.
+func selectKnownKind(raw string, schemas []k8s.AppSchema) string {
+	if raw == "" {
+		return ""
+	}
+
+	for idx := range schemas {
+		if schemas[idx].Kind == raw {
+			return raw
+		}
+	}
+
+	return ""
 }
 
 func (pgh *PageHandler) aggregateApps(

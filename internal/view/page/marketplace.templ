@@ -2,10 +2,21 @@ package page
 
 import (
 	"fmt"
+	"net/url"
+
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
+
+// marketplaceCardURL builds the click target for a marketplace card.
+// Kind comes from operator-controlled CRDs today, but URL-escape keeps
+// the rendered attribute well-formed if upstream ever ships a kind with
+// characters that need encoding — defence-in-depth at the rendering
+// boundary, matching tenantRowURL and schemaFieldsAutoLoadURL.
+func marketplaceCardURL(kind string) string {
+	return "/tenants?kind=" + url.QueryEscape(kind)
+}
 
 templ Marketplace(data view.MarketplaceData) {
 	<div class="page-header">
@@ -94,10 +105,11 @@ templ marketplaceCard(schema k8s.AppSchema) {
 	     renders a hint banner telling the user to pick a tenant
 	     to create the chosen kind in. A prior iteration rendered
 	     the card as a <div> with cursor:pointer and no handler —
-	     that was a dead click zone, flagged by the user on dev9. -->
+	     that was a dead click zone with no keyboard or middle-click
+	     support. -->
 	<a class="mp-card mp-card-link"
-		href={ templ.SafeURL("/tenants?kind=" + schema.Kind) }
-		hx-get={ "/tenants?kind=" + schema.Kind }
+		href={ templ.SafeURL(marketplaceCardURL(schema.Kind)) }
+		hx-get={ marketplaceCardURL(schema.Kind) }
 		hx-target="#main-content"
 		hx-push-url="true"
 		aria-label={ partial.Tc(ctx, "page.marketplace.cardAria", map[string]any{"Kind": schema.DisplayName}) }>
