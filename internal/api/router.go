@@ -134,16 +134,21 @@ func buildAuthMiddleware(
 	// sits OUTSIDE the protect() wrapper — otherwise a user with
 	// no stored kubeconfig could never reach the form that lets
 	// them upload one (RequireAuth would bounce them right back).
+	// The POST path is IP-rate-limited because it triggers a SAR
+	// round-trip to the apiserver without any prior auth.
 	if cfg.AuthMode == config.AuthModeBYOK && cfg.AuthHandler != nil {
 		mux.HandleFunc("GET /auth/kubeconfig", cfg.AuthHandler.HandleKubeconfigUploadForm)
-		mux.HandleFunc("POST /auth/kubeconfig", cfg.AuthHandler.HandleKubeconfigUpload)
+		mux.Handle("POST /auth/kubeconfig",
+			withIPRateLimit(rateStore, http.HandlerFunc(cfg.AuthHandler.HandleKubeconfigUpload)))
 	}
 
 	// Token mode paste form. Same rationale as the BYOK routes above
-	// — the paste form must be reachable without a stored token.
+	// — the paste form must be reachable without a stored token, and
+	// the POST path is IP-rate-limited for the same reason.
 	if cfg.AuthMode == config.AuthModeToken && cfg.AuthHandler != nil {
 		mux.HandleFunc("GET /auth/token", cfg.AuthHandler.HandleTokenUploadForm)
-		mux.HandleFunc("POST /auth/token", cfg.AuthHandler.HandleTokenUpload)
+		mux.Handle("POST /auth/token",
+			withIPRateLimit(rateStore, http.HandlerFunc(cfg.AuthHandler.HandleTokenUpload)))
 	}
 
 	if cfg.AuthHandler != nil {

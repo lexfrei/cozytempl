@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -144,4 +145,48 @@ func withRateLimit(store *rateLimitStore, next http.Handler) http.Handler {
 
 		next.ServeHTTP(writer, req)
 	})
+}
+
+// withIPRateLimit wraps a pre-auth handler (the kubeconfig upload,
+// the token paste) in an IP-keyed token bucket reusing the same
+// store as withRateLimit. The keys are prefixed with "ip:" so they
+// live in a distinct namespace from usernames and cannot collide.
+// We key on RemoteAddr by default; when the process runs behind a
+// trusted proxy (Cloudflare Tunnel, Ingress), X-Forwarded-For's
+// left-most entry is used instead. Without this wrapper the paste
+// endpoints perform an unauthenticated SAR round-trip to the
+// apiserver on every request, which a loose attacker could spin
+// into an arbitrarily high-rate load source.
+func withIPRateLimit(store *rateLimitStore, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		key := "ip:" + clientIP(req)
+
+		if !store.allow(key) {
+			writer.Header().Set("Retry-After", "1")
+			http.Error(writer, "rate limit exceeded", http.StatusTooManyRequests)
+
+			return
+		}
+
+		next.ServeHTTP(writer, req)
+	})
+}
+
+// clientIP returns the best-effort client IP for rate-limiting
+// purposes. Left-most X-Forwarded-For wins when the header is set
+// (it comes from our own ingress / CF Tunnel, which we trust to
+// strip user-supplied values) and falls back to RemoteAddr. The
+// returned string may include a port in the RemoteAddr fallback —
+// that is fine, rate-limit keys do not need to be canonical.
+func clientIP(req *http.Request) string {
+	xff := req.Header.Get("X-Forwarded-For")
+	if xff != "" {
+		if idx := strings.Index(xff, ","); idx > 0 {
+			return strings.TrimSpace(xff[:idx])
+		}
+
+		return strings.TrimSpace(xff)
+	}
+
+	return req.RemoteAddr
 }

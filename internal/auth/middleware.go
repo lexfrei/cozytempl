@@ -143,7 +143,7 @@ func serveBYOK(
 			return
 		}
 
-		http.Redirect(writer, req, "/auth/kubeconfig", http.StatusFound)
+		http.Redirect(writer, req, pathAuthKubeconfig, http.StatusFound)
 
 		return
 	}
@@ -182,7 +182,7 @@ func serveToken(
 			return
 		}
 
-		http.Redirect(writer, req, "/auth/token", http.StatusFound)
+		http.Redirect(writer, req, pathAuthToken, http.StatusFound)
 
 		return
 	}
@@ -332,7 +332,7 @@ func clearAndRedirect(
 		return
 	}
 
-	http.Redirect(writer, req, "/auth/login", http.StatusFound)
+	http.Redirect(writer, req, pathAuthLogin, http.StatusFound)
 }
 
 // isAPIRequest returns true for paths whose failure mode is a JSON 401

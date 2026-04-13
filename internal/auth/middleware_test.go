@@ -165,6 +165,51 @@ func TestRequireAuth_TokenMode_MissingTokenRedirects(t *testing.T) {
 	}
 }
 
+func TestRequireAuth_TokenMode_SyntheticUsernameFallback(t *testing.T) {
+	store := NewSessionStore(testSessionKey)
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/tenants", nil)
+
+	session, err := store.Get(req)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+
+	// Stash the token but SKIP SetUser — simulates a legacy session
+	// or a future bug where the upload handler stopped calling
+	// SetUser. The middleware fallback should substitute the
+	// synthetic 'token-user' name so downstream code never sees an
+	// empty Username.
+	SetBearerToken(session, "abc.def.ghi")
+
+	if err := store.Save(req, recorder, session); err != nil {
+		t.Fatalf("save session: %v", err)
+	}
+
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/tenants", nil)
+	for _, cookie := range recorder.Result().Cookies() {
+		req2.AddCookie(cookie)
+	}
+
+	var capturedUser *UserContext
+
+	inner := http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
+		capturedUser = UserFromContext(req.Context())
+	})
+
+	rec2 := httptest.NewRecorder()
+	RequireAuth(store, nil, testLogger(), config.AuthModeToken, inner).ServeHTTP(rec2, req2)
+
+	if capturedUser == nil {
+		t.Fatal("expected user context, got nil")
+	}
+
+	if capturedUser.Username != "token-user" {
+		t.Errorf("Username = %q, want synthetic fallback 'token-user'", capturedUser.Username)
+	}
+}
+
 func TestRequireAuth_TokenMode_MissingTokenAPIReturns401(t *testing.T) {
 	store := NewSessionStore(testSessionKey)
 
