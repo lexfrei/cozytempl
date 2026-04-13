@@ -25,7 +25,7 @@ func TestToEventAllFields(t *testing.T) {
 			},
 			"source": map[string]any{
 				"component": "job-controller",
-				"host":      "dev9-1",
+				"host":      "node-1",
 			},
 			"count":          int64(5),
 			"firstTimestamp": "2026-04-10T12:00:00Z",
@@ -44,8 +44,8 @@ func TestToEventAllFields(t *testing.T) {
 	if evt.Object != "Job/backup-run-42" {
 		t.Errorf("Object = %q, want Job/backup-run-42", evt.Object)
 	}
-	if evt.Source != "job-controller on dev9-1" {
-		t.Errorf("Source = %q, want 'job-controller on dev9-1'", evt.Source)
+	if evt.Source != "job-controller on node-1" {
+		t.Errorf("Source = %q, want 'job-controller on node-1'", evt.Source)
 	}
 	if evt.Count != 5 {
 		t.Errorf("Count = %d, want 5", evt.Count)

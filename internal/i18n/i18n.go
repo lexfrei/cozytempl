@@ -234,8 +234,8 @@ func (b *Bundle) resolve(req *http.Request) *Localizer {
 // reverse proxy / ingress doing the TLS work). Setting Secure
 // unconditionally would silently drop the cookie on http://localhost
 // dev port-forwards, which is exactly how operators first smoke-test
-// a fresh deployment — and that was the "language switch does
-// nothing" bug on the live dev9 install.
+// a fresh deployment — and that path is exactly what surfaced the
+// "language switch does nothing" bug on a non-TLS install.
 //
 // The cookie is not security-sensitive (it only carries the user's
 // language preference) so dropping Secure on HTTP is not a real

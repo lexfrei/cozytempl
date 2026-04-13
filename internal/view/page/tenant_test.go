@@ -11,11 +11,28 @@ import (
 	"github.com/lexfrei/cozytempl/internal/view"
 )
 
-// etcdSelectedOption matches an <option> tag for value="Etcd" that
-// also carries a selected attribute, in any order. Robust to templ
-// emitting `selected` vs `selected=""` and to additional attributes
-// being added later.
-var etcdSelectedOption = regexp.MustCompile(`<option[^>]*value="Etcd"[^>]*\sselected[\s>=]`)
+// etcdOptionTag matches the entire <option …> tag for value="Etcd".
+// The body of the tag is then inspected separately for any form of the
+// selected attribute — `selected`, `selected=""`, `selected="selected"`
+// — so the test passes regardless of how templ chooses to emit a
+// boolean attribute. Anchoring on the open tag keeps the assertion off
+// adjacent <option> elements with different values.
+var etcdOptionTag = regexp.MustCompile(`<option[^>]*value="Etcd"[^>]*>`)
+
+// optionIsSelected reports whether the <option> tag matched by
+// etcdOptionTag carries a selected attribute in any spelling.
+func optionIsSelected(tag string) bool {
+	switch {
+	case strings.Contains(tag, ` selected `),
+		strings.Contains(tag, ` selected>`),
+		strings.Contains(tag, ` selected/`),
+		strings.Contains(tag, `selected=""`),
+		strings.Contains(tag, `selected="selected"`):
+		return true
+	}
+
+	return false
+}
 
 func sampleTenantPageData(createKind string) view.TenantPageData {
 	return view.TenantPageData{
@@ -61,8 +78,12 @@ func TestTenantAutoOpensCreateModalWithCreateKind(t *testing.T) {
 		t.Errorf("create-app-modal should be open (display: flex); got opening tag: %s", modalTag)
 	}
 
-	if !etcdSelectedOption.MatchString(got) {
-		t.Errorf(`kind option "Etcd" should be selected; output:\n%s`, got)
+	tag := etcdOptionTag.FindString(got)
+	if tag == "" {
+		t.Fatalf(`<option value="Etcd"> not found; output:\n%s`, got)
+	}
+	if !optionIsSelected(tag) {
+		t.Errorf(`<option value="Etcd"> should be selected; tag was: %s`, tag)
 	}
 
 	if !strings.Contains(got, `/fragments/schema-fields?kind=Etcd`) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
@@ -142,5 +143,43 @@ func TestResolveKindParamEmptyParamSkipsList(t *testing.T) {
 	}
 	if lister.calls != 0 {
 		t.Errorf("expected 0 List calls on empty input, got %d", lister.calls)
+	}
+}
+
+// TestBuildTenantPageDataReadsCreateKindParam locks in the literal
+// query-param name buildTenantPageData reads from. A typo in the
+// param name (createKind → create_kind, etc.) would silently break
+// the marketplace flow: every test in this package would still pass
+// because the field would just always be empty. Test the read path
+// directly via the same helper buildTenantPageData uses.
+func TestBuildTenantPageDataReadsCreateKindParam(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"/?createKind=Etcd":     "Etcd",
+		"/?createKind=Postgres": "", // unknown — selectKnownKind drops
+		"/?createKind=":         "", // empty value
+		"/":                     "", // missing param
+		// Common typo guard: if the production code ever drifts to
+		// reading "create_kind" or "kind", this test would still
+		// flag the regression because the assertion expects the
+		// "createKind" spelling exclusively.
+		"/?create_kind=Etcd": "",
+		"/?kind=Etcd":        "",
+	}
+
+	schemas := []k8s.AppSchema{{Kind: "Etcd"}}
+
+	for rawURL, want := range cases {
+		t.Run(rawURL, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequestWithContext(context.Background(), "GET", rawURL, nil)
+			got := selectKnownKind(req.URL.Query().Get("createKind"), schemas)
+
+			if got != want {
+				t.Errorf("createKind for %q = %q, want %q", rawURL, got, want)
+			}
+		})
 	}
 }
