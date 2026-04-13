@@ -286,9 +286,20 @@ templ Tenant(data view.TenantPageData) {
 						title={ partial.Tc(ctx, "page.tenant.appNameTitle") }/>
 				</div>
 				if data.CreateKind != "" {
+					<!--
+					    hx-target="this" is REQUIRED here: the surrounding
+					    <form> sets hx-target="#main-content" so its POST
+					    swaps the tenant page on submit. Without an
+					    explicit override, the auto-load below inherits
+					    that target and the schema-fields fragment
+					    replaces the entire tenant page on first paint —
+					    user lands on a /tenants/{name}?createKind= URL
+					    and sees only two raw form rows, no chrome.
+					-->
 					<div id="schema-fields"
 						hx-get={ schemaFieldsAutoLoadURL(data.CreateKind) }
-						hx-trigger="load">
+						hx-trigger="load"
+						hx-target="this">
 						<div class="text-muted text-sm">
 							{ partial.Tc(ctx, "page.tenant.loadingFields") }
 						</div>

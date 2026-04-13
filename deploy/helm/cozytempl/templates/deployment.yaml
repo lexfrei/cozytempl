@@ -98,7 +98,7 @@ spec:
                 secretKeyRef:
                   name: {{ include "cozytempl.secretName" . }}
                   key: session-secret
-            {{- else if eq $mode "byok" }}
+            {{- else if or (eq $mode "byok") (eq $mode "token") }}
             - name: SESSION_SECRET
               valueFrom:
                 secretKeyRef:
