@@ -201,6 +201,42 @@ func TestBuildTenantPageDataReadsCreateKindParam(t *testing.T) {
 	}
 }
 
+func TestDisplayNameForKind(t *testing.T) {
+	t.Parallel()
+
+	schemas := []k8s.AppSchema{
+		{Kind: "Bucket", DisplayName: "Buckets"},
+		{Kind: "Etcd", DisplayName: "Etcd"},
+	}
+
+	cases := []struct {
+		kind string
+		want string
+	}{
+		{"Bucket", "Buckets"},
+		{"Etcd", "Etcd"},
+		// Unknown kind: helper falls back to the raw kind so the modal
+		// title is still meaningful rather than blank. Defence
+		// against schema-list races where a kind exists in the request
+		// but hasn't been refreshed in the schema list yet.
+		{"Postgres", "Postgres"},
+		// Empty input: empty output. Handler's caller short-circuits
+		// before rendering the modal title in this case.
+		{"", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			t.Parallel()
+
+			got := displayNameForKind(tc.kind, schemas)
+			if got != tc.want {
+				t.Errorf("displayNameForKind(%q) = %q, want %q", tc.kind, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestCreateKindQueryParamConstant pins the literal param name. If
 // production drifts to a different spelling, this test fails — the
 // extractCreateKindFromQuery callers and the marketplace flow all use

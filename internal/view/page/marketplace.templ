@@ -10,12 +10,14 @@ import (
 )
 
 // marketplaceCardURL builds the click target for a marketplace card.
-// Kind comes from operator-controlled CRDs today, but URL-escape keeps
-// the rendered attribute well-formed if upstream ever ships a kind with
-// characters that need encoding — defence-in-depth at the rendering
-// boundary, matching tenantRowURL and schemaFieldsAutoLoadURL.
+// The launch endpoint short-circuits to the create-app modal on the
+// only available tenant when the user has just one, or otherwise pops
+// up an in-place tenant picker — the user no longer has to detour
+// through the full /tenants?kind=X picker page. Kind is URL-escaped
+// at the rendering boundary the same way tenantRowURL and
+// schemaFieldsAutoLoadURL do it.
 func marketplaceCardURL(kind string) string {
-	return "/tenants?kind=" + url.QueryEscape(kind)
+	return "/marketplace/launch?createKind=" + url.QueryEscape(kind)
 }
 
 templ Marketplace(data view.MarketplaceData) {
@@ -72,6 +74,15 @@ templ Marketplace(data view.MarketplaceData) {
 	<div id="marketplace-grid">
 		@MarketplaceGrid(data)
 	</div>
+
+	<!--
+	    Slot for the tenant-picker popup served by /marketplace/launch.
+	    Empty by default; the launch handler swaps a modal fragment in
+	    here when the user has 2+ tenants. Single-tenant users never
+	    see the slot populated — the handler returns HX-Redirect and
+	    htmx jumps straight to the destination tenant page.
+	-->
+	<div id="marketplace-modal-slot"></div>
 }
 
 templ MarketplaceGrid(data view.MarketplaceData) {
@@ -101,17 +112,18 @@ templ MarketplaceGrid(data view.MarketplaceData) {
 templ marketplaceCard(schema k8s.AppSchema) {
 	<!-- Card is a proper <a> so keyboard focus, middle-click to
 	     open in a new tab, and right-click context menu all work.
-	     Clicking the card hx-nav's to /tenants?kind=<k>, which
-	     renders a hint banner telling the user to pick a tenant
-	     to create the chosen kind in. A prior iteration rendered
-	     the card as a <div> with cursor:pointer and no handler —
-	     that was a dead click zone with no keyboard or middle-click
-	     support. -->
+	     Click target is /marketplace/launch which either jumps
+	     straight to the create-app modal (single-tenant user) or
+	     swaps a tenant-picker popup into #marketplace-modal-slot
+	     (multi-tenant user). A prior iteration rendered the card as
+	     a <div> with cursor:pointer and no handler — that was a
+	     dead click zone with no keyboard or middle-click support. -->
 	<a class="mp-card mp-card-link"
 		href={ templ.SafeURL(marketplaceCardURL(schema.Kind)) }
 		hx-get={ marketplaceCardURL(schema.Kind) }
-		hx-target="#main-content"
-		hx-push-url="true"
+		hx-target="#marketplace-modal-slot"
+		hx-swap="innerHTML"
+		hx-push-url="false"
 		aria-label={ partial.Tc(ctx, "page.marketplace.cardAria", map[string]any{"Kind": schema.DisplayName}) }>
 		<div class="mp-card-row">
 			<div class="mp-card-icon">

@@ -191,7 +191,16 @@ func tenantRowURL(namespace, preselectedKind string) string {
 }
 
 templ tenantRow(item view.TenantWithUsage, metrics bool, preselectedKind string) {
-	<tr id={ "tenant-row-" + item.Tenant.ParentNamespace + "-" + item.Tenant.Name }>
+	<!--
+	    Whole-row click target: data-action="tenant-navigate" delegates
+	    to main.ts, which calls htmx.ajax on data-href as long as the
+	    original event target isn't a button or link (Edit / Delete /
+	    the name <a> in the first cell keep their own click semantics).
+	-->
+	<tr id={ "tenant-row-" + item.Tenant.ParentNamespace + "-" + item.Tenant.Name }
+		data-action="tenant-navigate"
+		data-href={ tenantRowURL(item.Tenant.Namespace, preselectedKind) }
+		style="cursor: pointer;">
 		<td>
 			<a href={ templ.SafeURL(tenantRowURL(item.Tenant.Namespace, preselectedKind)) }
 				hx-get={ tenantRowURL(item.Tenant.Namespace, preselectedKind) }
@@ -229,7 +238,16 @@ templ tenantRow(item view.TenantWithUsage, metrics bool, preselectedKind string)
 					{ partial.Tc(ctx, "action.edit") }
 				</button>
 				if k8s.IsRootTenant(item.Tenant.Name) {
-					<button class="btn btn-sm" disabled title={ partial.Tc(ctx, "page.tenants.rootCannotDelete") }>{ partial.Tc(ctx, "action.delete") }</button>
+					<!--
+					    btn-danger keeps the visual language ("this is
+					    the delete button") while `disabled` +
+					    aria-disabled make both the native and
+					    assistive-tech paths refuse the click. Without
+					    btn-danger the button rendered as a plain grey
+					    pill, which read as "not yet loaded" rather
+					    than "intentionally blocked".
+					-->
+					<button class="btn btn-sm btn-danger" disabled aria-disabled="true" title={ partial.Tc(ctx, "page.tenants.rootCannotDelete") }>{ partial.Tc(ctx, "action.delete") }</button>
 				} else {
 					<button class="btn btn-sm btn-danger"
 						hx-delete={ "/tenants/" + item.Tenant.Name + "?ns=" + item.Tenant.ParentNamespace }

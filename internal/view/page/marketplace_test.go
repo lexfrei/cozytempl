@@ -12,9 +12,9 @@ func TestMarketplaceCardURL(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]string{
-		"Etcd":        "/tenants?kind=Etcd",
-		"Etcd&evil=1": "/tenants?kind=Etcd%26evil%3D1",
-		"Et cd":       "/tenants?kind=Et+cd",
+		"Etcd":        "/marketplace/launch?createKind=Etcd",
+		"Etcd&evil=1": "/marketplace/launch?createKind=Etcd%26evil%3D1",
+		"Et cd":       "/marketplace/launch?createKind=Et+cd",
 	}
 
 	for input, want := range cases {

@@ -1,0 +1,88 @@
+package partial
+
+import (
+	"net/url"
+
+	"github.com/lexfrei/cozytempl/internal/k8s"
+)
+
+// marketplaceLaunchModalID is reused both as the DOM id of the modal
+// backdrop and as the data-modal target of its close affordances.
+// Hard-coded (not parameterised) because exactly one launch modal can
+// be live at a time — the slot it lands in is also a singleton.
+const marketplaceLaunchModalID = "marketplace-launch-modal"
+
+// MarketplaceLaunchModal is the popup the marketplace card opens when
+// the user has more than one tenant: a list of tenants the user can
+// click to drop into the create-app flow for the chosen kind. The
+// single-tenant case is handled server-side via HX-Redirect, never
+// reaches this template.
+//
+// The whole modal lives inside a slot (`#marketplace-modal-slot`) and
+// uses `data-action="modal-dismiss"` on every close affordance so the
+// node is removed cleanly on close — the next launch fetches fresh
+// HTML rather than reusing stale state.
+templ MarketplaceLaunchModal(kind, kindDisplay string, tenants []k8s.Tenant) {
+	<div id={ marketplaceLaunchModalID } class="modal-backdrop"
+		style="display: flex;"
+		role="dialog" aria-modal="true"
+		aria-labelledby={ marketplaceLaunchModalID + "-title" }
+		data-action="modal-dismiss" data-modal={ marketplaceLaunchModalID }>
+		<!-- Inner click bubbles to the backdrop above and would dismiss
+		     the modal on every click inside the dialog. Stop propagation
+		     so only the backdrop / explicit close buttons dismiss. -->
+		<div class="modal" onclick="event.stopPropagation()">
+			<div class="modal-header">
+				<h2 id={ marketplaceLaunchModalID + "-title" } class="modal-title">
+					{ Tc(ctx, "page.marketplaceLaunch.title", map[string]any{"Kind": kindDisplay}) }
+				</h2>
+				<button class="btn-icon" type="button"
+					aria-label={ Tc(ctx, "aria.closeMarketplaceLaunch") }
+					data-action="modal-dismiss" data-modal={ marketplaceLaunchModalID }>&times;</button>
+			</div>
+			<p class="text-sm text-muted" style="margin-bottom: 12px;">
+				{ Tc(ctx, "page.marketplaceLaunch.intro") }
+			</p>
+			<div class="mp-grid">
+				for _, tenant := range tenants {
+					@marketplaceLaunchTenantRow(tenant, kind)
+				}
+			</div>
+			<div class="modal-footer">
+				<button type="button" class="btn"
+					data-action="modal-dismiss" data-modal={ marketplaceLaunchModalID }>
+					{ Tc(ctx, "action.cancel") }
+				</button>
+			</div>
+		</div>
+	</div>
+}
+
+// marketplaceLaunchTenantRow renders a single tenant choice. Click
+// fires an htmx GET into #main-content (matches the rest of cozytempl's
+// page navigation pattern); data-action="modal-dismiss" runs on the
+// same click via main.ts and removes the launch modal from the DOM,
+// so by the time the htmx swap finishes the picker is already gone
+// and only the create-app modal on the destination tenant page is
+// visible. Both handlers fire on the same click event — htmx via its
+// own listener, the dismiss via the global data-action delegator.
+templ marketplaceLaunchTenantRow(tenant k8s.Tenant, kind string) {
+	<a class="mp-card mp-card-link"
+		href={ templ.SafeURL("/tenants/" + tenant.Namespace + "?createKind=" + url.QueryEscape(kind)) }
+		hx-get={ "/tenants/" + tenant.Namespace + "?createKind=" + url.QueryEscape(kind) }
+		hx-target="#main-content"
+		hx-push-url="true"
+		data-action="modal-dismiss" data-modal={ marketplaceLaunchModalID }
+		style="text-decoration: none; color: inherit;">
+		<div class="mp-card-row">
+			<div style="flex:1;min-width:0;">
+				<div class="mp-card-title">{ tenant.DisplayName }</div>
+				if tenant.Parent != "" {
+					<div class="mp-card-desc">
+						{ Tc(ctx, "page.marketplaceLaunch.parentLabel", map[string]any{"Parent": tenant.Parent}) }
+					</div>
+				}
+			</div>
+		</div>
+	</a>
+}
