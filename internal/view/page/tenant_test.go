@@ -19,6 +19,15 @@ import (
 // adjacent <option> elements with different values.
 var etcdOptionTag = regexp.MustCompile(`<option[^>]*value="Etcd"[^>]*>`)
 
+// findTagWithAttribute returns the first opening tag of `name` whose
+// attribute substring contains marker, or "" if none matches. Used by
+// regression assertions that pin specific attributes on a specific
+// element rather than matching anywhere in the rendered output.
+func findTagWithAttribute(html, name, marker string) string {
+	pattern := regexp.MustCompile(`<` + name + `[^>]*` + regexp.QuoteMeta(marker) + `[^>]*>`)
+	return pattern.FindString(html)
+}
+
 // optionIsSelected reports whether the <option> tag matched by
 // etcdOptionTag carries a selected attribute in any spelling.
 func optionIsSelected(tag string) bool {
@@ -104,6 +113,23 @@ func TestTenantAutoOpensCreateModalWithCreateKind(t *testing.T) {
 	// user sees the modal is doing something instead of a blank body.
 	if !strings.Contains(got, `[page.tenant.loadingFields]`) {
 		t.Errorf("schema-fields placeholder (i18n key) missing; output:\n%s", got)
+	}
+
+	// REGRESSION: the schema-fields auto-loader sits inside a <form
+	// hx-target="#main-content"> (the create-app submit target). Without
+	// an explicit hx-target on the auto-loader div, htmx attribute
+	// inheritance applies #main-content to the auto-fetch and the
+	// schema-fields fragment replaces the entire tenant page on first
+	// paint — user lands on /tenants/{ns}?createKind=… and sees only
+	// the raw schema rows with no chrome. The fix pins hx-target="this"
+	// (i.e. #schema-fields) so the swap stays inside the modal.
+	autoLoaderTag := findTagWithAttribute(got, "div", `id="schema-fields"`)
+	if autoLoaderTag == "" {
+		t.Fatalf(`#schema-fields div not found; output:\n%s`, got)
+	}
+
+	if !strings.Contains(autoLoaderTag, `hx-target="this"`) {
+		t.Errorf(`#schema-fields div must set hx-target="this" to opt out of inherited #main-content target; tag was:\n%s`, autoLoaderTag)
 	}
 }
 
