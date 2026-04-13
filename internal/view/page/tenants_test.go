@@ -10,6 +10,50 @@ import (
 	"github.com/lexfrei/cozytempl/internal/view"
 )
 
+// TestTenantsShowsHintBannerWhenKindPreselected is the user-facing
+// entry point to the marketplace flow: landing on /tenants?kind=Etcd
+// must render a hint banner so the user knows what clicking a tenant
+// row will do. Absence of the banner on a plain visit is equally
+// important — we check both paths.
+func TestTenantsShowsHintBannerWhenKindPreselected(t *testing.T) {
+	t.Parallel()
+
+	with := view.TenantsPageData{PreselectedKind: "Etcd"}
+
+	var buf bytes.Buffer
+	if err := Tenants(with).Render(context.Background(), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, `banner banner-info`) {
+		t.Errorf("hint banner class missing when kind preselected; output:\n%s", got)
+	}
+	// The banner copy is rendered through the i18n bundle, which is
+	// not wired in the render context here — partial.Tc returns the
+	// bracketed key. Confirming the right key is what reaches the
+	// renderer is enough to lock in the wiring.
+	if !strings.Contains(got, `[page.tenants.pickForKind]`) {
+		t.Errorf("hint banner should call the pickForKind i18n key; output:\n%s", got)
+	}
+}
+
+func TestTenantsHidesHintBannerWithoutKind(t *testing.T) {
+	t.Parallel()
+
+	without := view.TenantsPageData{}
+
+	var buf bytes.Buffer
+	if err := Tenants(without).Render(context.Background(), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+
+	got := buf.String()
+	if strings.Contains(got, `banner banner-info`) {
+		t.Errorf("hint banner must not render without a preselected kind; output:\n%s", got)
+	}
+}
+
 func sampleTenantRow() view.TenantWithUsage {
 	return view.TenantWithUsage{
 		Tenant: k8s.Tenant{

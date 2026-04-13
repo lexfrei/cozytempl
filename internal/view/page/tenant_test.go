@@ -3,12 +3,19 @@ package page
 import (
 	"bytes"
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view"
 )
+
+// etcdSelectedOption matches an <option> tag for value="Etcd" that
+// also carries a selected attribute, in any order. Robust to templ
+// emitting `selected` vs `selected=""` and to additional attributes
+// being added later.
+var etcdSelectedOption = regexp.MustCompile(`<option[^>]*value="Etcd"[^>]*\sselected[\s>=]`)
 
 func sampleTenantPageData(createKind string) view.TenantPageData {
 	return view.TenantPageData{
@@ -54,7 +61,7 @@ func TestTenantAutoOpensCreateModalWithCreateKind(t *testing.T) {
 		t.Errorf("create-app-modal should be open (display: flex); got opening tag: %s", modalTag)
 	}
 
-	if !strings.Contains(got, `value="Etcd" selected`) {
+	if !etcdSelectedOption.MatchString(got) {
 		t.Errorf(`kind option "Etcd" should be selected; output:\n%s`, got)
 	}
 

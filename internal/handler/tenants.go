@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"regexp"
 
@@ -11,6 +13,14 @@ import (
 	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/internal/view/page"
 )
+
+// schemaLister is the narrow contract resolveKindParam needs: given a
+// user context it returns the caller-visible AppSchema list. *k8s.SchemaService
+// already satisfies it; the interface exists so tests can substitute a
+// fake without building the full service stack.
+type schemaLister interface {
+	List(ctx context.Context, usr *auth.UserContext) ([]k8s.AppSchema, error)
+}
 
 const (
 	tenantSchemaKind = "Tenant"
@@ -107,22 +117,34 @@ func (pgh *PageHandler) fetchTenantSchema(req *http.Request, usr *auth.UserConte
 	return schema
 }
 
-// resolvePreselectedKind accepts ?kind=<k> forwarded by a marketplace
-// card click and returns it only if it maps to a known AppSchema. This
-// keeps user-controlled URL input off the rendered page for both the
-// hint banner and every downstream tenant-row link.
-//
-// Short-circuits when the query param is absent so the common navigation
-// path to /tenants does not pay for a schemaSvc.List round-trip.
+// resolvePreselectedKind is a thin method wrapper around resolveKindParam
+// so PageHandler callers do not need to pass the schemaSvc / logger each
+// time. The real work — short-circuiting when no kind is set, calling
+// the schema lister, and validating against the known schemas — lives
+// in resolveKindParam so it can be unit-tested with a fake lister.
 func (pgh *PageHandler) resolvePreselectedKind(req *http.Request, usr *auth.UserContext) string {
-	raw := req.URL.Query().Get("kind")
+	return resolveKindParam(req.Context(), usr, req.URL.Query().Get("kind"), pgh.schemaSvc, pgh.log)
+}
+
+// resolveKindParam returns the input only when it matches a known
+// AppSchema kind. Fail-closed: when schemaSvc.List errors out, the
+// fallback is the empty string — no kind is ever accepted on a nil /
+// partial schema list. The error is logged at Warn because a silent
+// validation failure here downgrades to an "all kinds unknown" state,
+// which operators need to see promptly.
+//
+// Short-circuits when raw is empty so the common /tenants navigation
+// does not pay for a schemaSvc.List round-trip.
+func resolveKindParam(
+	ctx context.Context, usr *auth.UserContext, raw string, lister schemaLister, log *slog.Logger,
+) string {
 	if raw == "" {
 		return ""
 	}
 
-	schemas, err := pgh.schemaSvc.List(req.Context(), usr)
+	schemas, err := lister.List(ctx, usr)
 	if err != nil {
-		pgh.log.Debug("listing app schemas for kind validation", "error", err)
+		log.Warn("listing app schemas for kind validation", "error", err)
 	}
 
 	return selectKnownKind(raw, schemas)

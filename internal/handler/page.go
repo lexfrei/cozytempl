@@ -538,7 +538,11 @@ func (pgh *PageHandler) buildTenantPageData(
 	req *http.Request, usr *auth.UserContext, tenantNS string, tenant *k8s.Tenant, allTenants []k8s.Tenant,
 ) view.TenantPageData {
 	appList, _ := pgh.appSvc.List(req.Context(), usr, tenantNS)
-	schemas, _ := pgh.schemaSvc.List(req.Context(), usr)
+
+	schemas, schemasErr := pgh.schemaSvc.List(req.Context(), usr)
+	if schemasErr != nil {
+		pgh.log.Warn("listing app schemas for kind validation", "error", schemasErr)
+	}
 
 	// Direct children of this tenant, scoped to what the user can see:
 	// reuse the already-listed tenants slice so the child list inherits
