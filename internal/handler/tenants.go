@@ -111,13 +111,21 @@ func (pgh *PageHandler) fetchTenantSchema(req *http.Request, usr *auth.UserConte
 // card click and returns it only if it maps to a known AppSchema. This
 // keeps user-controlled URL input off the rendered page for both the
 // hint banner and every downstream tenant-row link.
+//
+// Short-circuits when the query param is absent so the common navigation
+// path to /tenants does not pay for a schemaSvc.List round-trip.
 func (pgh *PageHandler) resolvePreselectedKind(req *http.Request, usr *auth.UserContext) string {
+	raw := req.URL.Query().Get("kind")
+	if raw == "" {
+		return ""
+	}
+
 	schemas, err := pgh.schemaSvc.List(req.Context(), usr)
 	if err != nil {
 		pgh.log.Debug("listing app schemas for kind validation", "error", err)
 	}
 
-	return selectKnownKind(req.URL.Query().Get("kind"), schemas)
+	return selectKnownKind(raw, schemas)
 }
 
 // CreateTenant handles POST /tenants to create a new tenant.

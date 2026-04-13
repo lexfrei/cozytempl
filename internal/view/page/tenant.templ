@@ -13,11 +13,6 @@ import (
 
 const tenantNSPrefix = "tenant-"
 
-// tenantBreadcrumb builds the crumb trail from dashboard down to the tenant.
-// The parent label is the parent namespace with the "tenant-" prefix stripped
-// so the crumb reads "root" rather than "tenant-root". That matches the
-// display name we'd get from a full Tenant lookup without the extra API
-// round-trip.
 // createAppModalStyle returns the inline style for the create-app modal
 // backdrop. When CreateKind is set (arrival from marketplace), the modal
 // opens immediately; otherwise it stays hidden and the user opens it via
@@ -40,6 +35,11 @@ func schemaFieldsAutoLoadURL(kind string) string {
 	return "/fragments/schema-fields?kind=" + url.QueryEscape(kind)
 }
 
+// tenantBreadcrumb builds the crumb trail from dashboard down to the tenant.
+// The parent label is the parent namespace with the "tenant-" prefix stripped
+// so the crumb reads "root" rather than "tenant-root". That matches the
+// display name we'd get from a full Tenant lookup without the extra API
+// round-trip.
 func tenantBreadcrumb(t k8s.Tenant) []partial.BreadcrumbItem {
 	crumbs := []partial.BreadcrumbItem{
 		{Label: "Dashboard", URL: "/"},
@@ -282,12 +282,17 @@ templ Tenant(data view.TenantPageData) {
 						placeholder={ partial.Tc(ctx, "page.tenant.appNamePlaceholder") }
 						pattern="[a-z0-9]([-a-z0-9]*[a-z0-9])?"
 						maxlength="53"
+						autofocus?={ data.CreateKind != "" }
 						title={ partial.Tc(ctx, "page.tenant.appNameTitle") }/>
 				</div>
 				if data.CreateKind != "" {
 					<div id="schema-fields"
 						hx-get={ schemaFieldsAutoLoadURL(data.CreateKind) }
-						hx-trigger="load"></div>
+						hx-trigger="load">
+						<div class="text-muted text-sm">
+							{ partial.Tc(ctx, "page.tenant.loadingFields") }
+						</div>
+					</div>
 				} else {
 					<div id="schema-fields"></div>
 				}

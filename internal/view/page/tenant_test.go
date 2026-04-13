@@ -64,6 +64,19 @@ func TestTenantAutoOpensCreateModalWithCreateKind(t *testing.T) {
 	if !strings.Contains(got, `hx-trigger="load"`) {
 		t.Errorf(`schema-fields should hx-trigger="load"; output:\n%s`, got)
 	}
+
+	// Accessibility: auto-opened modal should move keyboard focus into
+	// the form, not leave it on <body>. The name <input> is the first
+	// editable field so autofocus goes there.
+	if !strings.Contains(got, `autofocus`) {
+		t.Errorf("auto-opened modal should autofocus the name input; output:\n%s", got)
+	}
+
+	// UX: the schema-fields fetch is async. Render a placeholder so the
+	// user sees the modal is doing something instead of a blank body.
+	if !strings.Contains(got, `[page.tenant.loadingFields]`) {
+		t.Errorf("schema-fields placeholder (i18n key) missing; output:\n%s", got)
+	}
 }
 
 // TestCreateAppModalStyle switches between the two inline styles based
@@ -132,5 +145,12 @@ func TestTenantModalHiddenByDefault(t *testing.T) {
 
 	if strings.Contains(got, `hx-trigger="load"`) {
 		t.Errorf(`schema-fields should not auto-load without createKind; output:\n%s`, got)
+	}
+
+	// Without CreateKind the user opens the modal manually, so the
+	// click target already has focus — we must not steal it with a
+	// silent autofocus on the input behind a hidden modal.
+	if strings.Contains(got, `autofocus`) {
+		t.Errorf("default render should not set autofocus; output:\n%s", got)
 	}
 }

@@ -431,6 +431,9 @@ other = "Lowercase letters, digits and hyphens only. Must start and end with a l
 [page.tenant.sortByLabel]
 other = "Sort by {{.Label}}"
 
+[page.tenant.loadingFields]
+other = "Loading form fields…"
+
 # --- App detail page ---
 
 [page.appDetail.tabOverview]

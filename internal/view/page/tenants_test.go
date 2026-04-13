@@ -55,6 +55,11 @@ func TestTenantRowURL(t *testing.T) {
 		{"simple kind", "tenant-demo", "Etcd", "/tenants/tenant-demo?createKind=Etcd"},
 		{"kind with ampersand", "tenant-demo", "Etcd&evil=1", "/tenants/tenant-demo?createKind=Etcd%26evil%3D1"},
 		{"kind with space", "tenant-demo", "Et cd", "/tenants/tenant-demo?createKind=Et+cd"},
+		// Defensive: namespace always comes from the cluster today, but
+		// lock in a stable output if something upstream ever passes an
+		// empty value instead of panicking or yielding "/tenants?".
+		{"empty namespace", "", "Etcd", "/tenants/?createKind=Etcd"},
+		{"empty namespace no kind", "", "", "/tenants/"},
 	}
 
 	for _, tc := range cases {
