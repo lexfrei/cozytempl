@@ -196,8 +196,8 @@
         },
         "authMode": {
           "type": "string",
-          "enum": ["passthrough", "byok", "dev", "impersonation-legacy"],
-          "description": "Authentication mode. Passthrough forwards OIDC ID tokens to the k8s API; byok uses a per-user uploaded kubeconfig; dev disables auth; impersonation-legacy uses Impersonate headers."
+          "enum": ["passthrough", "byok", "dev", "impersonation-legacy", "token"],
+          "description": "Authentication mode. Passthrough forwards OIDC ID tokens to the k8s API; byok uses a per-user uploaded kubeconfig; token accepts a pasted Bearer token; dev disables auth; impersonation-legacy uses Impersonate headers."
         },
         "devMode": {
           "type": "boolean",

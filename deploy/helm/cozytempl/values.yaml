@@ -122,6 +122,17 @@ config:
   #                          lives encrypted in the session cookie.
   #                          No OIDC, no IdP, no cluster RBAC on the
   #                          cozytempl SA.
+  #   token                - User pastes a Kubernetes Bearer token
+  #                          on first access. The token is stored
+  #                          encrypted in the session cookie and
+  #                          used as the Bearer credential for every
+  #                          k8s call. Same zero-RBAC stance as
+  #                          passthrough and byok. Suited to clusters
+  #                          without an OIDC IdP where a single-paste
+  #                          login is preferable to assembling a full
+  #                          kubeconfig. A revoked token fails at
+  #                          first k8s call after revocation — log
+  #                          out and paste a fresh one.
   #   dev                  - Authentication disabled. Every request
   #                          treated as dev-admin with system:masters.
   #                          NEVER use in production.
