@@ -252,3 +252,39 @@ func TestClientIP_HonoursXFFWhenTrusted(t *testing.T) {
 		t.Errorf("trusted clientIP = %q, want leftmost XFF entry 1.2.3.4", got)
 	}
 }
+
+// TestClientIP_SingleEntryXFFWhenTrusted asserts the degenerate
+// case where XFF contains exactly one entry (the common shape
+// when cozytempl sits one proxy hop away). The function must
+// return that entry verbatim rather than falling through to
+// RemoteAddr.
+func TestClientIP_SingleEntryXFFWhenTrusted(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+	req.RemoteAddr = "198.51.100.1:4242"
+
+	got := clientIP(req, true)
+	if got != "1.2.3.4" {
+		t.Errorf("single-entry XFF clientIP = %q, want 1.2.3.4", got)
+	}
+}
+
+// TestClientIP_LeadingCommaXFFWhenTrusted documents the handling
+// of a hostile / malformed XFF that starts with a comma. The
+// function returns an empty left half — intentional, so a crafted
+// header cannot smuggle a literal ',5.6.7.8' in as a rate-limit
+// key that collides with nothing.
+func TestClientIP_LeadingCommaXFFWhenTrusted(t *testing.T) {
+	t.Parallel()
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	req.Header.Set("X-Forwarded-For", ",5.6.7.8")
+	req.RemoteAddr = "198.51.100.1:4242"
+
+	got := clientIP(req, true)
+	if got != "" {
+		t.Errorf("leading-comma XFF clientIP = %q, want empty string (leftmost is absent)", got)
+	}
+}

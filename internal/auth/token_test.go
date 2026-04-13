@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gorilla/securecookie"
 	"k8s.io/client-go/rest"
 )
 
@@ -282,6 +283,33 @@ func TestProbeToken_NilBaseConfig(t *testing.T) {
 
 	if !errors.Is(err, ErrTokenProbeMisconfigured) {
 		t.Errorf("err = %v, want ErrTokenProbeMisconfigured", err)
+	}
+}
+
+// TestHandleTokenUpload_SessionStoreSaveFailure covers the other
+// failure branch in persistTokenSession: when store.Save fails
+// because the encoded session would exceed gorilla/securecookie's
+// maxLength. We force this by shrinking the codec's cap to 1 byte
+// via its public MaxLength knob, so even an empty session can't
+// encode. The handler must return 500 rather than silently drop
+// the save.
+func TestHandleTokenUpload_SessionStoreSaveFailure(t *testing.T) {
+	hnd := newTokenHandler()
+
+	stubTokenProbe(t, func(_ context.Context, _ *rest.Config, _ string) error { return nil })
+
+	// Reach into the CookieStore and shrink every codec's encoded
+	// cap to 1 byte so any Save call overflows.
+	for _, codec := range hnd.store.store.Codecs {
+		if sc, ok := codec.(*securecookie.SecureCookie); ok {
+			sc.MaxLength(1)
+		}
+	}
+
+	rec := postTokenForm(t, hnd, url.Values{"token": {"abc"}}.Encode())
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 on session save failure", rec.Code)
 	}
 }
 

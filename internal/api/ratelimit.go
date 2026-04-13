@@ -184,11 +184,16 @@ func clientIP(req *http.Request, trustForwardedHeaders bool) string {
 	if trustForwardedHeaders {
 		xff := req.Header.Get("X-Forwarded-For")
 		if xff != "" {
-			if idx := strings.Index(xff, ","); idx > 0 {
-				return strings.TrimSpace(xff[:idx])
-			}
+			// strings.Cut picks up the left-most entry. Anything
+			// after the first comma (if any) is the proxy chain and
+			// belongs to the trusted infrastructure, not the source
+			// client. A comma at position 0 yields an empty left
+			// half — intentional, since an attacker-controlled
+			// header starting with a comma should not become a
+			// useful rate-limit key.
+			left, _, _ := strings.Cut(xff, ",")
 
-			return strings.TrimSpace(xff)
+			return strings.TrimSpace(left)
 		}
 	}
 

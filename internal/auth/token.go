@@ -78,6 +78,11 @@ var ErrTokenProbeMisconfigured = errors.New(
 // to the apiserver. Tests overwrite it with a stub so the upload
 // handler can be exercised without a live cluster.
 //
+// NOT parallel-safe: the variable has no mutex. Tests that stub it
+// MUST NOT call t.Parallel() — the race detector will catch a
+// parallel adoption immediately, but a flaky run upstream is a
+// worse signal than a crisp rule here.
+//
 //nolint:gochecknoglobals // intentional test seam
 var probeTokenFn = probeToken
 
