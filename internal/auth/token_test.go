@@ -33,16 +33,32 @@ func postTokenForm(t *testing.T, hnd *Handler, body string) *httptest.ResponseRe
 	return rec
 }
 
+// stubTokenProbe swaps the package-level probe with fn and restores
+// the original via t.Cleanup. Using Cleanup (not a returned defer)
+// guarantees the global is restored even if the test fails with
+// t.FailNow / FatalOpen, so neighbouring tests never observe a
+// leaked stub.
+func stubTokenProbe(t *testing.T, fn func(context.Context, string) error) {
+	t.Helper()
+
+	probeTokenFn = fn
+	t.Cleanup(func() { probeTokenFn = probeToken })
+}
+
 func TestHandleTokenUpload_EmptyTokenRendersForm(t *testing.T) {
 	hnd := newTokenHandler()
 
-	stub := stubTokenProbeOK(t)
-	defer stub()
-
+	// No probe stub: the empty-token check returns before probeTokenFn
+	// is ever dereferenced, so the real probe is fine here.
 	rec := postTokenForm(t, hnd, url.Values{"token": {""}}.Encode())
 
+	// Re-rendering the form with an inline error uses 200 OK on
+	// purpose — the POST/redirect/GET pattern only kicks in on
+	// success. Keeping 200 here matches the BYOK handler and lets
+	// the form's <form> element stay the source of truth for
+	// client-side state.
 	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200 (re-render)", rec.Code)
+		t.Errorf("status = %d, want 200 (intentional re-render, not 4xx)", rec.Code)
 	}
 
 	if !strings.Contains(rec.Body.String(), ErrTokenEmpty.Error()) {
@@ -53,9 +69,7 @@ func TestHandleTokenUpload_EmptyTokenRendersForm(t *testing.T) {
 func TestHandleTokenUpload_OversizedRejected(t *testing.T) {
 	hnd := newTokenHandler()
 
-	stub := stubTokenProbeOK(t)
-	defer stub()
-
+	// No probe stub needed: the size check returns before the probe.
 	huge := strings.Repeat("a", int(tokenMaxBytes)+1)
 	rec := postTokenForm(t, hnd, url.Values{"token": {huge}}.Encode())
 
@@ -72,12 +86,11 @@ func TestHandleTokenUpload_TrimsWhitespace(t *testing.T) {
 
 	var capturedToken string
 
-	probeTokenFn = func(_ context.Context, _ string) error {
-		capturedToken = "captured-via-stub"
+	stubTokenProbe(t, func(_ context.Context, token string) error {
+		capturedToken = token
 
 		return nil
-	}
-	t.Cleanup(func() { probeTokenFn = probeToken })
+	})
 
 	rec := postTokenForm(t, hnd, url.Values{"token": {"  abc.def.ghi  \r\n"}}.Encode())
 
@@ -85,8 +98,8 @@ func TestHandleTokenUpload_TrimsWhitespace(t *testing.T) {
 		t.Fatalf("status = %d, want 303; body = %q", rec.Code, rec.Body.String())
 	}
 
-	if capturedToken == "" {
-		t.Fatal("probe stub was not invoked")
+	if capturedToken != "abc.def.ghi" {
+		t.Errorf("probe received %q, want trimmed value", capturedToken)
 	}
 
 	cookies := rec.Result().Cookies()
@@ -119,15 +132,15 @@ func TestHandleTokenUpload_TrimsWhitespace(t *testing.T) {
 func TestHandleTokenUpload_ProbeFailureReRendersForm(t *testing.T) {
 	hnd := newTokenHandler()
 
-	probeTokenFn = func(_ context.Context, _ string) error {
+	stubTokenProbe(t, func(_ context.Context, _ string) error {
 		return errors.New("apiserver unreachable")
-	}
-	t.Cleanup(func() { probeTokenFn = probeToken })
+	})
 
 	rec := postTokenForm(t, hnd, url.Values{"token": {"abc"}}.Encode())
 
+	// Same POST-re-render-as-200 rationale as the empty-token case.
 	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200 (re-render with error)", rec.Code)
+		t.Errorf("status = %d, want 200 (intentional re-render with error)", rec.Code)
 	}
 
 	if !strings.Contains(rec.Body.String(), "apiserver unreachable") {
@@ -135,12 +148,53 @@ func TestHandleTokenUpload_ProbeFailureReRendersForm(t *testing.T) {
 	}
 }
 
-// stubTokenProbeOK swaps the package-level probe with a no-op that
-// always succeeds, returning a deferred restore.
-func stubTokenProbeOK(t *testing.T) func() {
-	t.Helper()
+// TestHandleTokenUpload_SessionStoreGetFailure exercises the error
+// branch in persistTokenSession when store.Get returns an error.
+// A session cookie signed with a different key decrypts to an error,
+// so the handler is forced down the 500 path rather than saving the
+// token into a corrupt session.
+func TestHandleTokenUpload_SessionStoreGetFailure(t *testing.T) {
+	hnd := newTokenHandler()
 
-	probeTokenFn = func(_ context.Context, _ string) error { return nil }
+	stubTokenProbe(t, func(_ context.Context, _ string) error { return nil })
 
-	return func() { probeTokenFn = probeToken }
+	// Build a cookie signed by a DIFFERENT store so hnd.store.Get
+	// rejects it as tampered.
+	otherStore := NewSessionStore("another-secret-key-32-bytes-long")
+
+	seedReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	seedRec := httptest.NewRecorder()
+
+	sess, err := otherStore.Get(seedReq)
+	if err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+
+	SetBearerToken(sess, "seed")
+
+	if err := otherStore.Save(seedReq, seedRec, sess); err != nil {
+		t.Fatalf("seed save: %v", err)
+	}
+
+	tamperedCookies := seedRec.Result().Cookies()
+	if len(tamperedCookies) == 0 {
+		t.Fatal("expected seed cookie, got none")
+	}
+
+	req := httptest.NewRequestWithContext(
+		context.Background(), http.MethodPost, "/auth/token",
+		strings.NewReader(url.Values{"token": {"abc.def.ghi"}}.Encode()),
+	)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	for _, c := range tamperedCookies {
+		req.AddCookie(c)
+	}
+
+	rec := httptest.NewRecorder()
+	hnd.HandleTokenUpload(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 on session decrypt failure", rec.Code)
+	}
 }
