@@ -33,6 +33,7 @@ var ErrUnknownAuthMode = errors.New("unknown auth mode")
 //
 //   - passthrough:        Bearer = usr.IDToken (k8s API validates via OIDC).
 //   - byok:               rest.Config derived from usr.KubeconfigBytes.
+//   - token:              Bearer = usr.BearerToken (apiserver URL/CA from baseCfg).
 //   - impersonation-legacy: Impersonate headers from Username / Groups.
 //   - dev:                baseCfg unchanged (effectively cozytempl's own SA).
 //
@@ -78,6 +79,18 @@ func buildUserRESTConfig(baseCfg *rest.Config, usr *auth.UserContext, mode confi
 		if err != nil {
 			return nil, fmt.Errorf("building rest config from uploaded kubeconfig: %w", err)
 		}
+
+		return cfg, nil
+
+	case config.AuthModeToken:
+		// The pasted Bearer token IS the identity. Apiserver URL and
+		// CA come from baseCfg (in-cluster); BearerTokenFile is
+		// cleared explicitly so client-go does not fall back to the
+		// pod's mounted SA token.
+		cfg := rest.CopyConfig(baseCfg)
+		cfg.BearerToken = usr.BearerToken
+		cfg.BearerTokenFile = ""
+		cfg.Impersonate = rest.ImpersonationConfig{}
 
 		return cfg, nil
 
