@@ -4,6 +4,7 @@ package handler
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -246,6 +247,110 @@ func (pgh *PageHandler) ProfilePage(writer http.ResponseWriter, req *http.Reques
 
 	content := page.Profile(usr, mode)
 	pgh.render(writer, req, usr.Username, tenants, "profile", "", content)
+}
+
+// MarketplaceLaunchPage is the smart-router behind a marketplace card
+// click. It exists so the user no longer has to detour through the
+// full /tenants?kind=X picker page when there's only one tenant they
+// could possibly create the chosen kind in.
+//
+// Behaviour (kind comes from the marketplace card click):
+//
+//   - Zero tenants visible to the user: 4xx error toast — there's no
+//     valid destination, the catch-all redirect would loop.
+//   - Exactly one tenant: HX-Redirect (htmx) or 303 (non-htmx) straight
+//     to /tenants/{ns}?createKind=X so the create-app modal opens with
+//     no extra clicks.
+//   - Two or more tenants: an HTML modal fragment listing the tenants
+//     so the user picks one. The fragment is swapped into
+//     #marketplace-modal-slot on the marketplace page.
+//
+// Unknown / missing kind collapses to "" via the same selectKnownKind
+// guard used by extractCreateKindFromQuery — the picker still renders
+// in that case (with no preselection) so the user isn't dead-ended.
+func (pgh *PageHandler) MarketplaceLaunchPage(writer http.ResponseWriter, req *http.Request) {
+	usr := pgh.requireUser(writer, req)
+	if usr == nil {
+		return
+	}
+
+	tenants, err := pgh.tenantSvc.List(req.Context(), usr)
+	if err != nil {
+		pgh.log.Error("listing tenants for marketplace launch", "error", err)
+		http.Error(writer, `{"error":"could not list tenants"}`, http.StatusInternalServerError)
+
+		return
+	}
+
+	if len(tenants) == 0 {
+		pgh.renderErrorToast(writer, req,
+			pgh.t(req, "error.marketplaceLaunch.noTenants"))
+
+		return
+	}
+
+	schemas, _ := pgh.schemaSvc.List(req.Context(), usr)
+
+	rawKind := req.URL.Query().Get(createKindQueryParam)
+	kind := selectKnownKind(rawKind, schemas)
+	kindDisplay := displayNameForKind(kind, schemas)
+
+	if len(tenants) == 1 {
+		redirectToCreateKind(writer, req, tenants[0].Namespace, kind)
+
+		return
+	}
+
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	renderErr := partial.MarketplaceLaunchModal(kind, kindDisplay, tenants).
+		Render(req.Context(), writer)
+	if renderErr != nil {
+		pgh.log.Error("rendering marketplace launch modal", "error", renderErr)
+	}
+}
+
+// redirectToCreateKind sends the browser to the destination tenant's
+// create-app form. Uses Hx-Redirect for htmx clients (htmx follows it
+// without a full reload) and 303 See Other for direct browser
+// navigation. Extracted from MarketplaceLaunchPage so the latter
+// stays under the funlen budget.
+func redirectToCreateKind(writer http.ResponseWriter, req *http.Request, namespace, kind string) {
+	dest := "/tenants/" + namespace
+	if kind != "" {
+		dest += "?createKind=" + url.QueryEscape(kind)
+	}
+
+	if req.Header.Get("Hx-Request") != "" {
+		writer.Header().Set("Hx-Redirect", dest)
+		writer.WriteHeader(http.StatusOK)
+
+		return
+	}
+
+	http.Redirect(writer, req, dest, http.StatusSeeOther)
+}
+
+// displayNameForKind looks up the human-readable name for a Kind
+// (e.g. "Bucket" → "Buckets") from the schema list. Returns the raw
+// kind unchanged when no schema matches — the modal title falls back
+// to the kind, which is still meaningful, and an empty kind yields an
+// empty string the caller can short-circuit on.
+func displayNameForKind(kind string, schemas []k8s.AppSchema) string {
+	if kind == "" {
+		return ""
+	}
+
+	// Index access (rather than range value-copy) avoids cloning the
+	// whole AppSchema struct on every iteration; the JSONSchema field
+	// alone can be many KB.
+	for i := range schemas {
+		if schemas[i].Kind == kind {
+			return schemas[i].DisplayName
+		}
+	}
+
+	return kind
 }
 
 // MarketplacePage renders the marketplace catalog.

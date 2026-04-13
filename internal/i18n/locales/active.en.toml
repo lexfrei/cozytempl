@@ -588,6 +588,23 @@ other = "Bearer token"
 [page.token.submit]
 other = "Sign in"
 
+# --- Marketplace launch popup (in-place tenant picker) ---
+
+[page.marketplaceLaunch.title]
+other = "Create a {{.Kind}}"
+
+[page.marketplaceLaunch.intro]
+other = "Pick the tenant you want to create this in."
+
+[page.marketplaceLaunch.parentLabel]
+other = "parent: {{.Parent}}"
+
+[aria.closeMarketplaceLaunch]
+other = "Close tenant picker"
+
+[error.marketplaceLaunch.noTenants]
+other = "No tenants are available — ask an administrator to create one before launching from the marketplace."
+
 # --- Toast messages (handler-emitted, not page-level) ---
 
 [error.logs.list]

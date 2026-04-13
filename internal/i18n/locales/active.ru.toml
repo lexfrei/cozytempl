@@ -585,6 +585,23 @@ other = "Bearer-токен"
 [page.token.submit]
 other = "Войти"
 
+# --- Marketplace launch popup (in-place tenant picker) ---
+
+[page.marketplaceLaunch.title]
+other = "Создать {{.Kind}}"
+
+[page.marketplaceLaunch.intro]
+other = "Выберите тенант, в котором создать."
+
+[page.marketplaceLaunch.parentLabel]
+other = "родитель: {{.Parent}}"
+
+[aria.closeMarketplaceLaunch]
+other = "Закрыть выбор тенанта"
+
+[error.marketplaceLaunch.noTenants]
+other = "Нет доступных тенантов — попросите администратора создать тенант, прежде чем запускать что-либо из маркетплейса."
+
 # --- Toast messages ---
 
 [error.logs.list]

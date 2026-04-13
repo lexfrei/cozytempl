@@ -582,6 +582,23 @@ other = "Bearer 令牌"
 [page.token.submit]
 other = "登录"
 
+# --- Marketplace launch popup (in-place tenant picker) ---
+
+[page.marketplaceLaunch.title]
+other = "创建 {{.Kind}}"
+
+[page.marketplaceLaunch.intro]
+other = "选择要在哪个租户中创建。"
+
+[page.marketplaceLaunch.parentLabel]
+other = "父级：{{.Parent}}"
+
+[aria.closeMarketplaceLaunch]
+other = "关闭租户选择器"
+
+[error.marketplaceLaunch.noTenants]
+other = "没有可用的租户 — 请管理员先创建租户，然后再从市场启动。"
+
 # --- Toast messages ---
 
 [error.logs.list]
