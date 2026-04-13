@@ -43,6 +43,7 @@ The OCI copy is published and signed by the release pipeline on every
 | --- | --- | --- |
 | `passthrough` | Stock Cozystack. k8s API server trusts the OIDC issuer. | **None** — user's OIDC ID token is forwarded as a Bearer credential. |
 | `byok` | Homelab, laptop, MSP engineer hopping between clusters with no shared IdP. | **None** — user uploads a kubeconfig, stored encrypted in the session cookie. |
+| `token` | Same situations as `byok`, but when the user would rather paste a single Bearer token than assemble a full kubeconfig. | **None** — user pastes a Bearer token, stored encrypted in the session cookie. |
 | `impersonation-legacy` | Deprecated. Only if the API server is not OIDC-configured and you cannot enable it. | Cluster-wide `impersonate` on users, groups, serviceaccounts. |
 | `dev` | Single-user local testing. **Never production.** | None on the SA; the process uses its own kubeconfig. |
 
@@ -62,15 +63,15 @@ Everything is rendered per the active `authMode` so a mode change on
 | --- | --- |
 | `Deployment` | Runs the cozytempl binary. Stateless; sessions live in cookies. |
 | `Service` (ClusterIP 8080) | Pod endpoint. Point an Ingress / HTTPRoute at it. |
-| `ServiceAccount` | Identity for the main pod. Zero-RBAC in passthrough / byok. |
+| `ServiceAccount` | Identity for the main pod. Zero-RBAC in passthrough / byok / token. |
 
 ### Mode-conditional
 
 | Resource | Rendered when | Notes |
 | --- | --- | --- |
 | `ClusterRole` + `ClusterRoleBinding` (main SA) | `authMode=impersonation-legacy` | Grants `impersonate` on users / groups / serviceaccounts. Deprecated path. |
-| `ServiceAccount` `cozytempl-watcher` + `ClusterRole` + `Binding` | `authMode ∈ {passthrough, byok, impersonation-legacy}` AND `watcher.enabled=true` (default) | Narrow `list,watch` on `helmreleases.helm.toolkit.fluxcd.io`. Drives the SSE stream. |
-| `Secret` | `authMode ≠ dev` AND `existingSecret` unset | Holds `session-secret` always; `oidc-client-secret` only in passthrough / legacy. |
+| `ServiceAccount` `cozytempl-watcher` + `ClusterRole` + `Binding` | `authMode ∈ {passthrough, byok, token, impersonation-legacy}` AND `watcher.enabled=true` (default) | Narrow `list,watch` on `helmreleases.helm.toolkit.fluxcd.io`. Drives the SSE stream. |
+| `Secret` | `authMode ≠ dev` AND `existingSecret` unset | Holds `session-secret` always; `oidc-client-secret` only in passthrough / legacy. In byok / token modes only `session-secret` is rendered. |
 
 ### Opt-in (all `enabled: false` by default)
 

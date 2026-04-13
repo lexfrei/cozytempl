@@ -563,6 +563,26 @@ other = "kubeconfig файлы"
 [page.kubeconfig.submit]
 other = "Жүктеп, жалғастыру"
 
+# --- Token paste page ---
+
+[page.token.title]
+other = "Токенмен кіру"
+
+[page.token.modeIntro]
+other = "cozytempl токен енгізу режимінде жұмыс істеуде. Kubernetes кластеріне қол жеткізетін Bearer токенді енгізіңіз; ол сессия cookie-де шифрланып сақталады және шығу жасалғанға дейін әр сұраудың Bearer құжатнамасы ретінде қолданылады."
+
+[page.token.hint1]
+other = "Кез келген Kubernetes Bearer токен жарайды — әдетте ServiceAccount токені немесе kubectl create token арқылы алынған токен. Қысқа мерзімді токендер (OIDC ID токені, --duration параметрі бар kubectl create token) ішіне жазылған уақытта аяқталады; сол кезде cozytempl k8s сұрауларында қате қайтара бастайды — жаңа токенді енгізіп, жалғастыра беріңіз."
+
+[page.token.hint2]
+other = "Токен сессияға сақталмай тұрып apiserver-ге SelfSubjectAccessReview сұрауымен тексеріледі, сондықтан жарамсыз немесе мерзімі өткен токен бірден қабылданбайды."
+
+[page.token.fieldLabel]
+other = "Bearer токен"
+
+[page.token.submit]
+other = "Кіру"
+
 # --- Toast messages ---
 
 [error.logs.list]

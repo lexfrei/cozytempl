@@ -154,28 +154,33 @@ func run() error {
 	})
 
 	routerCfg := &api.RouterConfig{
-		TenantHandler: api.NewTenantHandler(tenantSvc, log),
-		AppHandler:    api.NewApplicationHandler(appSvc, log),
-		SchemaHandler: api.NewSchemaHandler(schemaSvc, log),
-		SSEHandler:    api.NewSSEHandler(watcher, k8sCfg, cfg.AuthMode, log),
-		PageHandler:   pageHandler,
-		I18n:          i18nBundle,
-		StaticFS:      static.FS,
-		Log:           log,
-		AuthMode:      cfg.AuthMode,
-		DevMode:       cfg.DevMode,
-		DevUsername:   "dev-admin",
+		TenantHandler:         api.NewTenantHandler(tenantSvc, log),
+		AppHandler:            api.NewApplicationHandler(appSvc, log),
+		SchemaHandler:         api.NewSchemaHandler(schemaSvc, log),
+		SSEHandler:            api.NewSSEHandler(watcher, k8sCfg, cfg.AuthMode, log),
+		PageHandler:           pageHandler,
+		I18n:                  i18nBundle,
+		StaticFS:              static.FS,
+		Log:                   log,
+		AuthMode:              cfg.AuthMode,
+		DevMode:               cfg.DevMode,
+		DevUsername:           "dev-admin",
+		TrustForwardedHeaders: cfg.TrustForwardedHeaders,
 	}
 
 	switch cfg.AuthMode {
 	case config.AuthModeDev:
 		log.Warn("running in dev mode — authentication disabled")
 
-	case config.AuthModeBYOK:
-		// BYOK mode skips OIDC entirely; the upload flow is the
-		// only authentication surface. Session cookie encrypts the
-		// uploaded kubeconfig.
-		routerCfg.SessionStore = auth.NewSessionStore(cfg.SessionSecret)
+	case config.AuthModeBYOK, config.AuthModeToken:
+		// Both modes skip OIDC entirely; the upload / paste flow is
+		// the only authentication surface. Session cookie encrypts
+		// the uploaded kubeconfig (BYOK) or the pasted Bearer token
+		// (Token). The token probe needs k8sCfg to build a rest.Config
+		// pointing at the same apiserver cozytempl itself talks to.
+		sessionStore := auth.NewSessionStore(cfg.SessionSecret)
+		routerCfg.AuthHandler = auth.NewHandler(nil, sessionStore, log, cfg.AuthMode, k8sCfg)
+		routerCfg.SessionStore = sessionStore
 
 	case config.AuthModePassthrough, config.AuthModeImpersonationLegacy:
 		issuerForBackend := cfg.InternalIssuerURL()
@@ -187,7 +192,7 @@ func run() error {
 		}
 
 		sessionStore := auth.NewSessionStore(cfg.SessionSecret)
-		routerCfg.AuthHandler = auth.NewHandler(oidcProvider, sessionStore, log)
+		routerCfg.AuthHandler = auth.NewHandler(oidcProvider, sessionStore, log, cfg.AuthMode, k8sCfg)
 		routerCfg.SessionStore = sessionStore
 		routerCfg.OIDCProvider = oidcProvider
 

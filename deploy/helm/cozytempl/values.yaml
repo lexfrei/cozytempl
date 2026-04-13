@@ -122,6 +122,17 @@ config:
   #                          lives encrypted in the session cookie.
   #                          No OIDC, no IdP, no cluster RBAC on the
   #                          cozytempl SA.
+  #   token                - User pastes a Kubernetes Bearer token
+  #                          on first access. The token is stored
+  #                          encrypted in the session cookie and
+  #                          used as the Bearer credential for every
+  #                          k8s call. Same zero-RBAC stance as
+  #                          passthrough and byok. Suited to clusters
+  #                          without an OIDC IdP where a single-paste
+  #                          login is preferable to assembling a full
+  #                          kubeconfig. A revoked token fails at
+  #                          first k8s call after revocation — log
+  #                          out and paste a fresh one.
   #   dev                  - Authentication disabled. Every request
   #                          treated as dev-admin with system:masters.
   #                          NEVER use in production.
@@ -136,6 +147,15 @@ config:
   # Equivalent to authMode=dev and wins when both are set, preserved
   # for backwards compatibility with older values files.
   devMode: false
+
+  # trustForwardedHeaders enables X-Forwarded-For parsing for the
+  # pre-auth IP rate limiter on /auth/kubeconfig and /auth/token.
+  # Only set to true when cozytempl runs behind a reverse proxy
+  # that strips client-supplied XFF (Ingress, Cloudflare Tunnel,
+  # service mesh). Leaving it false means the limiter keys strictly
+  # on TCP RemoteAddr so a hostile client cannot spoof XFF to spin
+  # up fresh buckets. Maps to COZYTEMPL_TRUST_FORWARDED_HEADERS.
+  trustForwardedHeaders: false
 
   # When non-empty, cozytempl starts a SEPARATE HTTP listener on
   # this address and mounts net/http/pprof on /debug/pprof/*. The

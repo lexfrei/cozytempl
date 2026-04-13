@@ -196,12 +196,16 @@
         },
         "authMode": {
           "type": "string",
-          "enum": ["passthrough", "byok", "dev", "impersonation-legacy"],
-          "description": "Authentication mode. Passthrough forwards OIDC ID tokens to the k8s API; byok uses a per-user uploaded kubeconfig; dev disables auth; impersonation-legacy uses Impersonate headers."
+          "enum": ["passthrough", "byok", "dev", "impersonation-legacy", "token"],
+          "description": "Authentication mode. Passthrough forwards OIDC ID tokens to the k8s API; byok uses a per-user uploaded kubeconfig; token accepts a pasted Bearer token; dev disables auth; impersonation-legacy uses Impersonate headers."
         },
         "devMode": {
           "type": "boolean",
           "description": "Legacy opt-in for dev mode. Equivalent to authMode=dev and wins when both are set. NEVER enable in production."
+        },
+        "trustForwardedHeaders": {
+          "type": "boolean",
+          "description": "When true, the pre-auth IP rate limiter on /auth/kubeconfig and /auth/token parses X-Forwarded-For. Only safe behind a trusted proxy (Ingress, Cloudflare Tunnel) that strips client-supplied XFF. Default false keys the limiter strictly on TCP RemoteAddr."
         },
         "debugPprofAddr": {
           "type": "string",

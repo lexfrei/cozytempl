@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -144,4 +145,57 @@ func withRateLimit(store *rateLimitStore, next http.Handler) http.Handler {
 
 		next.ServeHTTP(writer, req)
 	})
+}
+
+// withIPRateLimit wraps a pre-auth handler (the kubeconfig upload,
+// the token paste) in an IP-keyed token bucket reusing the same
+// store as withRateLimit. The keys are prefixed with "ip:" so they
+// live in a distinct namespace from usernames and cannot collide.
+// trustForwardedHeaders controls whether X-Forwarded-For is honoured
+// — only enable it when cozytempl runs behind a trusted proxy that
+// strips client-supplied XFF values. Without this wrapper the paste
+// endpoints perform an unauthenticated SAR round-trip to the
+// apiserver on every request, which a loose attacker could spin
+// into an arbitrarily high-rate load source.
+func withIPRateLimit(store *rateLimitStore, trustForwardedHeaders bool, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
+		key := "ip:" + clientIP(req, trustForwardedHeaders)
+
+		if !store.allow(key) {
+			writer.Header().Set("Retry-After", "1")
+			http.Error(writer, "rate limit exceeded", http.StatusTooManyRequests)
+
+			return
+		}
+
+		next.ServeHTTP(writer, req)
+	})
+}
+
+// clientIP returns the best-effort client IP for rate-limiting
+// purposes. When trustForwardedHeaders is true the left-most
+// X-Forwarded-For entry wins — this is only safe when the proxy
+// in front of cozytempl strips client-supplied XFF. When false
+// the function falls back to RemoteAddr unconditionally, so a
+// hostile client cannot spoof XFF to bypass the limiter. The
+// returned string may include a port — rate-limit keys do not need
+// to be canonical.
+func clientIP(req *http.Request, trustForwardedHeaders bool) string {
+	if trustForwardedHeaders {
+		xff := req.Header.Get("X-Forwarded-For")
+		if xff != "" {
+			// strings.Cut picks up the left-most entry. Anything
+			// after the first comma (if any) is the proxy chain and
+			// belongs to the trusted infrastructure, not the source
+			// client. A comma at position 0 yields an empty left
+			// half — intentional, since an attacker-controlled
+			// header starting with a comma should not become a
+			// useful rate-limit key.
+			left, _, _ := strings.Cut(xff, ",")
+
+			return strings.TrimSpace(left)
+		}
+	}
+
+	return req.RemoteAddr
 }

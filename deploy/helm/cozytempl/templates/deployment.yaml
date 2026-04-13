@@ -51,6 +51,10 @@ spec:
               value: {{ .Values.config.authMode | default "passthrough" | quote }}
             - name: COZYTEMPL_DEV_MODE
               value: {{ .Values.config.devMode | quote }}
+            {{- if .Values.config.trustForwardedHeaders }}
+            - name: COZYTEMPL_TRUST_FORWARDED_HEADERS
+              value: "true"
+            {{- end }}
             {{- with .Values.config.debugPprofAddr }}
             - name: COZYTEMPL_DEBUG_PPROF_ADDR
               value: {{ . | quote }}

@@ -7,23 +7,50 @@ import (
 	"net/http"
 
 	"github.com/gorilla/sessions"
+	"k8s.io/client-go/rest"
+
+	"github.com/lexfrei/cozytempl/internal/config"
 )
 
-const stateKeyName = "oauth_state"
+const (
+	stateKeyName = "oauth_state"
 
-// Handler provides HTTP handlers for the OIDC authentication flow.
+	// Paths the various auth flows live at on the router. Kept as
+	// constants so signInPath / HandleLogout / the redirect in
+	// middleware.go stay in sync with the router registration.
+	pathAuthLogin      = "/auth/login"
+	pathAuthKubeconfig = "/auth/kubeconfig"
+	pathAuthToken      = "/auth/token" //nolint:gosec // URL path, not a credential
+)
+
+// Handler provides HTTP handlers for the OIDC-, BYOK-, and
+// token-mode authentication flows.
+//
+// baseCfg is only consulted by token mode (for the SAR probe). mode
+// is consulted by HandleLogout so the post-logout redirect lands on
+// the right sign-in page for the active mode.
 type Handler struct {
-	oidc  *OIDCProvider
-	store *SessionStore
-	log   *slog.Logger
+	oidc    *OIDCProvider
+	store   *SessionStore
+	log     *slog.Logger
+	mode    config.AuthMode
+	baseCfg *rest.Config
 }
 
 // NewHandler creates an auth handler.
-func NewHandler(oidc *OIDCProvider, store *SessionStore, log *slog.Logger) *Handler {
+func NewHandler(
+	oidc *OIDCProvider,
+	store *SessionStore,
+	log *slog.Logger,
+	mode config.AuthMode,
+	baseCfg *rest.Config,
+) *Handler {
 	return &Handler{
-		oidc:  oidc,
-		store: store,
-		log:   log,
+		oidc:    oidc,
+		store:   store,
+		log:     log,
+		mode:    mode,
+		baseCfg: baseCfg,
 	}
 }
 
@@ -105,12 +132,18 @@ func (hnd *Handler) HandleCallback(writer http.ResponseWriter, req *http.Request
 	http.Redirect(writer, req, "/", http.StatusFound)
 }
 
-// HandleLogout clears the session and redirects to the login page.
+// HandleLogout clears the session and redirects to the sign-in page
+// for the currently-active auth mode. Modes that do not have an
+// OIDC login flow (byok, token) redirect back to their own upload
+// form so the user can sign in again without detouring through a
+// non-existent /auth/login route.
 func (hnd *Handler) HandleLogout(writer http.ResponseWriter, req *http.Request) {
+	redirectTo := hnd.signInPath()
+
 	session, err := hnd.store.Get(req)
 	if err != nil {
 		hnd.log.Error("getting session for logout", "error", err)
-		http.Redirect(writer, req, "/auth/login", http.StatusFound)
+		http.Redirect(writer, req, redirectTo, http.StatusFound)
 
 		return
 	}
@@ -122,7 +155,30 @@ func (hnd *Handler) HandleLogout(writer http.ResponseWriter, req *http.Request) 
 		hnd.log.Error("saving session for logout", "error", err)
 	}
 
-	http.Redirect(writer, req, "/auth/login", http.StatusFound)
+	http.Redirect(writer, req, redirectTo, http.StatusFound)
+}
+
+// signInPath returns the URL the logout handler should redirect to
+// for the currently-active auth mode. Keeps the redirect destination
+// consistent with whichever /auth/* route the router actually
+// registers for that mode.
+func (hnd *Handler) signInPath() string {
+	switch hnd.mode {
+	case config.AuthModeBYOK:
+		return pathAuthKubeconfig
+	case config.AuthModeToken:
+		return pathAuthToken
+	case config.AuthModePassthrough, config.AuthModeImpersonationLegacy:
+		return pathAuthLogin
+	case config.AuthModeDev:
+		// Dev mode has no sign-in flow; the root path re-renders the
+		// UI with the dev-admin identity.
+		return "/"
+	}
+
+	// Unknown / unset — fall back to the OIDC login path so we never
+	// redirect to a 404.
+	return pathAuthLogin
 }
 
 // validateCallbackState verifies the OAuth state nonce and returns the

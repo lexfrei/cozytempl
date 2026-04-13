@@ -37,6 +37,11 @@ type RouterConfig struct {
 	AuthMode      config.AuthMode
 	DevMode       bool
 	DevUsername   string
+	// TrustForwardedHeaders is threaded through to the pre-auth IP
+	// rate limiter. Only set when cozytempl runs behind a trusted
+	// reverse proxy that strips client-supplied XFF. Mirrors
+	// config.Config.TrustForwardedHeaders.
+	TrustForwardedHeaders bool
 }
 
 // contentSecurityPolicy is the CSP header applied to every response.
@@ -123,9 +128,9 @@ func buildAuthMiddleware(
 	}
 
 	// OIDC endpoints are only meaningful when an OIDC provider is
-	// actually configured. BYOK mode skips them and relies on the
-	// kubeconfig upload flow instead.
-	if cfg.AuthMode != config.AuthModeBYOK {
+	// actually configured. BYOK and Token modes skip them and rely
+	// on their own upload / paste flow instead.
+	if cfg.AuthMode == config.AuthModePassthrough || cfg.AuthMode == config.AuthModeImpersonationLegacy {
 		mux.HandleFunc("GET /auth/login", cfg.AuthHandler.HandleLogin)
 		mux.HandleFunc("GET /auth/callback", cfg.AuthHandler.HandleCallback)
 	}
@@ -134,9 +139,23 @@ func buildAuthMiddleware(
 	// sits OUTSIDE the protect() wrapper — otherwise a user with
 	// no stored kubeconfig could never reach the form that lets
 	// them upload one (RequireAuth would bounce them right back).
+	// The POST path is IP-rate-limited because it triggers a SAR
+	// round-trip to the apiserver without any prior auth.
 	if cfg.AuthMode == config.AuthModeBYOK && cfg.AuthHandler != nil {
 		mux.HandleFunc("GET /auth/kubeconfig", cfg.AuthHandler.HandleKubeconfigUploadForm)
-		mux.HandleFunc("POST /auth/kubeconfig", cfg.AuthHandler.HandleKubeconfigUpload)
+		mux.Handle("POST /auth/kubeconfig",
+			withIPRateLimit(rateStore, cfg.TrustForwardedHeaders,
+				http.HandlerFunc(cfg.AuthHandler.HandleKubeconfigUpload)))
+	}
+
+	// Token mode paste form. Same rationale as the BYOK routes above
+	// — the paste form must be reachable without a stored token, and
+	// the POST path is IP-rate-limited for the same reason.
+	if cfg.AuthMode == config.AuthModeToken && cfg.AuthHandler != nil {
+		mux.HandleFunc("GET /auth/token", cfg.AuthHandler.HandleTokenUploadForm)
+		mux.Handle("POST /auth/token",
+			withIPRateLimit(rateStore, cfg.TrustForwardedHeaders,
+				http.HandlerFunc(cfg.AuthHandler.HandleTokenUpload)))
 	}
 
 	if cfg.AuthHandler != nil {
