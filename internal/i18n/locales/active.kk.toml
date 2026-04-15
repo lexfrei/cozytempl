@@ -449,6 +449,24 @@ other = "Журналдар"
 [page.appDetail.tabValues]
 other = "Мәндер"
 
+[page.appDetail.nodeGroupsTitle]
+other = "Түйін топтары"
+
+[page.appDetail.nodeGroupsCount]
+other = "{{.Count}} топ"
+
+[page.appDetail.nodeGroupName]
+other = "Аты"
+
+[page.appDetail.nodeGroupDesired]
+other = "Күтілген"
+
+[page.appDetail.nodeGroupReady]
+other = "Дайын"
+
+[page.appDetail.nodeGroupPhase]
+other = "Фаза"
+
 [page.appDetail.noLogs]
 other = "(шығыс жоқ)"
 
