@@ -145,6 +145,17 @@ func Register(kind string, action Action) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 
+	// Duplicate ID under the same Kind would make Lookup non-
+	// deterministic (always returns the first) and render two
+	// identical buttons. Fail loud at init time — matches the
+	// empty-ID/empty-Kind panic semantics: wiring bugs surface at
+	// startup, not at click time.
+	for i := range byKind[kind] {
+		if byKind[kind][i].ID == action.ID {
+			panic("actions.Register: duplicate action ID " + action.ID + " for kind " + kind)
+		}
+	}
+
 	byKind[kind] = append(byKind[kind], action)
 }
 

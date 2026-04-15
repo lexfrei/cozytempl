@@ -13,7 +13,6 @@ import (
 	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/k8s"
-	"github.com/lexfrei/cozytempl/internal/view/page"
 )
 
 // Error-label constants fed into audit event details so log queries
@@ -117,9 +116,9 @@ func (pgh *PageHandler) resolveAction(
 		// separate from the audit; both emit regardless.
 		pgh.recordAudit(req, usr, audit.ActionAppAction, appName, tenantNS,
 			audit.OutcomeError, map[string]any{
-				"error":   err.Error(),
-				"runtime": label,
-				"stage":   "lookup",
+				"error":      err.Error(),
+				"errorClass": label,
+				"stage":      "lookup",
 			})
 
 		switch label {
@@ -141,6 +140,17 @@ func (pgh *PageHandler) resolveAction(
 	if !found {
 		pgh.log.Warn("unknown action requested",
 			"tenant", tenantNS, "name", appName, "kind", app.Kind, "action", actionID)
+		// Audit dispatch misses too — a valid-shape action ID that
+		// isn't registered under the app's Kind is a probing pattern
+		// operators should be able to grep for. Matches the audit
+		// coverage on malformed and lookup-failure branches above.
+		pgh.recordAudit(req, usr, audit.ActionAppAction, appName, tenantNS,
+			audit.OutcomeError, map[string]any{
+				"error":     "unknown action",
+				"kind":      app.Kind,
+				"stage":     "dispatch",
+				"rawAction": actionID,
+			})
 		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.actionUnknown", map[string]any{"Action": actionID}))
 
 		return actions.Action{}, "", false
@@ -181,22 +191,27 @@ func (pgh *PageHandler) runAction(
 // finishAction writes the audit event and the user-visible response
 // for both the success and error paths.
 //
-// On error: an OOB toast (with Hx-Reswap: none so the triggering
-// button stays put) — the detail page doesn't need to re-render
-// because nothing on the apiserver changed.
+// Both paths emit ONLY an out-of-band toast — no main-content swap.
+// The page the user is looking at stays in place; the live-watch
+// stream (see internal/k8s watchers) pushes the post-action status
+// update through SSE when the apiserver reconciler catches up. This
+// avoids the stale-render window where a fresh re-fetch returns the
+// pre-reconciliation status (KubeVirt's /start is synchronous at the
+// apiserver but the VMI status field takes a reconcile loop to flip).
 //
-// On success: the whole detail page is re-rendered into #main-content
-// so the status badge, conditions tab, and events tab all reflect the
-// new state the action just triggered. A success toast rides along
-// OOB. The re-render is why the buttons hx-target #main-content —
-// the toast docstring mentions 'queued' but the user actually gets
-// fresh page state on the same response, not just a confirmation.
+// Hx-Reswap: none is the signal that the OOB toast in the response
+// body must NOT be copied into #main-content. Without it, htmx would
+// swap the toast div in, blanking the detail page. Set unconditionally
+// on both paths so the ordering relative to toast-writing doesn't
+// matter even if a future middleware eagerly flushes headers.
 //
 //nolint:gocritic // hugeParam: one copy per HTTP request, well off the hot path
 func (pgh *PageHandler) finishAction(
 	writer http.ResponseWriter, req *http.Request, usr *auth.UserContext,
 	action actions.Action, kind, tenantNS, appName, actionID string, runErr error,
 ) {
+	writer.Header().Set("Hx-Reswap", "none")
+
 	label := pgh.localizedActionLabel(req, action, actionID)
 
 	if runErr != nil {
@@ -204,10 +219,10 @@ func (pgh *PageHandler) finishAction(
 			"tenant", tenantNS, "name", appName, "action", actionID, "error", runErr)
 		pgh.recordAudit(req, usr, audit.ActionAppAction, appName, tenantNS,
 			audit.OutcomeError, map[string]any{
-				"subaction": action.AuditCategory,
-				"kind":      kind,
-				"error":     runErr.Error(),
-				"runtime":   apiserverErrorLabel(runErr),
+				"subaction":  action.AuditCategory,
+				"kind":       kind,
+				"error":      runErr.Error(),
+				"errorClass": apiserverErrorLabel(runErr),
 			})
 		pgh.renderErrorToast(writer, req,
 			pgh.t(req, "error.app.actionFailed", map[string]any{"Action": label}))
@@ -222,52 +237,10 @@ func (pgh *PageHandler) finishAction(
 		})
 
 	pgh.emitSuccessToast(writer, req,
-		pgh.t(req, "toast.app.actionQueued", map[string]any{
+		pgh.t(req, "toast.app.actionSucceeded", map[string]any{
 			"Name":   appName,
 			"Action": label,
 		}))
-
-	setNoStoreHeaders(writer)
-
-	// Re-render the detail page so the status badge / conditions /
-	// events reflect the state change the action kicked off. Passing
-	// "overview" as the tab keeps the user on the page they already
-	// saw — we don't want to kidnap them to a different tab.
-	//
-	// If the re-fetch fails (ctx cancelled, apiserver wobble, token
-	// expired between calls), tell htmx NOT to swap the target DOM
-	// so the user keeps the existing detail view with just the
-	// success toast on top. Without Hx-Reswap here, htmx would swap
-	// the response body — now containing only the OOB toast div —
-	// into #main-content and blank the tenant detail page.
-	app, err := pgh.appGetter.Get(req.Context(), usr, tenantNS, appName)
-	if err != nil {
-		pgh.log.Error("re-getting app after action", "tenant", tenantNS, "name", appName, "error", err)
-		writer.Header().Set("Hx-Reswap", "none")
-
-		return
-	}
-
-	data := pgh.buildAppDetailData(req, usr, tenantNS, appName, app, "overview")
-
-	renderErr := page.AppDetail(data).Render(req.Context(), writer)
-	if renderErr != nil {
-		pgh.log.Error("rendering detail after action", "error", renderErr)
-	}
-}
-
-// setNoStoreHeaders blocks every intermediate cache (Cloudflare,
-// browsers, corporate proxies) from holding on to the response.
-// The detail page can embed connection-tab secrets depending on
-// which tab it renders; AppDetailPage already sets these headers
-// on the happy GET path, so the post-action re-render applies the
-// same policy. Kept as a small helper so future handlers emitting
-// detail HTML reach for the same three lines rather than copy-
-// paste them (and miss one).
-func setNoStoreHeaders(writer http.ResponseWriter) {
-	writer.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
-	writer.Header().Set("Pragma", "no-cache")
-	writer.Header().Set("Expires", "0")
 }
 
 // localizedActionLabel translates the action's LabelKey via the
@@ -295,6 +268,12 @@ func (pgh *PageHandler) localizedActionLabel(req *http.Request, action actions.A
 // detail stays in the "error" field for humans — this is just an
 // index.
 //
+// Returns "" for a nil error so callers can omit the errorClass
+// field from audit details on the success path. Callers that do
+// pass non-nil errors get one of the four non-empty labels; an
+// operator filtering "errorClass=other" sees only real
+// unclassified failures, never accidental nil-pass noise.
+//
 // The match is on *apierrors.StatusError specifically, whose
 // ErrStatus.Code carries the HTTP status the apiserver returned.
 // wrapping layers (fmt.Errorf with %w in runAction, in the action's
@@ -302,6 +281,10 @@ func (pgh *PageHandler) localizedActionLabel(req *http.Request, action actions.A
 // regardless of how many wraps an error has accumulated by the time
 // it reaches the handler.
 func apiserverErrorLabel(err error) string {
+	if err == nil {
+		return ""
+	}
+
 	var statusErr *apierrors.StatusError
 	if !errors.As(err, &statusErr) {
 		return errLabelOther

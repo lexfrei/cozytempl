@@ -3,10 +3,13 @@ package page
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/lexfrei/cozytempl/internal/actions"
+	"github.com/lexfrei/cozytempl/internal/i18n"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view"
 )
@@ -76,6 +79,85 @@ func TestResourceActionsBarDestructiveConfirms(t *testing.T) {
 			t.Errorf("%s should render as btn-danger; tag was %s", labelKey, tag)
 		}
 	}
+}
+
+// TestResourceActionsBarConfirmAttrEscapes renders the destructive
+// action buttons under every supported locale and asserts that the
+// hx-confirm attribute value carries no literal unescaped double
+// quote. If a future translator writes a quoted label in their copy
+// (e.g. `Выполнить «{{.Label}}»?` → `Выполнить "Stop"?`), templ's
+// attribute escape must convert that `"` into `&#34;`, otherwise the
+// browser would truncate the attribute value at the first `"` and
+// silently break the confirm prompt. Today all four locales are
+// safe, but regressions are cheap to catch.
+func TestResourceActionsBarConfirmAttrEscapes(t *testing.T) {
+	t.Parallel()
+
+	bundle, err := i18n.NewBundle()
+	if err != nil {
+		t.Fatalf("loading i18n bundle: %v", err)
+	}
+
+	// A label that embeds a double quote — forces templ's attribute
+	// escape to do real work rather than silently succeed because
+	// the translated string happens to be quote-free.
+	quotedAction := actions.Action{
+		ID:          "stop-evil",
+		LabelKey:    `"STOP"`, // non-existent key → partial.Tc returns it verbatim, quotes intact
+		Destructive: true,
+	}
+
+	for _, locale := range i18n.SupportedLocales {
+		t.Run(locale.String(), func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+			req.Header.Set("Accept-Language", locale.String())
+
+			var buf bytes.Buffer
+
+			// Run through Middleware to attach a Localizer to ctx.
+			bundle.Middleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				if err := resourceActionButton("t", "vm-42", quotedAction).Render(r.Context(), &buf); err != nil {
+					t.Fatalf("rendering button: %v", err)
+				}
+			})).ServeHTTP(httptest.NewRecorder(), req)
+
+			html := buf.String()
+
+			confirmAttr := extractAttr(html, "hx-confirm")
+			if confirmAttr == "" {
+				t.Fatalf("hx-confirm not rendered under %s: %s", locale, html)
+			}
+
+			if strings.Contains(confirmAttr, `"`) {
+				t.Errorf("hx-confirm under %s contains literal unescaped double quote: %q (full html: %s)",
+					locale, confirmAttr, html)
+			}
+		})
+	}
+}
+
+// extractAttr pulls the value of attr from html, returning the
+// string between the opening `"` and closing `"` of the first match.
+// Returns "" when the attribute is absent. Deliberately naive — the
+// caller passes a single rendered button, not an arbitrary document.
+func extractAttr(html, attr string) string {
+	needle := attr + `="`
+
+	start := strings.Index(html, needle)
+	if start == -1 {
+		return ""
+	}
+
+	start += len(needle)
+
+	end := strings.Index(html[start:], `"`)
+	if end == -1 {
+		return ""
+	}
+
+	return html[start : start+end]
 }
 
 // firstTagContaining returns the full opening tag of the first

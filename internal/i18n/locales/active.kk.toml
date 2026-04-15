@@ -461,8 +461,8 @@ other = "Қайта іске қосу"
 [page.appDetail.action.confirmDestructive]
 other = "{{.Name}} үшін {{.Label}} орындалсын ба? Бұл қолданба трафигін үзеді."
 
-[toast.app.actionQueued]
-other = "{{.Name}} үшін {{.Action}} кезекке қойылды"
+[toast.app.actionSucceeded]
+other = "{{.Name}} үшін {{.Action}} сәтті орындалды"
 
 [error.app.actionLookup]
 other = "Сұралған әрекет үшін {{.Name}} қолданбасы табылмады."

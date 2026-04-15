@@ -440,6 +440,13 @@ body:has(.dev-mode-banner) .app-layout {
   margin-bottom: 24px;
 }
 
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
 .page-title {
   font-size: 1.5rem;
   font-weight: 600;

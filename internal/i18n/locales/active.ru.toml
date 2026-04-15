@@ -463,8 +463,8 @@ other = "Перезапустить"
 [page.appDetail.action.confirmDestructive]
 other = "Выполнить {{.Label}} на {{.Name}}? Это прервёт трафик приложения."
 
-[toast.app.actionQueued]
-other = "{{.Action}} для {{.Name}} поставлено в очередь"
+[toast.app.actionSucceeded]
+other = "{{.Action}} успешно выполнено для {{.Name}}"
 
 [error.app.actionLookup]
 other = "Не удалось найти приложение {{.Name}} для запрошенного действия."

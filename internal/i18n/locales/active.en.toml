@@ -466,8 +466,8 @@ other = "Restart"
 [page.appDetail.action.confirmDestructive]
 other = "Run {{.Label}} on {{.Name}}? This will interrupt workload traffic."
 
-[toast.app.actionQueued]
-other = "Queued {{.Action}} on {{.Name}}"
+[toast.app.actionSucceeded]
+other = "{{.Action}} succeeded on {{.Name}}"
 
 [error.app.actionLookup]
 other = "Could not resolve application {{.Name}} for the requested action."

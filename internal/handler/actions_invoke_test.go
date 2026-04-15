@@ -221,7 +221,7 @@ func TestInvokeAction_AuditsLookupForbidden(t *testing.T) {
 			continue
 		}
 
-		if runtime, _ := evt.Details["runtime"].(string); runtime == errLabelForbidden {
+		if errClass, _ := evt.Details["errorClass"].(string); errClass == errLabelForbidden {
 			found = true
 
 			break
@@ -230,6 +230,43 @@ func TestInvokeAction_AuditsLookupForbidden(t *testing.T) {
 
 	if !found {
 		t.Errorf("audit did not record a forbidden-lookup error; events = %+v", recAudit.events)
+	}
+}
+
+// TestInvokeAction_AuditsUnknownActionDispatchMiss covers the
+// blocker the cycle-4 review flagged: when the app fetch succeeds
+// but the action ID is valid-shape yet unregistered for the app's
+// Kind, the handler must emit an audit event (not just log + show a
+// toast). Without the event, a probing pattern like "POST
+// /actions/foo-bar" on every Kind leaves no audit trail.
+func TestInvokeAction_AuditsUnknownActionDispatchMiss(t *testing.T) {
+	restoreAllowed := stubAllowedFn(t, func(context.Context, *rest.Config, actions.Capability, string) (bool, error) {
+		return true, nil
+	})
+	defer restoreAllowed()
+
+	getter := &fakeAppGetter{app: &k8s.Application{Name: "myvm", Kind: "VMInstance"}}
+	pgh, recAudit, bundle := newTestHandler(t, getter)
+
+	rec := httptest.NewRecorder()
+	pgh.InvokeAction(rec, actionPOST(t, bundle, "tenant-root", "myvm", "no-such-action"))
+
+	found := false
+
+	for _, evt := range recAudit.events {
+		if evt.Action != audit.ActionAppAction || evt.Outcome != audit.OutcomeError {
+			continue
+		}
+
+		if stage, _ := evt.Details["stage"].(string); stage == "dispatch" {
+			found = true
+
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("audit did not record a dispatch-miss error; events = %+v", recAudit.events)
 	}
 }
 

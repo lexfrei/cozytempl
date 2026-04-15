@@ -460,8 +460,8 @@ other = "重启"
 [page.appDetail.action.confirmDestructive]
 other = "对 {{.Name}} 执行 {{.Label}}？这将中断应用流量。"
 
-[toast.app.actionQueued]
-other = "已将 {{.Name}} 的 {{.Action}} 加入队列"
+[toast.app.actionSucceeded]
+other = "{{.Name}} 的 {{.Action}} 执行成功"
 
 [error.app.actionLookup]
 other = "无法解析应用 {{.Name}} 以执行请求的操作。"

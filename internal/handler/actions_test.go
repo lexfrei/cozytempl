@@ -59,9 +59,9 @@ func TestApiserverErrorLabelClassifies(t *testing.T) {
 			errLabelOther,
 		},
 		{
-			"nil is safe and classified as other",
+			"nil returns empty so callers can omit errorClass",
 			nil,
-			errLabelOther,
+			"",
 		},
 	}
 

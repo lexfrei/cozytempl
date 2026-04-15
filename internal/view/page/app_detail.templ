@@ -91,13 +91,14 @@ templ AppDetail(data view.AppDetailData) {
 // the semantics. Non-destructive actions (Start) render as
 // btn-primary with no prompt.
 //
-// hx-target="#main-content" re-renders the full detail page on
-// completion so the status badge, conditions, and events tabs all
-// reflect the new state — the server response carries both a fresh
-// detail page and an OOB toast in one body.
+// The response to the POST is an OOB toast only (Hx-Reswap: none);
+// the page stays put and the live-watch stream pushes the updated
+// status badge when the apiserver reconciler catches up. hx-target
+// is left at #main-content as a defensive default in case the OOB
+// machinery regresses — Hx-Reswap: none makes the target moot today.
 templ resourceActionsBar(tenant, appName string, list []actions.Action) {
 	if len(list) > 0 {
-		<div class="flex items-center gap-2" style="margin-left: auto;">
+		<div class="page-header-actions">
 			for _, action := range list {
 				@resourceActionButton(tenant, appName, action)
 			}

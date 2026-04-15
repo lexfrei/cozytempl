@@ -148,3 +148,37 @@ func TestRegisterPanicsOnMissingActionID(t *testing.T) {
 
 	Register("SomeKind", Action{})
 }
+
+// TestRegisterPanicsOnDuplicateID confirms the Register contract: a
+// second registration of the same (Kind, ID) pair is a wiring bug
+// and must fail loud at startup. Without this, Lookup would always
+// return the first-registered Action silently, and the UI would
+// render two identical buttons. Non-parallel because it mutates the
+// package-level registry.
+func TestRegisterPanicsOnDuplicateID(t *testing.T) {
+	before := len(byKind["TestKindDup"])
+
+	Register("TestKindDup", Action{
+		ID:            "twice",
+		LabelKey:      "test.twice",
+		AuditCategory: "test.twice",
+		Run:           func(context.Context, *rest.Config, string, string) error { return nil },
+	})
+
+	t.Cleanup(func() {
+		byKind["TestKindDup"] = byKind["TestKindDup"][:before]
+	})
+
+	defer func() {
+		if recover() == nil {
+			t.Error("Register with duplicate ID did not panic")
+		}
+	}()
+
+	Register("TestKindDup", Action{
+		ID:            "twice",
+		LabelKey:      "test.twice",
+		AuditCategory: "test.twice",
+		Run:           func(context.Context, *rest.Config, string, string) error { return nil },
+	})
+}
