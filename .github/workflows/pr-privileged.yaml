@@ -30,8 +30,16 @@ jobs:
   upload-sarif:
     name: Upload Security Results
     runs-on: ubuntu-latest
+    # Require BOTH the triggering event type AND a populated
+    # pull_requests array. GitHub only fills pull_requests[] when the
+    # workflow_run came from a branch that still has an open PR; a
+    # squash-merged PR whose branch was already deleted arrives with
+    # an empty array, which previously slipped past the event-only
+    # guard and produced 'refs/pull//head not found' on the upload
+    # step — a red X on the Actions tab for every squash-merge.
     if: >-
-      github.event.workflow_run.event == 'pull_request'
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.pull_requests[0].number != null
     steps:
       - name: Download SARIF artifact
         id: download-sarif
