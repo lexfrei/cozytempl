@@ -72,6 +72,12 @@ type AppDetailData struct {
 	SelectedContainer string
 	LogTail           string
 	LogError          string
+	// NodeGroups is populated only for applications of Kind "Kubernetes"
+	// (Cluster API-managed Kubernetes clusters). Holds the spec /
+	// status replica counts of every MachineDeployment owned by this
+	// cluster so the overview tab can surface "3 desired, 2 ready"
+	// while the node group is scaling up or draining.
+	NodeGroups []k8s.NodeGroup
 }
 
 // MarketplaceData holds data for the marketplace page.

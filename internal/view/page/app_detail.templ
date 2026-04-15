@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
@@ -103,6 +104,57 @@ templ overviewTab(data view.AppDetailData) {
 				<dd>{ formatTime(data.App.CreatedAt) }</dd>
 			</div>
 		</dl>
+	</div>
+	if len(data.NodeGroups) > 0 {
+		@nodeGroupsCard(data.NodeGroups)
+	}
+}
+
+// nodeGroupsCard surfaces CAPI MachineDeployment spec / status
+// counters for a Kubernetes cluster application. Rendered only when
+// the kind is "Kubernetes" and MachineDeployments exist — no chrome
+// for legacy clusters or stock-compose apps. The delta between
+// desired and ready is the point of the whole card: operators
+// scaling a pool watch ready climb to match desired without
+// leaving the page.
+templ nodeGroupsCard(groups []k8s.NodeGroup) {
+	<div class="card mt-4">
+		<div class="card-header">
+			<div class="card-title">{ partial.Tc(ctx, "page.appDetail.nodeGroupsTitle") }</div>
+			<span class="text-sm text-muted">{ partial.Tc(ctx, "page.appDetail.nodeGroupsCount", map[string]any{"Count": len(groups)}) }</span>
+		</div>
+		<div class="table-container">
+			<table>
+				<thead>
+					<tr>
+						<th>{ partial.Tc(ctx, "page.appDetail.nodeGroupName") }</th>
+						<th>{ partial.Tc(ctx, "page.appDetail.nodeGroupDesired") }</th>
+						<th>{ partial.Tc(ctx, "page.appDetail.nodeGroupReady") }</th>
+						<th>{ partial.Tc(ctx, "page.appDetail.nodeGroupPhase") }</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, group := range groups {
+						<tr>
+							<td class="text-mono">{ group.Name }</td>
+							<td>{ fmt.Sprint(group.DesiredReplicas) }</td>
+							<td>
+								<span class={ "text-sm", templ.KV("text-muted", group.ReadyReplicas >= group.DesiredReplicas), templ.KV("badge badge-unknown", group.ReadyReplicas < group.DesiredReplicas) }>
+									{ fmt.Sprint(group.ReadyReplicas) }
+								</span>
+							</td>
+							<td class="text-sm text-muted">
+								if group.Phase != "" {
+									{ group.Phase }
+								} else {
+									&mdash;
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
 	</div>
 }
 

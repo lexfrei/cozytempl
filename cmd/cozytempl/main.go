@@ -102,6 +102,7 @@ func run() error {
 	usageSvc := k8s.NewUsageService(k8sCfg, cfg.AuthMode)
 	eventSvc := k8s.NewEventService(k8sCfg, cfg.AuthMode)
 	logSvc := k8s.NewLogService(k8sCfg, cfg.AuthMode)
+	capiSvc := k8s.NewCAPIService(k8sCfg, cfg.AuthMode)
 
 	// Watcher runs as its OWN ServiceAccount so the main cozytempl
 	// pod SA can stay at zero k8s permissions in passthrough and
@@ -146,6 +147,7 @@ func run() error {
 		UsageSvc:  usageSvc,
 		EventSvc:  eventSvc,
 		LogSvc:    logSvc,
+		CAPISvc:   capiSvc,
 		Audit:     auditLog,
 		I18n:      i18nBundle,
 		AuthMode:  cfg.AuthMode,

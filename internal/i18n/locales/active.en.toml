@@ -454,6 +454,24 @@ other = "Logs"
 [page.appDetail.tabValues]
 other = "Values"
 
+[page.appDetail.nodeGroupsTitle]
+other = "Node groups"
+
+[page.appDetail.nodeGroupsCount]
+other = "{{.Count}} groups"
+
+[page.appDetail.nodeGroupName]
+other = "Name"
+
+[page.appDetail.nodeGroupDesired]
+other = "Desired"
+
+[page.appDetail.nodeGroupReady]
+other = "Ready"
+
+[page.appDetail.nodeGroupPhase]
+other = "Phase"
+
 [page.appDetail.noLogs]
 other = "(no log output)"
 

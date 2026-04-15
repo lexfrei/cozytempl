@@ -29,6 +29,7 @@ type PageHandler struct {
 	usageSvc  *k8s.UsageService
 	eventSvc  *k8s.EventService
 	logSvc    *k8s.LogService
+	capiSvc   *k8s.CAPIService
 	log       *slog.Logger
 	// auditLog receives structured events for every mutation and
 	// secret-view action the handler performs. nil is not allowed;
@@ -61,6 +62,7 @@ type PageHandlerDeps struct {
 	UsageSvc  *k8s.UsageService
 	EventSvc  *k8s.EventService
 	LogSvc    *k8s.LogService
+	CAPISvc   *k8s.CAPIService
 	Audit     audit.Logger
 	I18n      *i18n.Bundle
 	Log       *slog.Logger
@@ -84,6 +86,7 @@ func NewPageHandler(deps PageHandlerDeps) *PageHandler {
 		usageSvc:   deps.UsageSvc,
 		eventSvc:   deps.EventSvc,
 		logSvc:     deps.LogSvc,
+		capiSvc:    deps.CAPISvc,
 		auditLog:   auditLog,
 		i18nBundle: deps.I18n,
 		devMode:    deps.DevMode,
@@ -569,6 +572,23 @@ func (pgh *PageHandler) buildAppDetailData(
 		data.Events = events
 	case "logs":
 		data.Pods, data.SelectedPod, data.SelectedContainer, data.LogTail, data.LogError = pgh.fetchAppLogs(req, usr, tenantNS, appName)
+	}
+
+	// Kubernetes application = CAPI-managed Kubernetes cluster. Fetch
+	// the MachineDeployments owned by this cluster so the overview tab
+	// can show actual vs. desired node counts while a pool is scaling.
+	// Populated on every tab so a user jumping between tabs doesn't
+	// lose the live node-group status banner; the list is small
+	// (one-digit count in practice) so the extra fetch is cheap.
+	if app.Kind == "Kubernetes" && pgh.capiSvc != nil {
+		groups, err := pgh.capiSvc.ListMachineDeploymentsForCluster(
+			req.Context(), usr, tenantNS, appName,
+		)
+		if err != nil {
+			pgh.log.Debug("listing MachineDeployments", "tenant", tenantNS, "cluster", appName, "error", err)
+		}
+
+		data.NodeGroups = groups
 	}
 
 	return data
