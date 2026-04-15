@@ -78,10 +78,35 @@ type Action struct {
 	// disables the probe — the button always renders — which is the
 	// right call for actions that don't map onto a single RBAC verb.
 	Capability Capability
+	// TargetName translates the Cozystack application name (the
+	// name the user sees and the URL path carries) into the name of
+	// the actual Kubernetes resource the action POSTs against.
+	// Cozystack ApplicationDefinitions declare a release prefix
+	// (e.g. VMInstance uses 'vm-instance-'), so a Cozystack app
+	// named 'myvm' renders a KubeVirt VM named 'vm-instance-myvm'.
+	// Without this translation every action would 404 at the
+	// apiserver, because the capability probe confirms permission
+	// but does NOT validate object existence.
+	//
+	// nil means "use the app name verbatim" — the right default for
+	// actions whose target lives at the release name (none shipped
+	// today; the hook is here for future Kinds that behave that way).
+	TargetName func(appName string) string
 	// Run is the side-effecting implementation. The handler builds
 	// a user-credentialed *rest.Config (via k8s.BuildUserRESTConfig)
 	// and passes it in, so Run never touches auth modes directly —
 	// it just talks to the apiserver as the current user.
+	//
+	// The name argument is the TARGET name (after TargetName
+	// translation), not the Cozystack app name. For a VMInstance
+	// 'myvm' Run sees 'vm-instance-myvm' — the actual KubeVirt VM
+	// resource. Implementations should not re-apply prefixes.
+	//
+	// ctx cancellation: Run MUST honour ctx.Done(). client-go's
+	// request.Do(ctx) already does, so the typical Run that ends
+	// with .Do(ctx).Error() is correct; custom implementations
+	// that spawn goroutines must plumb ctx through so a client
+	// disconnect tears down any in-flight work.
 	//
 	// Caveat: in AuthModeDev the returned rest.Config carries
 	// cozytempl's own service-account credentials (BuildUserRESTConfig
@@ -132,6 +157,20 @@ func For(kind string) []Action {
 	defer registryMu.RUnlock()
 
 	return byKind[kind]
+}
+
+// ResolveTargetName applies a.TargetName to the Cozystack app name,
+// defaulting to the app name unchanged when no translation is set.
+// Centralised here so callers don't sprinkle nil-check copies of
+// this default across handler + template + test code.
+//
+//nolint:gocritic // hugeParam: called once per click; templ renderers and HTTP handlers expect the by-value Action
+func (a Action) ResolveTargetName(appName string) string {
+	if a.TargetName == nil {
+		return appName
+	}
+
+	return a.TargetName(appName)
 }
 
 // Lookup finds one action by Kind + ID. Returns (action, true) on

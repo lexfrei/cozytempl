@@ -466,6 +466,12 @@ other = "已将 {{.Name}} 的 {{.Action}} 加入队列"
 [error.app.actionLookup]
 other = "无法解析应用 {{.Name}} 以执行请求的操作。"
 
+[error.app.actionLookupNotFound]
+other = "应用 {{.Name}} 不存在,可能在页面加载后已被删除。"
+
+[error.app.actionLookupForbidden]
+other = "您没有权限操作该租户下的 {{.Name}}。请联系管理员检查 RBAC 绑定。"
+
 [error.app.actionUnknown]
 other = "操作 {{.Action}} 未为此应用类型注册。"
 

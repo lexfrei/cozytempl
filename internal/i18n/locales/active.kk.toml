@@ -467,6 +467,12 @@ other = "{{.Name}} үшін {{.Action}} кезекке қойылды"
 [error.app.actionLookup]
 other = "Сұралған әрекет үшін {{.Name}} қолданбасы табылмады."
 
+[error.app.actionLookupNotFound]
+other = "{{.Name}} қолданбасы бар емес. Бет жүктелгеннен кейін жойылған болуы мүмкін."
+
+[error.app.actionLookupForbidden]
+other = "Бұл тенанттағы {{.Name}} әрекеттеріне рұқсатыңыз жоқ. RBAC тіркелімдерін әкімшіден сұраңыз."
+
 [error.app.actionUnknown]
 other = "{{.Action}} әрекеті бұл қолданба түрі үшін тіркелмеген."
 

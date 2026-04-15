@@ -49,6 +49,15 @@ func (pgh *PageHandler) InvokeAction(writer http.ResponseWriter, req *http.Reque
 	appName := req.PathValue("name")
 	actionID := req.PathValue("action")
 
+	if !k8s.IsValidLabelValue(tenantNS) || !k8s.IsValidLabelValue(appName) {
+		pgh.log.Warn("action invoked with malformed path value",
+			"tenant", tenantNS, "name", appName, "action", actionID)
+		pgh.renderErrorToast(writer, req,
+			pgh.t(req, "error.app.actionFailed", map[string]any{"Action": actionID}))
+
+		return
+	}
+
 	action, kind, ok := pgh.resolveAction(req, usr, tenantNS, appName, actionID, writer)
 	if !ok {
 		return
@@ -70,7 +79,18 @@ func (pgh *PageHandler) resolveAction(
 	app, err := pgh.appSvc.Get(req.Context(), usr, tenantNS, appName)
 	if err != nil {
 		pgh.log.Error("getting app for action", "tenant", tenantNS, "name", appName, "error", err)
-		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.actionLookup", map[string]any{"Name": appName}))
+
+		switch apiserverErrorLabel(err) {
+		case errLabelNotFound:
+			pgh.renderErrorToast(writer, req,
+				pgh.t(req, "error.app.actionLookupNotFound", map[string]any{"Name": appName}))
+		case errLabelForbidden, errLabelUnauthorized:
+			pgh.renderErrorToast(writer, req,
+				pgh.t(req, "error.app.actionLookupForbidden", map[string]any{"Name": appName}))
+		default:
+			pgh.renderErrorToast(writer, req,
+				pgh.t(req, "error.app.actionLookup", map[string]any{"Name": appName}))
+		}
 
 		return actions.Action{}, "", false
 	}
@@ -101,7 +121,14 @@ func (pgh *PageHandler) runAction(
 		return fmt.Errorf("building user rest config for action: %w", err)
 	}
 
-	runErr := action.Run(ctx, userCfg, tenantNS, appName)
+	// The Cozystack application name ≠ the KubeVirt VM name.
+	// ResolveTargetName applies whatever prefix transformation the
+	// Action carries (vm-instance- for VMInstance) before we hit the
+	// subresource endpoint; without this the PUT 404s in production
+	// even though the SSAR probe approved the click.
+	targetName := action.ResolveTargetName(appName)
+
+	runErr := action.Run(ctx, userCfg, tenantNS, targetName)
 	if runErr != nil {
 		return fmt.Errorf("running %s action: %w", action.ID, runErr)
 	}
@@ -160,9 +187,17 @@ func (pgh *PageHandler) finishAction(
 	// events reflect the state change the action kicked off. Passing
 	// "overview" as the tab keeps the user on the page they already
 	// saw — we don't want to kidnap them to a different tab.
+	//
+	// If the re-fetch fails (ctx cancelled, apiserver wobble, token
+	// expired between calls), tell htmx NOT to swap the target DOM
+	// so the user keeps the existing detail view with just the
+	// success toast on top. Without Hx-Reswap here, htmx would swap
+	// the response body — now containing only the OOB toast div —
+	// into #main-content and blank the tenant detail page.
 	app, err := pgh.appSvc.Get(req.Context(), usr, tenantNS, appName)
 	if err != nil {
 		pgh.log.Error("re-getting app after action", "tenant", tenantNS, "name", appName, "error", err)
+		writer.Header().Set("Hx-Reswap", "none")
 
 		return
 	}

@@ -593,12 +593,17 @@ func (pgh *PageHandler) buildAppDetailData(
 // capabilityProbedActions turns the compile-time action registry
 // into the user-specific subset the UI should render. Runs one
 // SelfSubjectAccessReview per registered action in the tenant
-// namespace — cheap at the apiserver level, and cached by the
-// CachedDiscovery+RBAC path so repeat loads on the same page are
-// near-free. A probe error drops the offending action (safer than
-// showing a button that 403s) but leaves the rest intact, and the
-// first probe error is logged for an operator to investigate
-// without spamming the log if every probe fails.
+// namespace — no caching today, so N fresh round-trips per detail
+// page render. For the current registry (3 actions on VMInstance,
+// 0 elsewhere) that is one apiserver hop per page and trivially
+// cheap. Add a short-TTL decision cache here if the registry grows
+// past O(10) actions per Kind — RBAC decisions change when role
+// bindings flip, so any cache must invalidate quickly.
+//
+// A probe error drops the offending action (safer than showing a
+// button that 403s) but leaves the rest intact, and the first
+// probe error is logged for an operator to investigate without
+// spamming the log if every probe fails.
 //
 // Returns nil when no actions are registered for the Kind, so the
 // caller can treat empty-list and nil identically.

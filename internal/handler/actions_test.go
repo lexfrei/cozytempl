@@ -37,6 +37,12 @@ func TestApiserverErrorLabelClassifies(t *testing.T) {
 			errLabelForbidden,
 		},
 		{
+			"unauthorized wrapped twice",
+			fmt.Errorf("outer: %w",
+				fmt.Errorf("inner: %w", apierrors.NewUnauthorized("token expired"))),
+			errLabelUnauthorized,
+		},
+		{
 			"not found wrapped twice",
 			fmt.Errorf("outer: %w",
 				fmt.Errorf("inner: %w", apierrors.NewNotFound(gr, "vm-42"))),

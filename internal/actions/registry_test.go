@@ -65,6 +65,40 @@ func TestLookup(t *testing.T) {
 	}
 }
 
+// TestVMActionsPrependChartPrefix is the regression gate on the
+// KubeVirt VM name mismatch the first review caught. Cozystack's
+// vm-instance chart emits a HelmRelease whose release name is
+// 'vm-instance-<appName>', and the rendered KubeVirt VM uses the
+// same name. If an action's TargetName accidentally collapses to
+// identity (returns appName unchanged), every click lands a 404
+// on the wrong VM name even though the SSAR probe approved the
+// click. Pin the transformation here.
+func TestVMActionsPrependChartPrefix(t *testing.T) {
+	t.Parallel()
+
+	for _, entry := range For("VMInstance") {
+		got := entry.ResolveTargetName("myvm")
+		if got != "vm-instance-myvm" {
+			t.Errorf("VMInstance action %s: ResolveTargetName('myvm') = %q, want 'vm-instance-myvm'",
+				entry.ID, got)
+		}
+	}
+}
+
+// TestActionResolveTargetNameDefaultsToIdentity covers the
+// TargetName nil path: an Action that doesn't declare a prefix
+// maps the Cozystack app name to the apiserver target verbatim.
+// Removing this default would silently break every future action
+// whose target happens to share the app name.
+func TestActionResolveTargetNameDefaultsToIdentity(t *testing.T) {
+	t.Parallel()
+
+	a := Action{ID: "noop"}
+	if got := a.ResolveTargetName("anything"); got != "anything" {
+		t.Errorf("ResolveTargetName without TargetName = %q, want identity", got)
+	}
+}
+
 // TestVMActionsRegistered pins the init-time registration for the
 // VMInstance Kind. All three KubeVirt subresources must be present
 // so the UI can reliably render the action bar without a feature

@@ -14,6 +14,26 @@ import (
 // an empty JSON body.
 const vmSubresourcePath = "/apis/subresources.kubevirt.io/v1"
 
+// vmInstanceReleasePrefix is the Cozystack VMInstance chart's
+// release prefix. A Cozystack application named 'myvm' renders a
+// HelmRelease 'vm-instance-myvm' and a KubeVirt VirtualMachine with
+// the same 'vm-instance-myvm' name. Hard-coded here because it is
+// the single contract the Cozystack ApplicationDefinition publishes;
+// every new VMInstance Kind this library adds targets the same
+// prefix by construction. If Cozystack ever ships a second chart
+// under the same Kind with a different prefix, this constant
+// becomes a switch keyed on ApplicationDefinition metadata.
+const vmInstanceReleasePrefix = "vm-instance-"
+
+// vmInstanceTargetName derives the KubeVirt VM resource name from
+// the Cozystack application name. Exported via a function (not a
+// direct string concat at registration time) so the handler and
+// tests call one canonical helper rather than re-deriving the
+// prefix ad-hoc.
+func vmInstanceTargetName(appName string) string {
+	return vmInstanceReleasePrefix + appName
+}
+
 // init registers the three KubeVirt VM actions for Cozystack's
 // VMInstance Kind. The Cozystack VMInstance CR and the KubeVirt
 // VirtualMachine it renders share a name (the Helm release name
@@ -29,6 +49,7 @@ func init() {
 		AuditCategory: "vm.start",
 		Destructive:   false,
 		Capability:    vmSubresourceCapability("start"),
+		TargetName:    vmInstanceTargetName,
 		Run:           invokeVMSubresource("start"),
 	})
 
@@ -38,6 +59,7 @@ func init() {
 		AuditCategory: "vm.stop",
 		Destructive:   true,
 		Capability:    vmSubresourceCapability("stop"),
+		TargetName:    vmInstanceTargetName,
 		Run:           invokeVMSubresource("stop"),
 	})
 
@@ -47,6 +69,7 @@ func init() {
 		AuditCategory: "vm.restart",
 		Destructive:   true,
 		Capability:    vmSubresourceCapability("restart"),
+		TargetName:    vmInstanceTargetName,
 		Run:           invokeVMSubresource("restart"),
 	})
 }

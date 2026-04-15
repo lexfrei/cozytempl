@@ -31,3 +31,14 @@ func isValidLabelValue(s string) bool {
 
 	return labelValueRegex.MatchString(s)
 }
+
+// IsValidLabelValue is the exported wrapper for isValidLabelValue.
+// HTTP handlers in internal/handler need the same guard before
+// splicing path values into audit fields and downstream API calls,
+// but handler is not allowed to import internal-only helpers.
+// Keeping the unexported spelling for package-internal callers
+// preserves the existing cozy convention that validation is
+// happens-once-at-the-boundary.
+func IsValidLabelValue(s string) bool {
+	return isValidLabelValue(s)
+}

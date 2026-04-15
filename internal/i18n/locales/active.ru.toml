@@ -469,6 +469,12 @@ other = "{{.Action}} для {{.Name}} поставлено в очередь"
 [error.app.actionLookup]
 other = "Не удалось найти приложение {{.Name}} для запрошенного действия."
 
+[error.app.actionLookupNotFound]
+other = "Приложение {{.Name}} больше не существует. Возможно, оно было удалено после открытия страницы."
+
+[error.app.actionLookupForbidden]
+other = "У вас нет прав на действия с {{.Name}} в этом тенанте. Обратитесь к администратору, чтобы проверить RBAC."
+
 [error.app.actionUnknown]
 other = "Действие {{.Action}} не зарегистрировано для этого типа приложения."
 
