@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/lexfrei/cozytempl/internal/actions"
 	"github.com/lexfrei/cozytempl/internal/view"
 	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
@@ -47,6 +48,7 @@ templ AppDetail(data view.AppDetailData) {
 	<div class="page-header">
 		<h1 class="page-title">{ data.App.Name }</h1>
 		@partial.StatusBadge(string(data.App.Status))
+		@resourceActionsBar(data.Tenant, data.App.Name, actions.For(data.App.Kind))
 	</div>
 
 	<!-- Tabs -->
@@ -76,6 +78,29 @@ templ AppDetail(data view.AppDetailData) {
 				@overviewTab(data)
 		}
 	</div>
+}
+
+// resourceActionsBar renders one button per action registered for
+// the application's Kind. Empty (no actions registered for the
+// Kind) collapses to a zero-sized div so the page-header flex
+// layout stays unchanged on non-VM apps. Each button hx-posts to
+// the action endpoint; the toast + audit + optimistic UI flip all
+// happen server-side, so the UI layer stays a thin view over the
+// registry defined in internal/actions.
+templ resourceActionsBar(tenant, appName string, list []actions.Action) {
+	if len(list) > 0 {
+		<div class="flex items-center gap-2" style="margin-left: auto;">
+			for _, action := range list {
+				<button class="btn btn-sm"
+					type="button"
+					hx-post={ "/tenants/" + tenant + "/apps/" + appName + "/actions/" + action.ID }
+					hx-target="#toast-container"
+					hx-swap="beforeend">
+					{ partial.Tc(ctx, action.LabelKey) }
+				</button>
+			}
+		</div>
+	}
 }
 
 templ detailTab(label string, tab string, data view.AppDetailData) {

@@ -278,6 +278,7 @@ func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {
 	pageMux.HandleFunc("POST /tenants/{tenant}/apps", pgh.CreateApp)
 	pageMux.HandleFunc("PUT /tenants/{tenant}/apps/{name}", pgh.UpdateApp)
 	pageMux.HandleFunc("DELETE /tenants/{tenant}/apps/{name}", pgh.DeleteApp)
+	pageMux.HandleFunc("POST /tenants/{tenant}/apps/{name}/actions/{action}", pgh.InvokeAction)
 
 	pageMux.HandleFunc("GET /fragments/app-table", pgh.AppTableFragment)
 	pageMux.HandleFunc("GET /fragments/marketplace", pgh.MarketplaceFragment)

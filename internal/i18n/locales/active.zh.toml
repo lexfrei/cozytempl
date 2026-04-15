@@ -448,6 +448,27 @@ other = "日志"
 [page.appDetail.tabValues]
 other = "配置值"
 
+[page.appDetail.action.vmStart]
+other = "启动"
+
+[page.appDetail.action.vmStop]
+other = "停止"
+
+[page.appDetail.action.vmRestart]
+other = "重启"
+
+[toast.app.actionQueued]
+other = "已将 {{.Name}} 的 {{.Action}} 加入队列"
+
+[error.app.actionLookup]
+other = "无法解析应用 {{.Name}} 以执行请求的操作。"
+
+[error.app.actionUnknown]
+other = "操作 {{.Action}} 未为此应用类型注册。"
+
+[error.app.actionFailed]
+other = "操作 {{.Action}} 失败。详细信息请查看 cozytempl 日志。"
+
 [page.appDetail.noLogs]
 other = "（无日志输出）"
 

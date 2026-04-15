@@ -454,6 +454,27 @@ other = "Logs"
 [page.appDetail.tabValues]
 other = "Values"
 
+[page.appDetail.action.vmStart]
+other = "Start"
+
+[page.appDetail.action.vmStop]
+other = "Stop"
+
+[page.appDetail.action.vmRestart]
+other = "Restart"
+
+[toast.app.actionQueued]
+other = "Queued {{.Action}} on {{.Name}}"
+
+[error.app.actionLookup]
+other = "Could not resolve application {{.Name}} for the requested action."
+
+[error.app.actionUnknown]
+other = "Action {{.Action}} is not registered for this application type."
+
+[error.app.actionFailed]
+other = "Action {{.Action}} failed. See cozytempl logs for the apiserver response."
+
 [page.appDetail.noLogs]
 other = "(no log output)"
 

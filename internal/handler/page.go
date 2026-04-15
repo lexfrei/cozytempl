@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/a-h/templ"
+	"k8s.io/client-go/rest"
+
 	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/config"
@@ -29,7 +31,12 @@ type PageHandler struct {
 	usageSvc  *k8s.UsageService
 	eventSvc  *k8s.EventService
 	logSvc    *k8s.LogService
-	log       *slog.Logger
+	// baseCfg is the in-cluster / kubeconfig rest.Config that backs
+	// every k8s service above. Stored on the handler so
+	// InvokeAction can build a user-credentialed derivative without
+	// having to reach through ApplicationService internals.
+	baseCfg *rest.Config
+	log     *slog.Logger
 	// auditLog receives structured events for every mutation and
 	// secret-view action the handler performs. nil is not allowed;
 	// NewPageHandler substitutes a NopLogger if the caller forgets
@@ -61,11 +68,16 @@ type PageHandlerDeps struct {
 	UsageSvc  *k8s.UsageService
 	EventSvc  *k8s.EventService
 	LogSvc    *k8s.LogService
-	Audit     audit.Logger
-	I18n      *i18n.Bundle
-	Log       *slog.Logger
-	AuthMode  config.AuthMode
-	DevMode   bool
+	// BaseCfg is passed through to the handler for callers (like
+	// the per-resource action registry) that need to build a fresh
+	// user-credentialed rest.Config outside the concrete service
+	// wrappers above.
+	BaseCfg  *rest.Config
+	Audit    audit.Logger
+	I18n     *i18n.Bundle
+	Log      *slog.Logger
+	AuthMode config.AuthMode
+	DevMode  bool
 }
 
 // NewPageHandler creates a new page handler.
@@ -84,6 +96,7 @@ func NewPageHandler(deps PageHandlerDeps) *PageHandler {
 		usageSvc:   deps.UsageSvc,
 		eventSvc:   deps.EventSvc,
 		logSvc:     deps.LogSvc,
+		baseCfg:    deps.BaseCfg,
 		auditLog:   auditLog,
 		i18nBundle: deps.I18n,
 		devMode:    deps.DevMode,

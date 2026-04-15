@@ -64,11 +64,19 @@ func NewUserClient(baseCfg *rest.Config, usr *auth.UserContext, mode config.Auth
 	return client, nil
 }
 
-// buildUserRESTConfig returns a *rest.Config that carries the right
+// BuildUserRESTConfig returns a *rest.Config that carries the right
 // authentication data for mode. Callers that need more than a dynamic
 // client (e.g. the log streaming endpoint which needs a kubernetes
-// clientset) can reuse this helper directly and layer their own
-// concrete client on top.
+// clientset, or the action registry which POSTs to non-dynamic
+// subresource paths) can reuse this helper directly and layer their
+// own concrete client on top.
+func BuildUserRESTConfig(baseCfg *rest.Config, usr *auth.UserContext, mode config.AuthMode) (*rest.Config, error) {
+	return buildUserRESTConfig(baseCfg, usr, mode)
+}
+
+// buildUserRESTConfig is the package-internal implementation kept as
+// a second name so existing call sites need no churn. Exported helper
+// above is the stable surface.
 func buildUserRESTConfig(baseCfg *rest.Config, usr *auth.UserContext, mode config.AuthMode) (*rest.Config, error) {
 	switch mode {
 	case config.AuthModePassthrough:

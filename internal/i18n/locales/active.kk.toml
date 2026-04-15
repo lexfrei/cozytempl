@@ -449,6 +449,27 @@ other = "Журналдар"
 [page.appDetail.tabValues]
 other = "Мәндер"
 
+[page.appDetail.action.vmStart]
+other = "Іске қосу"
+
+[page.appDetail.action.vmStop]
+other = "Тоқтату"
+
+[page.appDetail.action.vmRestart]
+other = "Қайта іске қосу"
+
+[toast.app.actionQueued]
+other = "{{.Name}} үшін {{.Action}} кезекке қойылды"
+
+[error.app.actionLookup]
+other = "Сұралған әрекет үшін {{.Name}} қолданбасы табылмады."
+
+[error.app.actionUnknown]
+other = "{{.Action}} әрекеті бұл қолданба түрі үшін тіркелмеген."
+
+[error.app.actionFailed]
+other = "{{.Action}} әрекеті орындалмады. Толығырақ cozytempl журналдарында."
+
 [page.appDetail.noLogs]
 other = "(шығыс жоқ)"
 
