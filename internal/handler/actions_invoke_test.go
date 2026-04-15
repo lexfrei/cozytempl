@@ -60,9 +60,9 @@ func (r *recordingAudit) Record(_ context.Context, evt *audit.Event) {
 
 // newTestHandler wires a minimal PageHandler that lets InvokeAction
 // run end-to-end with everything stubbed but the registry itself.
-// Callers receive back the audit recorder and the fake getter so
-// assertions can reach into them after the request.
-func newTestHandler(t *testing.T, getter *fakeAppGetter) (*PageHandler, *recordingAudit, *i18n.Bundle) {
+// Callers receive back the audit recorder so assertions can reach
+// into it after the request.
+func newTestHandler(t *testing.T, getter *fakeAppGetter) (*PageHandler, *recordingAudit) {
 	t.Helper()
 
 	bundle, err := i18n.NewBundle()
@@ -80,19 +80,14 @@ func newTestHandler(t *testing.T, getter *fakeAppGetter) (*PageHandler, *recordi
 		devMode:    true,
 		i18nBundle: bundle,
 		log:        slog.New(slog.DiscardHandler),
-	}, rec, bundle
+	}, rec
 }
 
 // actionPOST constructs a POST request at the action endpoint with
 // a user already attached to the context — bypassing RequireAuth so
 // InvokeAction's requireUser short-circuit succeeds.
-func actionPOST(t *testing.T, bundle *i18n.Bundle, tenant, app, action string) *http.Request {
+func actionPOST(t *testing.T, tenant, app, action string) *http.Request {
 	t.Helper()
-
-	_ = bundle // kept in the signature so future tests can attach
-	// a specific Localizer to the context; today pgh.t() falls back
-	// to the English Localizer via i18n.LocalizerFromContext when
-	// the context has none, which is fine for handler-level tests.
 
 	ctx := auth.ContextWithUser(t.Context(), &auth.UserContext{Username: "test-user"})
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
@@ -102,6 +97,26 @@ func actionPOST(t *testing.T, bundle *i18n.Bundle, tenant, app, action string) *
 	req.SetPathValue("action", action)
 
 	return req
+}
+
+// withLocalizer routes req through the handler's i18n middleware so
+// pgh.t() can resolve keys. Tests that inspect rendered body copy
+// (toasts, labels) need this; tests that only assert audit events
+// or callback invocations can skip it.
+func withLocalizer(t *testing.T, pgh *PageHandler, req *http.Request) *http.Request {
+	t.Helper()
+
+	var out *http.Request
+
+	pgh.i18nBundle.Middleware(http.HandlerFunc(func(_ http.ResponseWriter, wrapped *http.Request) {
+		out = wrapped
+	})).ServeHTTP(httptest.NewRecorder(), req)
+
+	if out == nil {
+		t.Fatal("i18n middleware did not forward request")
+	}
+
+	return out
 }
 
 // TestInvokeAction_Success_AppliesPrefixOnRun is the end-to-end
@@ -142,10 +157,10 @@ func TestInvokeAction_Success_AppliesPrefixOnRun(t *testing.T) {
 	})
 
 	getter := &fakeAppGetter{app: &k8s.Application{Name: "myvm", Kind: kind}}
-	pgh, _, bundle := newTestHandler(t, getter)
+	pgh, _ := newTestHandler(t, getter)
 
 	rec := httptest.NewRecorder()
-	pgh.InvokeAction(rec, actionPOST(t, bundle, "tenant-root", "myvm", "poke"))
+	pgh.InvokeAction(rec, actionPOST(t, "tenant-root", "myvm", "poke"))
 
 	if !runCalled {
 		t.Fatal("action.Run never fired — handler regressed to Lookup-without-dispatch")
@@ -158,6 +173,15 @@ func TestInvokeAction_Success_AppliesPrefixOnRun(t *testing.T) {
 	if gotName != "tp-myvm" {
 		t.Errorf("Run name = %q, want tp-myvm (prefix translation regressed)", gotName)
 	}
+
+	// Hx-Reswap: none is the single DOM-integrity gate that keeps
+	// the toast-only success response from blanking #main-content
+	// (htmx would otherwise swap the toast div in, destroying the
+	// detail page). Dropping this header silently breaks every
+	// click in production; pin it here.
+	if got := rec.Header().Get("Hx-Reswap"); got != "none" {
+		t.Errorf("Hx-Reswap = %q, want %q on success path", got, "none")
+	}
 }
 
 // TestInvokeAction_RejectsMalformedActionID confirms the blocker-2
@@ -168,11 +192,11 @@ func TestInvokeAction_Success_AppliesPrefixOnRun(t *testing.T) {
 // rendered body does not echo the script tag.
 func TestInvokeAction_RejectsMalformedActionID(t *testing.T) {
 	getter := &fakeAppGetter{app: &k8s.Application{Name: "myvm", Kind: "VMInstance"}}
-	pgh, recAudit, bundle := newTestHandler(t, getter)
+	pgh, recAudit := newTestHandler(t, getter)
 
 	rec := httptest.NewRecorder()
 	malformed := "<script>alert(1)</script>"
-	pgh.InvokeAction(rec, actionPOST(t, bundle, "tenant-root", "myvm", malformed))
+	pgh.InvokeAction(rec, actionPOST(t, "tenant-root", "myvm", malformed))
 
 	// The response body must not contain the raw path segment.
 	if strings.Contains(rec.Body.String(), "<script>") {
@@ -209,10 +233,10 @@ func TestInvokeAction_AuditsLookupForbidden(t *testing.T) {
 	gr := schema.GroupResource{Group: "apps.cozystack.io", Resource: "vminstances"}
 	getter := &fakeAppGetter{err: apierrors.NewForbidden(gr, "myvm", errors.New("no RBAC"))}
 
-	pgh, recAudit, bundle := newTestHandler(t, getter)
+	pgh, recAudit := newTestHandler(t, getter)
 
 	rec := httptest.NewRecorder()
-	pgh.InvokeAction(rec, actionPOST(t, bundle, "tenant-root", "myvm", "start"))
+	pgh.InvokeAction(rec, actionPOST(t, "tenant-root", "myvm", "start"))
 
 	found := false
 
@@ -231,6 +255,52 @@ func TestInvokeAction_AuditsLookupForbidden(t *testing.T) {
 	if !found {
 		t.Errorf("audit did not record a forbidden-lookup error; events = %+v", recAudit.events)
 	}
+
+	// Same DOM-integrity guard as the success path: the error toast
+	// body must not swap into #main-content. Pin both branches.
+	if got := rec.Header().Get("Hx-Reswap"); got != "none" {
+		t.Errorf("Hx-Reswap = %q, want %q on error path", got, "none")
+	}
+}
+
+// TestInvokeAction_FallsBackToActionIDOnMissingLabelKey exercises
+// the localizedActionLabel fallback branch: an action whose LabelKey
+// does not resolve must NOT bake the bracket-form ("[page.foo]")
+// into the toast — it should fall back to the raw action ID. A
+// missing translation is a deployment bug, but the user should see
+// something readable, not a square-bracketed slug.
+func TestInvokeAction_FallsBackToActionIDOnMissingLabelKey(t *testing.T) {
+	kind := "FallbackKind"
+
+	restoreAllowed := stubAllowedFn(t, func(context.Context, *rest.Config, actions.Capability, string) (bool, error) {
+		return true, nil
+	})
+	defer restoreAllowed()
+
+	actions.Register(kind, actions.Action{
+		ID:            "nudge",
+		LabelKey:      "page.appDetail.action.doesNotExist", // deliberately unregistered in any locale
+		AuditCategory: "test.fallback",
+		Run: func(context.Context, *rest.Config, string, string) error {
+			return errors.New("force error path so toast renders the label")
+		},
+	})
+
+	getter := &fakeAppGetter{app: &k8s.Application{Name: "myvm", Kind: kind}}
+	pgh, _ := newTestHandler(t, getter)
+
+	rec := httptest.NewRecorder()
+	pgh.InvokeAction(rec, withLocalizer(t, pgh, actionPOST(t, "tenant-root", "myvm", "nudge")))
+
+	body := rec.Body.String()
+
+	if strings.Contains(body, "[page.appDetail.action.doesNotExist]") {
+		t.Errorf("toast leaked bracket-form of missing key; body = %q", body)
+	}
+
+	if !strings.Contains(body, "nudge") {
+		t.Errorf("toast missing fallback action ID; body = %q", body)
+	}
 }
 
 // TestInvokeAction_AuditsUnknownActionDispatchMiss covers the
@@ -246,10 +316,10 @@ func TestInvokeAction_AuditsUnknownActionDispatchMiss(t *testing.T) {
 	defer restoreAllowed()
 
 	getter := &fakeAppGetter{app: &k8s.Application{Name: "myvm", Kind: "VMInstance"}}
-	pgh, recAudit, bundle := newTestHandler(t, getter)
+	pgh, recAudit := newTestHandler(t, getter)
 
 	rec := httptest.NewRecorder()
-	pgh.InvokeAction(rec, actionPOST(t, bundle, "tenant-root", "myvm", "no-such-action"))
+	pgh.InvokeAction(rec, actionPOST(t, "tenant-root", "myvm", "no-such-action"))
 
 	found := false
 

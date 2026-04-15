@@ -49,12 +49,10 @@ var ErrEmptyUserCredential = errors.New("empty user credential")
 // Every resulting config has its transport Timeout pinned to
 // clientTimeout so a hung control plane cannot starve a goroutine.
 func NewUserClient(baseCfg *rest.Config, usr *auth.UserContext, mode config.AuthMode) (dynamic.Interface, error) {
-	cfg, err := buildUserRESTConfig(baseCfg, usr, mode)
+	cfg, err := BuildUserRESTConfig(baseCfg, usr, mode)
 	if err != nil {
 		return nil, err
 	}
-
-	cfg.Timeout = clientTimeout
 
 	client, err := dynamic.NewForConfig(cfg)
 	if err != nil {

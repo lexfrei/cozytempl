@@ -163,11 +163,25 @@ func Register(kind string, action Action) {
 // application Kind. A nil slice means "no actions registered" and
 // is the normal result for the majority of Kinds that expose no
 // subresources — the UI renders no action bar in that case.
+//
+// Returns a defensive copy of the underlying slice so callers can
+// iterate safely while a concurrent Register lands (test cleanup
+// paths slice byKind[kind] back to a pre-test length, which races
+// with a concurrent iteration of the returned slice). The registry
+// is small enough that one allocation per page render is free.
 func For(kind string) []Action {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
-	return byKind[kind]
+	src := byKind[kind]
+	if len(src) == 0 {
+		return nil
+	}
+
+	out := make([]Action, len(src))
+	copy(out, src)
+
+	return out
 }
 
 // ResolveTargetName applies a.TargetName to the Cozystack app name,

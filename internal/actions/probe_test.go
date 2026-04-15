@@ -88,9 +88,13 @@ func TestFilterAllowedPreservesOrderAndDropsDenied(t *testing.T) {
 		{ID: "last", Capability: Capability{Group: "g", Resource: "r", Subresource: "last-ok", Verb: "update"}},
 	}
 
-	kept, err := FilterAllowed(context.Background(), &rest.Config{}, list, "ns")
+	kept, errCount, err := FilterAllowed(context.Background(), &rest.Config{}, list, "ns")
 	if err != nil {
 		t.Fatalf("FilterAllowed returned error: %v", err)
+	}
+
+	if errCount != 0 {
+		t.Errorf("FilterAllowed errCount = %d, want 0 when no probes failed", errCount)
 	}
 
 	if len(kept) != 2 {
@@ -126,10 +130,14 @@ func TestFilterAllowedReturnsProbeError(t *testing.T) {
 		{ID: "bad", Capability: Capability{Group: "g", Resource: "r", Subresource: "broken", Verb: "update"}},
 	}
 
-	kept, err := FilterAllowed(context.Background(), &rest.Config{}, list, "ns")
+	kept, errCount, err := FilterAllowed(context.Background(), &rest.Config{}, list, "ns")
 
 	if !errors.Is(err, probeErr) {
 		t.Errorf("FilterAllowed err = %v, want wrap of %v", err, probeErr)
+	}
+
+	if errCount != 1 {
+		t.Errorf("FilterAllowed errCount = %d, want 1 (single broken probe)", errCount)
 	}
 
 	if len(kept) != 1 || kept[0].ID != "good" {
@@ -137,13 +145,81 @@ func TestFilterAllowedReturnsProbeError(t *testing.T) {
 	}
 }
 
+// TestFilterAllowedProbesOncePerAction pins the fan-out: exactly
+// one probe per registered action, never more. A loop-bug that
+// double-probes or re-probes on every render would 2N the apiserver
+// load; catching it here is cheaper than catching it in prod logs.
+func TestFilterAllowedProbesOncePerAction(t *testing.T) {
+	var probes int
+
+	stub := stubAllowedFn(t, func(context.Context, *rest.Config, Capability, string) (bool, error) {
+		probes++
+
+		return true, nil
+	})
+	defer stub()
+
+	list := []Action{
+		{ID: "a", Capability: Capability{Group: "g", Resource: "r", Subresource: "a", Verb: "update"}},
+		{ID: "b", Capability: Capability{Group: "g", Resource: "r", Subresource: "b", Verb: "update"}},
+		{ID: "c", Capability: Capability{Group: "g", Resource: "r", Subresource: "c", Verb: "update"}},
+	}
+
+	if _, _, err := FilterAllowed(context.Background(), &rest.Config{}, list, "ns"); err != nil {
+		t.Fatalf("FilterAllowed: %v", err)
+	}
+
+	if probes != len(list) {
+		t.Errorf("probes = %d, want %d (one per action, no more, no less)", probes, len(list))
+	}
+}
+
+// TestFilterAllowedCountsAllErrors pins the contract the cycle-5
+// review asked for: when multiple probes fail with distinct errors,
+// errCount must reflect the full count so the caller can log
+// "saw N probes fail" rather than silently dropping the majority of
+// the button set based on a single logged error.
+func TestFilterAllowedCountsAllErrors(t *testing.T) {
+	stub := stubAllowedFn(t, func(_ context.Context, _ *rest.Config, capability Capability, _ string) (bool, error) {
+		return false, errors.New("probe " + capability.Subresource + " failed")
+	})
+	defer stub()
+
+	list := []Action{
+		{ID: "a", Capability: Capability{Group: "g", Resource: "r", Subresource: "a", Verb: "update"}},
+		{ID: "b", Capability: Capability{Group: "g", Resource: "r", Subresource: "b", Verb: "update"}},
+		{ID: "c", Capability: Capability{Group: "g", Resource: "r", Subresource: "c", Verb: "update"}},
+	}
+
+	kept, errCount, err := FilterAllowed(context.Background(), &rest.Config{}, list, "ns")
+
+	if err == nil {
+		t.Fatal("FilterAllowed err = nil, want first of three probe errors")
+	}
+
+	if errCount != 3 {
+		t.Errorf("FilterAllowed errCount = %d, want 3", errCount)
+	}
+
+	if len(kept) != 0 {
+		t.Errorf("FilterAllowed kept = %+v, want empty (all probes failed)", kept)
+	}
+}
+
 // stubAllowedFn swaps the package-level allowedFn seam and returns
 // a restore closure the caller defers. Tests using this helper MUST
 // NOT be t.Parallel — the seam is a package global.
+//
+// Captures the prior allowedFn (rather than hardcoding liveAllowed)
+// so nested stubs unwind in LIFO order: an outer test may install a
+// counting wrapper and call a helper that installs a deny-all stub;
+// the helper's restore must snap back to the counting wrapper, not
+// to liveAllowed.
 func stubAllowedFn(t *testing.T, fn func(context.Context, *rest.Config, Capability, string) (bool, error)) func() {
 	t.Helper()
 
+	original := allowedFn
 	allowedFn = fn
 
-	return func() { allowedFn = liveAllowed }
+	return func() { allowedFn = original }
 }

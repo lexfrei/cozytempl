@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"fmt"
+	"testing"
 
 	authv1 "k8s.io/api/authorization/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,9 +13,13 @@ import (
 
 // allowedFn is the package-level test seam for Allowed. Production
 // wires it to liveAllowed, which issues a real SSAR; tests that need
-// deterministic allow/deny decisions overwrite it inline. NOT
-// parallel-safe — matches probeTokenFn in internal/auth (intentional
-// — test hygiene beats a mutex on a startup-time variable).
+// deterministic allow/deny decisions overwrite it via
+// SwapAllowedFnForTest. NOT parallel-safe: allowedFn is read from
+// every HTTP handler (capabilityProbedActions on every detail-page
+// render, InvokeAction on every POST), so live-swapping while
+// requests are in flight is a race. Tests calling the swap helper
+// MUST NOT use t.Parallel; that is why SwapAllowedFnForTest panics
+// when called from a non-test binary.
 //
 //nolint:gochecknoglobals // intentional test seam
 var allowedFn = liveAllowed
@@ -78,9 +83,18 @@ func liveAllowed(ctx context.Context, userCfg *rest.Config, capability Capabilit
 // external test packages (the handler tests need to stub the
 // probe without importing the unexported variable). Returns a
 // restore closure. Tests calling this MUST NOT use t.Parallel.
-func SwapAllowedFnForTest(fn func(context.Context, *rest.Config, Capability, string) (bool, error)) func() {
+//
+// Panics when called outside a test binary: the seam exists for
+// test-only stubbing, and a production caller flipping the allow/
+// deny decision of every probe is always a bug. testing.Testing()
+// returns true only when the Go test harness linked the binary.
+func SwapAllowedFnForTest(stub func(context.Context, *rest.Config, Capability, string) (bool, error)) func() {
+	if !testing.Testing() {
+		panic("actions.SwapAllowedFnForTest called outside a test binary")
+	}
+
 	original := allowedFn
-	allowedFn = fn
+	allowedFn = stub
 
 	return func() { allowedFn = original }
 }
@@ -88,22 +102,33 @@ func SwapAllowedFnForTest(fn func(context.Context, *rest.Config, Capability, str
 // FilterAllowed returns the subset of list whose Capability the
 // caller is permitted to invoke, preserving order. Probe errors on
 // individual actions drop them from the list (safer to omit a button
-// than to show one that 403s) but the probeErr return captures the
-// first such error so the caller can log it. A successful run for
-// every action returns probeErr=nil.
-func FilterAllowed(ctx context.Context, userCfg *rest.Config, list []Action, namespace string) ([]Action, error) {
+// than to show one that 403s). errCount is the total number of
+// probes that errored; firstErr is the first error encountered —
+// together they let the caller log "saw N probes fail" rather than
+// silently dropping most of the button set based on a single logged
+// error. A successful run for every action returns (kept, 0, nil).
+func FilterAllowed(
+	ctx context.Context, userCfg *rest.Config, list []Action, namespace string,
+) ([]Action, int, error) {
 	if len(list) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 
 	kept := make([]Action, 0, len(list))
 
-	var probeErr error
+	var (
+		errCount int
+		firstErr error
+	)
 
 	for i := range list {
 		allowed, err := Allowed(ctx, userCfg, list[i].Capability, namespace)
-		if err != nil && probeErr == nil {
-			probeErr = err
+		if err != nil {
+			errCount++
+
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 
 		if allowed {
@@ -111,5 +136,5 @@ func FilterAllowed(ctx context.Context, userCfg *rest.Config, list []Action, nam
 		}
 	}
 
-	return kept, probeErr
+	return kept, errCount, firstErr
 }

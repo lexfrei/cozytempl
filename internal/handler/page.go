@@ -641,9 +641,20 @@ func (pgh *PageHandler) capabilityProbedActions(
 		return nil
 	}
 
-	kept, probeErr := actions.FilterAllowed(req.Context(), userCfg, list, tenantNS)
+	kept, errCount, probeErr := actions.FilterAllowed(req.Context(), userCfg, list, tenantNS)
 	if probeErr != nil {
-		pgh.log.Debug("probing action capabilities", "tenant", tenantNS, "kind", kind, "error", probeErr)
+		// Warn, not Debug: a probe that errors hides a legitimate
+		// button from a user whose RBAC is correctly configured, and
+		// the user has no way to tell "no permission" from "apiserver
+		// wobble" — so operators need a visible signal without having
+		// to crank log verbosity. errorCount lets the log line
+		// distinguish "one probe flaked" from "all probes flaked"
+		// (the latter usually means virt-api or the control plane
+		// is down, not an RBAC edit).
+		pgh.log.Warn("probing action capabilities",
+			"tenant", tenantNS, "kind", kind,
+			"errorCount", errCount, "totalProbes", len(list),
+			"firstErr", probeErr)
 	}
 
 	return kept

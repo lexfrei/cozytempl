@@ -180,6 +180,29 @@ cannot click), so the correct UX is to either:
 2. Leave the grant off; the buttons stay hidden and users fall back
    to `virtctl` as before.
 
+Minimal `ClusterRole` that grants all three VM actions — apply once
+per cluster, then bind it where needed. The
+`rbac.authorization.k8s.io/aggregate-to-admin: "true"` label folds
+the grant into the stock `admin` ClusterRole (the common case); drop
+the label if you want a narrower audience than "every namespace
+admin".
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cozytempl:vm-subresource-actions
+  labels:
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+rules:
+  - apiGroups: ["subresources.kubevirt.io"]
+    resources:
+      - virtualmachines/start
+      - virtualmachines/stop
+      - virtualmachines/restart
+    verbs: ["update"]
+```
+
 The capability probe is the single source of truth for **visibility**:
 a misconfigured cluster surfaces as "no button" rather than a confusing
 403 toast after the user clicks. Actions whose authorisation cannot be
