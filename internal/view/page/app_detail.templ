@@ -81,9 +81,9 @@ templ AppDetail(data view.AppDetailData) {
 }
 
 // resourceActionsBar renders one button per action registered for
-// the application's Kind. Empty (no actions registered for the
-// Kind) collapses to a zero-sized div so the page-header flex
-// layout stays unchanged on non-VM apps.
+// the application's Kind. When no actions are registered for the
+// Kind, no wrapping div is emitted at all — the page header
+// collapses naturally (flex gap on an absent element is stable).
 //
 // Destructive actions (Stop / Restart) carry an hx-confirm prompt so
 // an accidental click cannot silently power off a production VM, and

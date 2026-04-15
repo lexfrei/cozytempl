@@ -181,11 +181,13 @@ cannot click), so the correct UX is to either:
    to `virtctl` as before.
 
 Minimal `ClusterRole` that grants all three VM actions — apply once
-per cluster, then bind it where needed. The
-`rbac.authorization.k8s.io/aggregate-to-admin: "true"` label folds
-the grant into the stock `admin` ClusterRole (the common case); drop
-the label if you want a narrower audience than "every namespace
-admin".
+per cluster, then bind it where needed. The Cozystack-specific label
+`rbac.cozystack.io/aggregate-to-tenant-admin: "true"` folds the
+grant into the `cozy:tenant:admin` ClusterRole so every tenant admin
+picks it up automatically. Use the upstream
+`rbac.authorization.k8s.io/aggregate-to-admin` label instead only if
+you want to reach namespace admins that are not Cozystack tenant
+admins (unusual outside mixed deployments).
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -193,7 +195,7 @@ kind: ClusterRole
 metadata:
   name: cozytempl:vm-subresource-actions
   labels:
-    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+    rbac.cozystack.io/aggregate-to-tenant-admin: "true"
 rules:
   - apiGroups: ["subresources.kubevirt.io"]
     resources:

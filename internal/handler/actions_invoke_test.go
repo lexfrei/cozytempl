@@ -133,16 +133,7 @@ func TestInvokeAction_Success_AppliesPrefixOnRun(t *testing.T) {
 		runCalled      bool
 	)
 
-	// Stub the capability probe — the filter is skipped when
-	// resolveAction is the only app fetch, but the re-render path
-	// in finishAction calls capabilityProbedActions which probes
-	// every registered action. Return allow.
-	restoreAllowed := stubAllowedFn(t, func(context.Context, *rest.Config, actions.Capability, string) (bool, error) {
-		return true, nil
-	})
-	defer restoreAllowed()
-
-	actions.Register(kind, actions.Action{
+	restoreAction := actions.RegisterForTest(kind, actions.Action{
 		ID:            "poke",
 		LabelKey:      "page.appDetail.action.vmStart",
 		AuditCategory: "tp.poke",
@@ -155,9 +146,10 @@ func TestInvokeAction_Success_AppliesPrefixOnRun(t *testing.T) {
 			return nil
 		},
 	})
+	defer restoreAction()
 
 	getter := &fakeAppGetter{app: &k8s.Application{Name: "myvm", Kind: kind}}
-	pgh, _ := newTestHandler(t, getter)
+	pgh, recAudit := newTestHandler(t, getter)
 
 	rec := httptest.NewRecorder()
 	pgh.InvokeAction(rec, actionPOST(t, "tenant-root", "myvm", "poke"))
@@ -181,6 +173,29 @@ func TestInvokeAction_Success_AppliesPrefixOnRun(t *testing.T) {
 	// click in production; pin it here.
 	if got := rec.Header().Get("Hx-Reswap"); got != "none" {
 		t.Errorf("Hx-Reswap = %q, want %q on success path", got, "none")
+	}
+
+	// Without this check, a regression that returns silently after
+	// runAction without calling finishAction (e.g. a misplaced
+	// `return`) would still satisfy the assertions above. Pin the
+	// success toast and the OutcomeSuccess audit so the whole
+	// downstream chain is exercised.
+	if !strings.Contains(rec.Body.String(), "toast-success") {
+		t.Errorf("success toast not rendered; body = %q", rec.Body.String())
+	}
+
+	gotSuccess := false
+
+	for _, evt := range recAudit.events {
+		if evt.Action == audit.ActionAppAction && evt.Outcome == audit.OutcomeSuccess {
+			gotSuccess = true
+
+			break
+		}
+	}
+
+	if !gotSuccess {
+		t.Errorf("OutcomeSuccess audit not emitted; events = %+v", recAudit.events)
 	}
 }
 
@@ -272,12 +287,7 @@ func TestInvokeAction_AuditsLookupForbidden(t *testing.T) {
 func TestInvokeAction_FallsBackToActionIDOnMissingLabelKey(t *testing.T) {
 	kind := "FallbackKind"
 
-	restoreAllowed := stubAllowedFn(t, func(context.Context, *rest.Config, actions.Capability, string) (bool, error) {
-		return true, nil
-	})
-	defer restoreAllowed()
-
-	actions.Register(kind, actions.Action{
+	restoreAction := actions.RegisterForTest(kind, actions.Action{
 		ID:            "nudge",
 		LabelKey:      "page.appDetail.action.doesNotExist", // deliberately unregistered in any locale
 		AuditCategory: "test.fallback",
@@ -285,6 +295,7 @@ func TestInvokeAction_FallsBackToActionIDOnMissingLabelKey(t *testing.T) {
 			return errors.New("force error path so toast renders the label")
 		},
 	})
+	defer restoreAction()
 
 	getter := &fakeAppGetter{app: &k8s.Application{Name: "myvm", Kind: kind}}
 	pgh, _ := newTestHandler(t, getter)

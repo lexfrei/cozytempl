@@ -81,6 +81,31 @@ func TestResourceActionsBarDestructiveConfirms(t *testing.T) {
 	}
 }
 
+// TestResourceActionsBarSkipsDivWhenEmpty pins the contract the
+// cycle-6 review flagged: when no actions are registered for the
+// Kind, the page must NOT emit a wrapping div. The previous
+// docstring claimed a "zero-sized div" which the code never
+// produced — this test locks the code side of that mismatch.
+func TestResourceActionsBarSkipsDivWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	data := view.AppDetailData{
+		Tenant:         "tenant-root",
+		App:            k8s.Application{Name: "redis-1", Kind: "Redis"},
+		Tab:            "overview",
+		AllowedActions: nil, // no actions registered for this Kind
+	}
+
+	var buf bytes.Buffer
+	if err := AppDetail(data).Render(context.Background(), &buf); err != nil {
+		t.Fatalf("rendering AppDetail: %v", err)
+	}
+
+	if strings.Contains(buf.String(), "page-header-actions") {
+		t.Errorf("empty AllowedActions should not emit page-header-actions div; body = %s", buf.String())
+	}
+}
+
 // TestResourceActionsBarConfirmAttrEscapes renders the destructive
 // action buttons under every supported locale and asserts that the
 // hx-confirm attribute value carries no literal unescaped double

@@ -16,6 +16,7 @@ package actions
 import (
 	"context"
 	"sync"
+	"testing"
 
 	"k8s.io/client-go/rest"
 )
@@ -196,6 +197,39 @@ func (a Action) ResolveTargetName(appName string) string {
 	}
 
 	return a.TargetName(appName)
+}
+
+// RegisterForTest registers an action and returns a restore closure
+// that un-registers it. Exposed so test packages outside
+// internal/actions (the handler tests especially) can stage
+// throwaway Kinds + IDs without leaking into later tests or into
+// `go test -count=N` re-runs.
+//
+// Panics when called outside a test binary, matching
+// SwapAllowedFnForTest: the registry is init-time production state
+// and a runtime mutator is a wiring bug.
+//
+//nolint:gocritic // hugeParam: test-only, not on any hot path
+func RegisterForTest(kind string, action Action) func() {
+	if !testing.Testing() {
+		panic("actions.RegisterForTest called outside a test binary")
+	}
+
+	Register(kind, action)
+
+	return func() {
+		registryMu.Lock()
+		defer registryMu.Unlock()
+
+		items := byKind[kind]
+		for i := range items {
+			if items[i].ID == action.ID {
+				byKind[kind] = append(items[:i], items[i+1:]...)
+
+				return
+			}
+		}
+	}
 }
 
 // Lookup finds one action by Kind + ID. Returns (action, true) on

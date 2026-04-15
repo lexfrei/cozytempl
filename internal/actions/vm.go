@@ -25,6 +25,17 @@ const vmSubresourcePath = "/apis/subresources.kubevirt.io/v1"
 // becomes a switch keyed on ApplicationDefinition metadata.
 const vmInstanceReleasePrefix = "vm-instance-"
 
+// CozystackTenantAdminAggregationLabel is the ClusterRole
+// aggregation label that folds a custom ClusterRole into
+// cozy:tenant:admin on Cozystack clusters. Upstream Kubernetes uses
+// rbac.authorization.k8s.io/aggregate-to-admin, which points at the
+// stock namespace-admin role and is NOT what Cozystack tenant
+// admins pick up. Cross-checked against cozystack upstream
+// packages/system/cozystack-basics/templates/clusterroles.yaml.
+// Referenced from the README RBAC example; the readme_test gate
+// ensures the doc's YAML stays in sync with this constant.
+const CozystackTenantAdminAggregationLabel = "rbac.cozystack.io/aggregate-to-tenant-admin"
+
 // vmInstanceTargetName derives the KubeVirt VM resource name from
 // the Cozystack application name. Exported via a function (not a
 // direct string concat at registration time) so the handler and
