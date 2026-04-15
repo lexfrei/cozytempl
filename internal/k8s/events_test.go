@@ -166,6 +166,82 @@ func TestToSortedEventsLimit(t *testing.T) {
 	}
 }
 
+func TestNameDerivedFromRelease(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		objName string
+		release string
+		want    bool
+	}{
+		{"exact match", "myapp", "myapp", true},
+		{"statefulset pod suffix", "myapp-0", "myapp", true},
+		{"cnpg instance suffix", "myapp-1", "myapp", true},
+		{"headless service suffix", "myapp-r", "myapp", true},
+		{"pvc prefix", "data-myapp", "myapp", true},
+		{"pvc prefix with ordinal", "data-myapp-0", "myapp", true},
+		{"rollout hash segment", "foo-myapp-bar", "myapp", true},
+
+		// Substring but NOT a hyphen-delimited segment should miss —
+		// release "myapp" must not match "myapp2-foo" or "premyapp".
+		{"neighbour app name", "myapp2-foo", "myapp", false},
+		{"concatenated prefix", "premyapp-0", "myapp", false},
+		{"concatenated suffix", "foo-myappy", "myapp", false},
+
+		// Degenerate inputs: empty either side is a miss, never a match.
+		{"empty release", "myapp-0", "", false},
+		{"empty object name", "", "myapp", false},
+		{"both empty", "", "", false},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := nameDerivedFromRelease(testCase.objName, testCase.release)
+			if got != testCase.want {
+				t.Errorf("nameDerivedFromRelease(%q, %q) = %v, want %v",
+					testCase.objName, testCase.release, got, testCase.want)
+			}
+		})
+	}
+}
+
+func TestDedupeByObjectReason(t *testing.T) {
+	t.Parallel()
+
+	newer := time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC)
+	older := time.Date(2026, 4, 10, 11, 0, 0, 0, time.UTC)
+
+	events := []Event{
+		// Assume input is already newest-first (toSortedEvents gives
+		// that). The first occurrence of each (Object, Reason) wins;
+		// subsequent entries are dropped.
+		{Object: "Pod/myapp-0", Reason: "BackOff", LastSeen: newer, Count: 5},
+		{Object: "Pod/myapp-0", Reason: "BackOff", LastSeen: older, Count: 1},
+		{Object: "Pod/myapp-0", Reason: "Pulled", LastSeen: older, Count: 1},
+		{Object: "Pod/myapp-1", Reason: "BackOff", LastSeen: older, Count: 1},
+	}
+
+	got := dedupeByObjectReason(events, 0)
+
+	if len(got) != 3 {
+		t.Fatalf("dedupe yielded %d events, want 3", len(got))
+	}
+
+	// Keyed on the first occurrence, which was the newest one.
+	if got[0].Count != 5 {
+		t.Errorf("first entry kept the wrong occurrence (Count=%d, want 5)", got[0].Count)
+	}
+
+	// Limit cap still works after dedupe.
+	capped := dedupeByObjectReason(events, 2)
+	if len(capped) != 2 {
+		t.Errorf("limit=2 returned %d, want 2", len(capped))
+	}
+}
+
 // TestParseEventTimeFallback confirms parseEventTime returns a zero Time
 // on empty input or a bad format, instead of propagating the parse error.
 func TestParseEventTimeFallback(t *testing.T) {
