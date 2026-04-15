@@ -48,7 +48,7 @@ templ AppDetail(data view.AppDetailData) {
 	<div class="page-header">
 		<h1 class="page-title">{ data.App.Name }</h1>
 		@partial.StatusBadge(string(data.App.Status))
-		@resourceActionsBar(data.Tenant, data.App.Name, actions.For(data.App.Kind))
+		@resourceActionsBar(data.Tenant, data.App.Name, data.AllowedActions)
 	</div>
 
 	<!-- Tabs -->
@@ -83,23 +83,49 @@ templ AppDetail(data view.AppDetailData) {
 // resourceActionsBar renders one button per action registered for
 // the application's Kind. Empty (no actions registered for the
 // Kind) collapses to a zero-sized div so the page-header flex
-// layout stays unchanged on non-VM apps. Each button hx-posts to
-// the action endpoint; the toast + audit + optimistic UI flip all
-// happen server-side, so the UI layer stays a thin view over the
-// registry defined in internal/actions.
+// layout stays unchanged on non-VM apps.
+//
+// Destructive actions (Stop / Restart) carry an hx-confirm prompt so
+// an accidental click cannot silently power off a production VM, and
+// render with the btn-danger variant so the button colour matches
+// the semantics. Non-destructive actions (Start) render as
+// btn-primary with no prompt.
+//
+// hx-target="#main-content" re-renders the full detail page on
+// completion so the status badge, conditions, and events tabs all
+// reflect the new state — the server response carries both a fresh
+// detail page and an OOB toast in one body.
 templ resourceActionsBar(tenant, appName string, list []actions.Action) {
 	if len(list) > 0 {
 		<div class="flex items-center gap-2" style="margin-left: auto;">
 			for _, action := range list {
-				<button class="btn btn-sm"
-					type="button"
-					hx-post={ "/tenants/" + tenant + "/apps/" + appName + "/actions/" + action.ID }
-					hx-target="#toast-container"
-					hx-swap="beforeend">
-					{ partial.Tc(ctx, action.LabelKey) }
-				</button>
+				@resourceActionButton(tenant, appName, action)
 			}
 		</div>
+	}
+}
+
+templ resourceActionButton(tenant, appName string, action actions.Action) {
+	if action.Destructive {
+		<button class="btn btn-sm btn-danger"
+			type="button"
+			hx-post={ "/tenants/" + tenant + "/apps/" + appName + "/actions/" + action.ID }
+			hx-confirm={ partial.Tc(ctx, "page.appDetail.action.confirmDestructive", map[string]any{
+				"Label": partial.Tc(ctx, action.LabelKey),
+				"Name":  appName,
+			}) }
+			hx-target="#main-content"
+			hx-swap="innerHTML">
+			{ partial.Tc(ctx, action.LabelKey) }
+		</button>
+	} else {
+		<button class="btn btn-sm btn-primary"
+			type="button"
+			hx-post={ "/tenants/" + tenant + "/apps/" + appName + "/actions/" + action.ID }
+			hx-target="#main-content"
+			hx-swap="innerHTML">
+			{ partial.Tc(ctx, action.LabelKey) }
+		</button>
 	}
 }
 

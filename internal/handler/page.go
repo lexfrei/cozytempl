@@ -12,6 +12,7 @@ import (
 	"github.com/a-h/templ"
 	"k8s.io/client-go/rest"
 
+	"github.com/lexfrei/cozytempl/internal/actions"
 	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/config"
@@ -584,7 +585,44 @@ func (pgh *PageHandler) buildAppDetailData(
 		data.Pods, data.SelectedPod, data.SelectedContainer, data.LogTail, data.LogError = pgh.fetchAppLogs(req, usr, tenantNS, appName)
 	}
 
+	data.AllowedActions = pgh.capabilityProbedActions(req, usr, tenantNS, app.Kind)
+
 	return data
+}
+
+// capabilityProbedActions turns the compile-time action registry
+// into the user-specific subset the UI should render. Runs one
+// SelfSubjectAccessReview per registered action in the tenant
+// namespace — cheap at the apiserver level, and cached by the
+// CachedDiscovery+RBAC path so repeat loads on the same page are
+// near-free. A probe error drops the offending action (safer than
+// showing a button that 403s) but leaves the rest intact, and the
+// first probe error is logged for an operator to investigate
+// without spamming the log if every probe fails.
+//
+// Returns nil when no actions are registered for the Kind, so the
+// caller can treat empty-list and nil identically.
+func (pgh *PageHandler) capabilityProbedActions(
+	req *http.Request, usr *auth.UserContext, tenantNS, kind string,
+) []actions.Action {
+	list := actions.For(kind)
+	if len(list) == 0 {
+		return nil
+	}
+
+	userCfg, err := k8s.BuildUserRESTConfig(pgh.baseCfg, usr, pgh.authMode)
+	if err != nil {
+		pgh.log.Debug("building rest config for action probe", "error", err)
+
+		return nil
+	}
+
+	kept, probeErr := actions.FilterAllowed(req.Context(), userCfg, list, tenantNS)
+	if probeErr != nil {
+		pgh.log.Debug("probing action capabilities", "tenant", tenantNS, "kind", kind, "error", probeErr)
+	}
+
+	return kept
 }
 
 // fetchAppLogs pulls the pod list for the app, picks the selected pod

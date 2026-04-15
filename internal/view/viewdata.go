@@ -1,7 +1,10 @@
 // Package view provides templ view data types and helpers.
 package view
 
-import "github.com/lexfrei/cozytempl/internal/k8s"
+import (
+	"github.com/lexfrei/cozytempl/internal/actions"
+	"github.com/lexfrei/cozytempl/internal/k8s"
+)
 
 // DashboardData holds data for the dashboard page.
 type DashboardData struct {
@@ -72,6 +75,13 @@ type AppDetailData struct {
 	SelectedContainer string
 	LogTail           string
 	LogError          string
+	// AllowedActions is the per-resource actions registered for
+	// this application's Kind, filtered down to the ones the current
+	// user is permitted to invoke (via a SelfSubjectAccessReview
+	// probe). Empty slice means "register none or all denied" — the
+	// UI renders no action bar in either case, which is the right
+	// collapse for a user who can't act.
+	AllowedActions []actions.Action
 }
 
 // MarketplaceData holds data for the marketplace page.

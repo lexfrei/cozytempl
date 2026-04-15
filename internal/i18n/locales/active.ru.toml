@@ -460,6 +460,9 @@ other = "Остановить"
 [page.appDetail.action.vmRestart]
 other = "Перезапустить"
 
+[page.appDetail.action.confirmDestructive]
+other = "Выполнить {{.Label}} на {{.Name}}? Это прервёт трафик приложения."
+
 [toast.app.actionQueued]
 other = "{{.Action}} для {{.Name}} поставлено в очередь"
 

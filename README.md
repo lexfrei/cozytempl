@@ -163,6 +163,27 @@ In passthrough, byok, and token modes, **a compromise of the cozytempl process c
 
 The Helm chart's `rbac.create: true` (default) renders the right shape per mode automatically.
 
+### Per-resource actions (VM start / stop / restart)
+
+The VMInstance detail page exposes Start / Stop / Restart buttons that
+POST to the KubeVirt VM subresource endpoints. The caller needs the
+tuple `(subresources.kubevirt.io/virtualmachines, verb=update,
+subresource={start,stop,restart})` — **not** the plain
+`kubevirt.io/virtualmachines` grant that stock `cozy:tenant:admin:base`
+carries. A tenant admin who hasn't been granted this tuple will see
+no action buttons (cozytempl probes the capability with a
+SelfSubjectAccessReview at page render and hides buttons the user
+cannot click), so the correct UX is to either:
+
+1. Grant the tuple in a custom Role that aggregates into
+   `cozy:tenant:admin`, or
+2. Leave the grant off; the buttons stay hidden and users fall back
+   to `virtctl` as before.
+
+No code-side opt-out flag exists on purpose — the capability probe
+is the single source of truth, so a misconfigured cluster surfaces as
+"no button" rather than a confusing 403 toast after the user clicks.
+
 ## Observability
 
 ### Prometheus

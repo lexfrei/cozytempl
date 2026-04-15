@@ -27,6 +27,8 @@ func init() {
 		ID:            "start",
 		LabelKey:      "page.appDetail.action.vmStart",
 		AuditCategory: "vm.start",
+		Destructive:   false,
+		Capability:    vmSubresourceCapability("start"),
 		Run:           invokeVMSubresource("start"),
 	})
 
@@ -34,6 +36,8 @@ func init() {
 		ID:            "stop",
 		LabelKey:      "page.appDetail.action.vmStop",
 		AuditCategory: "vm.stop",
+		Destructive:   true,
+		Capability:    vmSubresourceCapability("stop"),
 		Run:           invokeVMSubresource("stop"),
 	})
 
@@ -41,8 +45,31 @@ func init() {
 		ID:            "restart",
 		LabelKey:      "page.appDetail.action.vmRestart",
 		AuditCategory: "vm.restart",
+		Destructive:   true,
+		Capability:    vmSubresourceCapability("restart"),
 		Run:           invokeVMSubresource("restart"),
 	})
+}
+
+// vmSubresourceCapability builds the SSAR tuple for a KubeVirt VM
+// subresource verb. KubeVirt's subresource apiserver serves
+// /apis/subresources.kubevirt.io/v1/.../virtualmachines/{name}/{verb}
+// with PUT, which Kubernetes RBAC checks as verb=update on resource
+// virtualmachines in the subresources.kubevirt.io group with the
+// specific subresource. Cozystack's stock tenant roles do NOT grant
+// this today — an operator who wants the buttons visible needs to
+// layer a custom Role granting update on
+// subresources.kubevirt.io/virtualmachines/{start,stop,restart}
+// onto the tenant-admin aggregation. The capability probe in the
+// detail-page handler uses these exact tuples to hide the buttons
+// from users who lack the grant.
+func vmSubresourceCapability(verb string) Capability {
+	return Capability{
+		Group:       "subresources.kubevirt.io",
+		Resource:    "virtualmachines",
+		Subresource: verb,
+		Verb:        "update",
+	}
 }
 
 // invokeVMSubresource returns a Run closure that PUTs an empty body

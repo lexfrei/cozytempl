@@ -458,6 +458,9 @@ other = "Тоқтату"
 [page.appDetail.action.vmRestart]
 other = "Қайта іске қосу"
 
+[page.appDetail.action.confirmDestructive]
+other = "{{.Name}} үшін {{.Label}} орындалсын ба? Бұл қолданба трафигін үзеді."
+
 [toast.app.actionQueued]
 other = "{{.Name}} үшін {{.Action}} кезекке қойылды"
 

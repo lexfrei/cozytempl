@@ -65,13 +65,22 @@ func NewUserClient(baseCfg *rest.Config, usr *auth.UserContext, mode config.Auth
 }
 
 // BuildUserRESTConfig returns a *rest.Config that carries the right
-// authentication data for mode. Callers that need more than a dynamic
-// client (e.g. the log streaming endpoint which needs a kubernetes
-// clientset, or the action registry which POSTs to non-dynamic
-// subresource paths) can reuse this helper directly and layer their
-// own concrete client on top.
+// authentication data for mode, with the package's clientTimeout
+// already applied to the transport. Callers that need more than a
+// dynamic client (e.g. the log streaming endpoint which needs a
+// kubernetes clientset, or the action registry which POSTs to
+// non-dynamic subresource paths) can reuse this helper directly and
+// layer their own concrete client on top without losing the
+// timeout guarantee NewUserClient depends on.
 func BuildUserRESTConfig(baseCfg *rest.Config, usr *auth.UserContext, mode config.AuthMode) (*rest.Config, error) {
-	return buildUserRESTConfig(baseCfg, usr, mode)
+	cfg, err := buildUserRESTConfig(baseCfg, usr, mode)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg.Timeout = clientTimeout
+
+	return cfg, nil
 }
 
 // buildUserRESTConfig is the package-internal implementation kept as

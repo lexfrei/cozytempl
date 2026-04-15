@@ -463,6 +463,9 @@ other = "Stop"
 [page.appDetail.action.vmRestart]
 other = "Restart"
 
+[page.appDetail.action.confirmDestructive]
+other = "Run {{.Label}} on {{.Name}}? This will interrupt workload traffic."
+
 [toast.app.actionQueued]
 other = "Queued {{.Action}} on {{.Name}}"
 
