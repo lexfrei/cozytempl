@@ -180,9 +180,14 @@ cannot click), so the correct UX is to either:
 2. Leave the grant off; the buttons stay hidden and users fall back
    to `virtctl` as before.
 
-No code-side opt-out flag exists on purpose — the capability probe
-is the single source of truth, so a misconfigured cluster surfaces as
-"no button" rather than a confusing 403 toast after the user clicks.
+The capability probe is the single source of truth for **visibility**:
+a misconfigured cluster surfaces as "no button" rather than a confusing
+403 toast after the user clicks. Actions whose authorisation cannot be
+expressed as a single SSAR (multi-step backend operations, etc.) can
+declare an empty `Capability.Resource`; those always render and the
+apiserver enforces at click time. The opt-out is from the *probe*, not
+from the *action mechanism* — the button always exists once the
+action is registered.
 
 ## Observability
 

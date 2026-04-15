@@ -74,6 +74,17 @@ func liveAllowed(ctx context.Context, userCfg *rest.Config, capability Capabilit
 	return result.Status.Allowed, nil
 }
 
+// SwapAllowedFnForTest exposes the internal allowedFn seam to
+// external test packages (the handler tests need to stub the
+// probe without importing the unexported variable). Returns a
+// restore closure. Tests calling this MUST NOT use t.Parallel.
+func SwapAllowedFnForTest(fn func(context.Context, *rest.Config, Capability, string) (bool, error)) func() {
+	original := allowedFn
+	allowedFn = fn
+
+	return func() { allowedFn = original }
+}
+
 // FilterAllowed returns the subset of list whose Capability the
 // caller is permitted to invoke, preserving order. Probe errors on
 // individual actions drop them from the list (safer to omit a button

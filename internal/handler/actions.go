@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
@@ -25,6 +26,23 @@ const (
 	errLabelUnauthorized = "unauthorized"
 	errLabelOther        = "other"
 )
+
+// appGetter is the narrow slice of ApplicationService that
+// InvokeAction needs. Kept local to the handler package so tests
+// can inject a stub without dragging in the full concrete type.
+// Production wiring in NewPageHandler stores deps.AppSvc here —
+// ApplicationService satisfies this interface by construction.
+type appGetter interface {
+	Get(ctx context.Context, usr *auth.UserContext, namespace, name string) (*k8s.Application, error)
+}
+
+// actionIDPattern matches the URL-safe action ID spelling declared
+// by the registry docstring: lowercase alphanumerics and hyphens
+// only. Validated before the path value flows into audit fields,
+// log lines, or toast template data so a crafted path can't smuggle
+// a <script> fragment into the UI (templ auto-escapes anyway, but
+// the rendered copy reads terribly with arbitrary strings in it).
+var actionIDPattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
 // InvokeAction runs a per-resource action registered under the
 // application's Kind. The path /tenants/{tenant}/apps/{name}/actions/{action}
@@ -49,11 +67,21 @@ func (pgh *PageHandler) InvokeAction(writer http.ResponseWriter, req *http.Reque
 	appName := req.PathValue("name")
 	actionID := req.PathValue("action")
 
-	if !k8s.IsValidLabelValue(tenantNS) || !k8s.IsValidLabelValue(appName) {
+	if !k8s.IsValidLabelValue(tenantNS) || !k8s.IsValidLabelValue(appName) || !actionIDPattern.MatchString(actionID) {
+		// Do NOT echo the raw actionID into the toast — the value is
+		// attacker-controlled and reads terribly when it contains
+		// anything other than a registered slug. The generic
+		// actionUnknown copy is the right landing for malformed
+		// input; audit captures the raw value for operators.
 		pgh.log.Warn("action invoked with malformed path value",
 			"tenant", tenantNS, "name", appName, "action", actionID)
+		pgh.recordAudit(req, usr, audit.ActionAppAction, appName, tenantNS,
+			audit.OutcomeError, map[string]any{
+				"error":     "malformed path value",
+				"rawAction": actionID,
+			})
 		pgh.renderErrorToast(writer, req,
-			pgh.t(req, "error.app.actionFailed", map[string]any{"Action": actionID}))
+			pgh.t(req, "error.app.actionUnknown", map[string]any{"Action": "?"}))
 
 		return
 	}
@@ -76,11 +104,25 @@ func (pgh *PageHandler) resolveAction(
 	tenantNS, appName, actionID string,
 	writer http.ResponseWriter,
 ) (actions.Action, string, bool) {
-	app, err := pgh.appSvc.Get(req.Context(), usr, tenantNS, appName)
+	app, err := pgh.appGetter.Get(req.Context(), usr, tenantNS, appName)
 	if err != nil {
 		pgh.log.Error("getting app for action", "tenant", tenantNS, "name", appName, "error", err)
 
-		switch apiserverErrorLabel(err) {
+		label := apiserverErrorLabel(err)
+
+		// Audit every lookup failure so compliance queries can tell
+		// "someone tried to act on a resource they can't see" from
+		// "someone tried to act on a resource that no longer exists"
+		// without scraping debug logs. The per-branch toast copy is
+		// separate from the audit; both emit regardless.
+		pgh.recordAudit(req, usr, audit.ActionAppAction, appName, tenantNS,
+			audit.OutcomeError, map[string]any{
+				"error":   err.Error(),
+				"runtime": label,
+				"stage":   "lookup",
+			})
+
+		switch label {
 		case errLabelNotFound:
 			pgh.renderErrorToast(writer, req,
 				pgh.t(req, "error.app.actionLookupNotFound", map[string]any{"Name": appName}))
@@ -155,6 +197,8 @@ func (pgh *PageHandler) finishAction(
 	writer http.ResponseWriter, req *http.Request, usr *auth.UserContext,
 	action actions.Action, kind, tenantNS, appName, actionID string, runErr error,
 ) {
+	label := pgh.localizedActionLabel(req, action, actionID)
+
 	if runErr != nil {
 		pgh.log.Warn("action failed",
 			"tenant", tenantNS, "name", appName, "action", actionID, "error", runErr)
@@ -166,7 +210,7 @@ func (pgh *PageHandler) finishAction(
 				"runtime":   apiserverErrorLabel(runErr),
 			})
 		pgh.renderErrorToast(writer, req,
-			pgh.t(req, "error.app.actionFailed", map[string]any{"Action": actionID}))
+			pgh.t(req, "error.app.actionFailed", map[string]any{"Action": label}))
 
 		return
 	}
@@ -180,8 +224,10 @@ func (pgh *PageHandler) finishAction(
 	pgh.emitSuccessToast(writer, req,
 		pgh.t(req, "toast.app.actionQueued", map[string]any{
 			"Name":   appName,
-			"Action": actionID,
+			"Action": label,
 		}))
+
+	setNoStoreHeaders(writer)
 
 	// Re-render the detail page so the status badge / conditions /
 	// events reflect the state change the action kicked off. Passing
@@ -194,7 +240,7 @@ func (pgh *PageHandler) finishAction(
 	// success toast on top. Without Hx-Reswap here, htmx would swap
 	// the response body — now containing only the OOB toast div —
 	// into #main-content and blank the tenant detail page.
-	app, err := pgh.appSvc.Get(req.Context(), usr, tenantNS, appName)
+	app, err := pgh.appGetter.Get(req.Context(), usr, tenantNS, appName)
 	if err != nil {
 		pgh.log.Error("re-getting app after action", "tenant", tenantNS, "name", appName, "error", err)
 		writer.Header().Set("Hx-Reswap", "none")
@@ -208,6 +254,38 @@ func (pgh *PageHandler) finishAction(
 	if renderErr != nil {
 		pgh.log.Error("rendering detail after action", "error", renderErr)
 	}
+}
+
+// setNoStoreHeaders blocks every intermediate cache (Cloudflare,
+// browsers, corporate proxies) from holding on to the response.
+// The detail page can embed connection-tab secrets depending on
+// which tab it renders; AppDetailPage already sets these headers
+// on the happy GET path, so the post-action re-render applies the
+// same policy. Kept as a small helper so future handlers emitting
+// detail HTML reach for the same three lines rather than copy-
+// paste them (and miss one).
+func setNoStoreHeaders(writer http.ResponseWriter) {
+	writer.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	writer.Header().Set("Pragma", "no-cache")
+	writer.Header().Set("Expires", "0")
+}
+
+// localizedActionLabel translates the action's LabelKey via the
+// request-scoped Localizer so toasts read "Остановить" / "停止" /
+// "Стоп" rather than the URL slug. Falls back to the raw actionID
+// when go-i18n's missing-key fallback format ('[page.foo.bar]')
+// surfaces — a defensive step so a broken locale never bakes the
+// brackets into a user-facing string.
+//
+//nolint:gocritic // hugeParam: one invocation per POST, off the hot path
+func (pgh *PageHandler) localizedActionLabel(req *http.Request, action actions.Action, actionID string) string {
+	label := pgh.t(req, action.LabelKey)
+
+	if label == "["+action.LabelKey+"]" {
+		return actionID
+	}
+
+	return label
 }
 
 // apiserverErrorLabel gives the audit log a compact machine-readable

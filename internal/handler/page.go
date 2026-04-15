@@ -32,10 +32,18 @@ type PageHandler struct {
 	usageSvc  *k8s.UsageService
 	eventSvc  *k8s.EventService
 	logSvc    *k8s.LogService
+	// appGetter is a narrow view of appSvc used by InvokeAction —
+	// split out so handler tests can inject a stub without dragging
+	// the whole ApplicationService concrete type in. Production
+	// wiring in NewPageHandler always sets this to deps.AppSvc, so
+	// behaviour is identical.
+	appGetter appGetter
 	// baseCfg is the in-cluster / kubeconfig rest.Config that backs
-	// every k8s service above. Stored on the handler so
-	// InvokeAction can build a user-credentialed derivative without
-	// having to reach through ApplicationService internals.
+	// every k8s service above. MUST be non-nil in any build that
+	// registers actions whose Run dereferences a user-credentialed
+	// client — InvokeAction panics otherwise, on the reasoning that
+	// a silently-nil BaseCfg is a wiring bug, not a runtime
+	// condition.
 	baseCfg *rest.Config
 	log     *slog.Logger
 	// auditLog receives structured events for every mutation and
@@ -90,9 +98,20 @@ func NewPageHandler(deps PageHandlerDeps) *PageHandler {
 		auditLog = audit.NopLogger{}
 	}
 
+	// InvokeAction builds a user-credentialed rest.Config off
+	// deps.BaseCfg on every click. A silently-nil value here turns
+	// into a nil-pointer panic at click time, which is a much worse
+	// outcome than a loud startup failure — panic here so wiring
+	// bugs surface in unit tests / integration boot, not in
+	// production at 2am.
+	if deps.BaseCfg == nil {
+		panic("handler.NewPageHandler: BaseCfg must be non-nil; pass the rest.Config loadKubeConfig returned")
+	}
+
 	return &PageHandler{
 		tenantSvc:  deps.TenantSvc,
 		appSvc:     deps.AppSvc,
+		appGetter:  deps.AppSvc,
 		schemaSvc:  deps.SchemaSvc,
 		usageSvc:   deps.UsageSvc,
 		eventSvc:   deps.EventSvc,
