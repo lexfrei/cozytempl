@@ -465,7 +465,7 @@ func (pgh *PageHandler) reportSpecBuildError(
 // also maps to replace=true — a user or API client sending raw
 // YAML has kubectl-edit expectations, never deep-merge.
 //
-//nolint:nonamedreturns // three-return signature; the names document which bool means "replace vs deep-merge".
+//nolint:nonamedreturns // names document the (spec, replace, err) shape so callers read the policy alongside the value.
 func (pgh *PageHandler) buildSpecFromRequest(
 	req *http.Request, usr *auth.UserContext, appKind string,
 ) (spec map[string]any, replace bool, err error) {
@@ -509,7 +509,7 @@ func (pgh *PageHandler) buildSpecFromRequest(
 // key from the cluster spec — the exact surprise the YAML =
 // replace invariant was supposed to make impossible.
 //
-//nolint:nonamedreturns // shares the (spec, replace, err) shape with buildSpecFromRequest; names keep the three bools distinguishable.
+//nolint:nonamedreturns // names mirror buildSpecFromRequest so the shared (spec, replace, err) shape is obvious at call sites.
 func parseYAMLSpecOrEmptyError(raw string) (spec map[string]any, replace bool, err error) {
 	if raw == "" {
 		return nil, false, ErrEmptyYAMLSpec

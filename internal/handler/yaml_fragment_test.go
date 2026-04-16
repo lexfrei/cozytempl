@@ -296,6 +296,56 @@ func TestAppFormYAMLToFormFragmentParseFailureKeepsSchema(t *testing.T) {
 	}
 }
 
+// TestAppFormYAMLToFormFragmentEmptyYAMLRendersEmptyFields
+// locks the current wipe-on-empty semantics: Apply-to-Form
+// with an empty textarea re-renders the schema fields with
+// no values. This is deliberately the same outcome as the
+// parse-failure branch (fields stay rendered so the user is
+// not stuck on a dead modal) but it's worth pinning
+// explicitly — a future change that e.g. kept the previously
+// typed form values intact, or returned 400, would silently
+// flip what the button does in a case that's easy to trigger
+// (user opens YAML tab with an empty textarea and clicks
+// Apply). Without this test the behaviour drifts unnoticed.
+func TestAppFormYAMLToFormFragmentEmptyYAMLRendersEmptyFields(t *testing.T) {
+	t.Parallel()
+
+	pgh := &PageHandler{
+		log:       slog.New(slog.DiscardHandler),
+		schemaSvc: &fakeSchemaService{schemas: map[string]*k8s.AppSchema{"Postgres": fakePostgresSchema()}},
+	}
+
+	// Empty textarea; the handler should still render the
+	// schema fields (un-populated) rather than 400 or blank body.
+	form := strings.NewReader("kind=Postgres&spec_yaml=")
+	req := httptest.NewRequestWithContext(
+		withFragmentTestUser(t), http.MethodPost, "/fragments/app-yaml-to-form", form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	rec := httptest.NewRecorder()
+	pgh.AppFormYAMLToFormFragment(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 on empty-YAML Apply-to-Form", rec.Code)
+	}
+
+	body := rec.Body.String()
+
+	// Schema fields must still render — replicas is the
+	// sentinel. Without the schema, the modal would be blank
+	// and the user stuck.
+	if !strings.Contains(body, `name="replicas"`) {
+		t.Errorf("schema fields missing on empty-YAML path; modal would wedge:\n%s", body)
+	}
+
+	// The empty-YAML path must not carry a rendered value —
+	// a future change that pre-filled from some other source
+	// would leak through this guard.
+	if strings.Contains(body, `value="7"`) || strings.Contains(body, `value="3"`) {
+		t.Errorf("empty-YAML Apply rendered a non-empty value; wipe contract broken:\n%s", body)
+	}
+}
+
 // TestAppFormYAMLFragmentSchemaErrorSurfacesAs404 pins the
 // fail-closed branch: a schema-fetch error becomes a 404 so
 // htmx stops swapping. The alternative (silently returning
