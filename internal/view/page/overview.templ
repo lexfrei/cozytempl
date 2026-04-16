@@ -1,0 +1,111 @@
+package page
+
+import (
+	"net/url"
+
+	"github.com/lexfrei/cozytempl/internal/view"
+	"github.com/lexfrei/cozytempl/internal/view/partial"
+)
+
+// overviewRowURL builds the click target to the application detail
+// page. Tenant and app name are URL-escaped at the rendering
+// boundary, matching how other templ pages construct hrefs (see
+// marketplace and tenant pages). Without escaping, an app named
+// with characters RFC 3986 marks reserved would produce a broken
+// link rather than the expected detail route — validation on the
+// create path keeps names conservative, but rendering should not
+// silently rely on that invariant.
+func overviewRowURL(tenant, appName string) string {
+	return "/tenants/" + url.PathEscape(tenant) + "/apps/" + url.PathEscape(appName)
+}
+
+// Overview renders the cross-tenant application listing. Apps are
+// already grouped by Kind on the server so the template walks the
+// pre-sorted groups and emits one table per group. A client-side
+// filter hides non-matching rows on keyup — see
+// initOverviewFilter in static/ts/overview.ts — so the server does
+// not re-fan-out the per-tenant list on every keystroke.
+templ Overview(data view.OverviewData) {
+	<div class="page-header">
+		<h1 class="page-title">{ partial.Tc(ctx, "page.overview.title") }</h1>
+		<div class="text-sm text-muted">
+			{ partial.Tc(ctx, "page.overview.summary", map[string]any{
+				"Apps":    data.TotalApps,
+				"Tenants": data.TotalTenants,
+			}) }
+		</div>
+	</div>
+
+	<div class="mp-filters">
+		<div class="mp-search" style="position: relative;">
+			<input class="form-input" type="text" name="q"
+				id="overview-search"
+				data-overview-filter
+				placeholder={ partial.Tc(ctx, "page.overview.searchPlaceholder") }
+				value={ data.Query }
+				autocomplete="off"
+				style="padding-left: 36px;"/>
+		</div>
+	</div>
+
+	if data.TotalApps == 0 {
+		<div class="empty-state">
+			<div class="empty-state-title">{ partial.Tc(ctx, "page.overview.empty.title") }</div>
+			<p class="text-muted">{ partial.Tc(ctx, "page.overview.empty.body") }</p>
+		</div>
+	} else {
+		<div id="overview-groups">
+			for _, group := range data.Groups {
+				@overviewGroup(group)
+			}
+		</div>
+		<div id="overview-no-results" class="empty-state" hidden>
+			<div class="empty-state-title">{ partial.Tc(ctx, "page.overview.noMatch.title") }</div>
+			<p class="text-muted">{ partial.Tc(ctx, "page.overview.noMatch.body") }</p>
+		</div>
+	}
+}
+
+templ overviewGroup(group view.KindGroup) {
+	<div class="card mt-4" data-overview-group={ group.Kind }>
+		<div class="card-header">
+			<div class="card-title">{ group.Kind }</div>
+			<span class="text-sm text-muted" data-overview-count>
+				{ partial.Tc(ctx, "page.overview.groupCount", map[string]any{"Count": len(group.Apps)}) }
+			</span>
+		</div>
+		<div class="table-container">
+			<table>
+				<thead>
+					<tr>
+						<th>{ partial.Tc(ctx, "label.name") }</th>
+						<th>{ partial.Tc(ctx, "label.tenant") }</th>
+						<th>{ partial.Tc(ctx, "label.status") }</th>
+						<th>{ partial.Tc(ctx, "label.created") }</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, app := range group.Apps {
+						<tr data-overview-row
+							data-overview-name={ app.Name }
+							data-overview-tenant={ app.Tenant }>
+							<td>
+								<a href={ templ.SafeURL(overviewRowURL(app.Tenant, app.Name)) }
+									hx-get={ overviewRowURL(app.Tenant, app.Name) }
+									hx-target="#main-content"
+									hx-push-url="true">
+									{ app.Name }
+								</a>
+							</td>
+							<td class="text-muted">{ app.Tenant }</td>
+							<td>
+								@partial.StatusBadge(string(app.Status))
+							</td>
+							<td class="text-sm text-muted">{ formatTime(app.CreatedAt) }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+}

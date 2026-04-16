@@ -11,6 +11,9 @@
 [nav.dashboard]
 other = "Dashboard"
 
+[nav.overview]
+other = "Overview"
+
 [nav.marketplace]
 other = "Marketplace"
 
@@ -106,6 +109,32 @@ other = "Pick a kind from the marketplace and cozytempl will drop the matching C
 
 [empty.apps.cta]
 other = "Create your first application"
+
+# --- Overview page ---
+
+[page.overview.title]
+other = "Overview"
+
+[page.overview.summary]
+other = "{{.Apps}} applications across {{.Tenants}} tenants"
+
+[page.overview.searchPlaceholder]
+other = "Filter by name or tenant..."
+
+[page.overview.groupCount]
+other = "{{.Count}} instances"
+
+[page.overview.empty.title]
+other = "No applications visible"
+
+[page.overview.empty.body]
+other = "Either no applications exist in any tenant you can see, or your RBAC does not allow listing them."
+
+[page.overview.noMatch.title]
+other = "No applications match your filter"
+
+[page.overview.noMatch.body]
+other = "Clear the search box to see every application again."
 
 # --- Dev-mode banner ---
 

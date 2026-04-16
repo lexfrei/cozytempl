@@ -14,6 +14,7 @@ import { initHtmxFeedback } from "./htmx";
 import { initReveal } from "./reveal";
 import { initThemeToggle } from "./theme";
 import { initCommandPalette } from "./palette";
+import { initOverviewFilter } from "./overview";
 
 declare global {
   interface Window {
@@ -240,6 +241,7 @@ function initAll(): void {
   initSSE();
   initReveal();
   initCommandPalette();
+  initOverviewFilter();
   initSubmitOnChange();
   window.__cozytemplInitialized = true;
 }

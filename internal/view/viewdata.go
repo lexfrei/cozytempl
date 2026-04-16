@@ -15,6 +15,33 @@ type DashboardData struct {
 	RecentApps []k8s.Application
 }
 
+// OverviewData holds data for the cross-tenant overview page.
+// Applications are pre-grouped by Kind so the template can render one
+// section per service type without re-scanning the flat list. Groups
+// are alpha-sorted by Kind for a stable display order; apps within a
+// group are alpha-sorted by "tenant/name" so operators who scan the
+// list mentally get the same ordering each visit.
+type OverviewData struct {
+	Groups       []KindGroup
+	TotalApps    int
+	TotalTenants int
+	// Query is the raw search term echoed back into the input's
+	// value attribute so a page reload preserves the filter. Empty
+	// when no search is active. Filtering itself is client-side —
+	// the value travels solely to populate the input.
+	Query string
+}
+
+// KindGroup is one service-type bucket on the overview page. Apps
+// here are the full k8s.Application values; the template reads
+// Tenant off each app directly (the field is populated by
+// ApplicationService.List). No separate per-row wrapper type because
+// every field the template needs already lives on k8s.Application.
+type KindGroup struct {
+	Kind string
+	Apps []k8s.Application
+}
+
 // TenantsPageData holds data for the tenants management page.
 type TenantsPageData struct {
 	Tenants        []TenantWithUsage
