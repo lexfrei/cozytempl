@@ -90,9 +90,14 @@ type objectFilter func(obj *unstructured.Unstructured, arg string) bool
 // this as a named type (rather than an anonymous struct in the map
 // literal) lets the row-renderer signature pick up a name for lint.
 //
-// filter is optional. When the subscriber did not pass ?object=
-// the handler skips the filter step entirely — an empty arg means
-// "no per-object scoping was requested".
+// filter is optional ONLY in the sense that a resource without a
+// filter cannot be scoped via ?object=. An incoming request with a
+// non-empty ?object= against a resource whose dispatch entry has
+// nil filter is rejected at validateStreamRequest with 400 — the
+// alternative (silently ignoring the scope) would inject
+// namespace-wide rows into a subscriber expecting per-object
+// filtering, which is exactly the cross-object leakage the filter
+// mechanism exists to prevent.
 type watchResource struct {
 	gvr         schema.GroupVersionResource
 	rowIDPrefix string
@@ -202,10 +207,26 @@ func (wsh *WatchSSEHandler) validateStreamRequest(
 		return nil, nil, false
 	}
 
+	object := req.URL.Query().Get("object")
+
+	// Guard against the silent-scope-bypass trap: a dispatch entry
+	// without a filter has no way to honour ?object=. Silently
+	// ignoring the param would ship namespace-wide data to a
+	// subscriber that asked for per-object scoping — exactly the
+	// cross-object leakage the filter is supposed to prevent.
+	// Reject up front so a future resource wired without a filter
+	// surfaces as a loud 400, not a silent correctness regression.
+	if object != "" && conf.filter == nil {
+		Error(writer, http.StatusBadRequest,
+			"resource does not support object scoping: "+resource)
+
+		return nil, nil, false
+	}
+
 	return usr, &streamRequest{
 		conf:   &conf,
 		tenant: tenant,
-		object: req.URL.Query().Get("object"),
+		object: object,
 	}, true
 }
 

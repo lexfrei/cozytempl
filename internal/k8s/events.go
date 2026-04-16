@@ -62,7 +62,7 @@ func (evs *EventService) ListInNamespace(
 // (`myapp-r`), PVCs with a `data-` prefix (`data-myapp-0`), etc. The
 // previous exact-match policy left the Events tab looking empty
 // whenever the actual trouble was on a subresource, which is the
-// usual case. See nameDerivedFromRelease for the exact set of
+// usual case. See NameDerivedFromRelease for the exact set of
 // patterns.
 //
 // The filter runs client-side because the K8s fieldSelector for
@@ -93,7 +93,7 @@ func (evs *EventService) ListForObject(
 
 	for idx := range list.Items {
 		objName := nestedString(list.Items[idx].Object, "involvedObject", "name")
-		if nameDerivedFromRelease(objName, name) {
+		if NameDerivedFromRelease(objName, name) {
 			matched = append(matched, list.Items[idx])
 		}
 	}
@@ -101,17 +101,7 @@ func (evs *EventService) ListForObject(
 	return dedupeByObjectReason(toSortedEvents(matched, 0), limit), nil
 }
 
-// NameDerivedFromRelease is the exported counterpart of the
-// internal helper used by ListForObject. Shared so the SSE watch
-// proxy (internal/api/sse_watch.go) can filter live events with
-// the same "is this event about my app?" rule the initial page
-// render already applies — keeping the live stream in sync with
-// the paginated tab instead of leaking cross-app events.
-func NameDerivedFromRelease(objName, release string) bool {
-	return nameDerivedFromRelease(objName, release)
-}
-
-// nameDerivedFromRelease reports whether objName looks like a
+// NameDerivedFromRelease reports whether objName looks like a
 // resource "belonging to" release: an exact match, or the release
 // embedded as a hyphen-delimited segment of the name. This covers:
 //
@@ -123,7 +113,7 @@ func NameDerivedFromRelease(objName, release string) bool {
 // The segment boundary check avoids sub-string false positives like
 // "myapp2-foo" matching release "myapp", which a naive
 // strings.Contains would catch incorrectly.
-func nameDerivedFromRelease(objName, release string) bool {
+func NameDerivedFromRelease(objName, release string) bool {
 	if release == "" || objName == "" {
 		return false
 	}

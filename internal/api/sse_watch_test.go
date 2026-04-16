@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
@@ -401,6 +402,54 @@ func unstructuredEvent(name, involvedObjectName string) *unstructured.Unstructur
 		"message": "started successfully",
 		"count":   int64(1),
 	}}
+}
+
+// TestWatchSSEHandlerRejectsObjectWithoutFilter guards the
+// dispatch-table trap the cycle-3 review surfaced: a resource
+// wired WITHOUT a filter cannot honour ?object=, so the handler
+// must 400 rather than silently ship namespace-wide data to a
+// subscriber that asked for per-object scoping. Without this
+// guard a future resource addition that forgets the filter field
+// silently leaks cross-object rows.
+func TestWatchSSEHandlerRejectsObjectWithoutFilter(t *testing.T) {
+	// Non-parallel: mutates the package-level watchResourceConfig.
+	before, had := watchResourceConfig["fake-nofilter"]
+
+	watchResourceConfig["fake-nofilter"] = watchResource{
+		gvr:         schema.GroupVersionResource{Group: "g", Version: "v1", Resource: "fakes"},
+		rowIDPrefix: "fake-row",
+		renderRow: func(context.Context, *unstructured.Unstructured) (string, string, error) {
+			return "", "", nil
+		},
+		// filter deliberately nil
+	}
+
+	t.Cleanup(func() {
+		if had {
+			watchResourceConfig["fake-nofilter"] = before
+		} else {
+			delete(watchResourceConfig, "fake-nofilter")
+		}
+	})
+
+	handler := NewWatchSSEHandler(nil, nil, "",
+		slog.New(slog.NewTextHandler(discardWriter{}, nil)))
+
+	req := httptest.NewRequestWithContext(
+		withTestUser(context.Background()),
+		http.MethodGet, "/api/watch/fake-nofilter?tenant=ns&object=myvm", nil)
+	req.SetPathValue("resource", "fake-nofilter")
+
+	rec := httptest.NewRecorder()
+	handler.Stream(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 (resource without filter cannot honour ?object=)", rec.Code)
+	}
+
+	if !strings.Contains(rec.Body.String(), "does not support object scoping") {
+		t.Errorf("body = %q, want 'does not support object scoping' copy", rec.Body.String())
+	}
 }
 
 // TestWatchMessageShape roundtrips the on-wire JSON format so the

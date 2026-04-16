@@ -315,12 +315,28 @@ templ eventsTab(data view.AppDetailData) {
 					}
 				</tbody>
 			</table>
-			if len(data.Events) == 0 {
-				<div class="empty-state" id="event-empty-state">
-					<div class="empty-state-title">{ partial.Tc(ctx, "empty.events.title") }</div>
-					<p class="text-muted">{ partial.Tc(ctx, "empty.events.body") }</p>
-				</div>
-			}
+			<!--
+			  The empty-state div is ALWAYS rendered, even on a
+			  page with events, so the watch.ts refreshEmptyState
+			  helper can unhide it when Kubernetes GC removes the
+			  last live row. Rendering it conditionally on
+			  len(data.Events)==0 left the div missing from the
+			  DOM on populated pages, so a later all-removed
+			  state showed a blank tbody with no explanation.
+
+			  The native `hidden` HTML attribute matches what
+			  refreshEmptyState toggles via emptyState.hidden, so
+			  show/hide stays in one mechanism across server and
+			  client rather than dancing between a CSS class and
+			  a DOM property.
+			-->
+			<div class="empty-state" id="event-empty-state"
+				if len(data.Events) > 0 {
+					hidden
+				}>
+				<div class="empty-state-title">{ partial.Tc(ctx, "empty.events.title") }</div>
+				<p class="text-muted">{ partial.Tc(ctx, "empty.events.body") }</p>
+			</div>
 		</div>
 	</div>
 }
