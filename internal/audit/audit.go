@@ -68,6 +68,7 @@ const (
 	ActionAppCreate      Action = "app.create"
 	ActionAppUpdate      Action = "app.update"
 	ActionAppDelete      Action = "app.delete"
+	ActionAppAction      Action = "app.action"
 	ActionSecretView     Action = "secret.view"
 	ActionConnectionView Action = "connection.view"
 	ActionAuthLogin      Action = "auth.login"

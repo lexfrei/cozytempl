@@ -451,6 +451,36 @@ other = "Логи"
 [page.appDetail.tabValues]
 other = "Значения"
 
+[page.appDetail.action.vmStart]
+other = "Запустить"
+
+[page.appDetail.action.vmStop]
+other = "Остановить"
+
+[page.appDetail.action.vmRestart]
+other = "Перезапустить"
+
+[page.appDetail.action.confirmDestructive]
+other = "Выполнить {{.Label}} на {{.Name}}? Это прервёт трафик приложения."
+
+[toast.app.actionSucceeded]
+other = "{{.Action}} успешно выполнено для {{.Name}}"
+
+[error.app.actionLookup]
+other = "Не удалось найти приложение {{.Name}} для запрошенного действия."
+
+[error.app.actionLookupNotFound]
+other = "Приложение {{.Name}} больше не существует. Возможно, оно было удалено после открытия страницы."
+
+[error.app.actionLookupForbidden]
+other = "У вас нет прав на действия с {{.Name}} в этом тенанте. Обратитесь к администратору, чтобы проверить RBAC."
+
+[error.app.actionUnknown]
+other = "Действие {{.Action}} не зарегистрировано для этого типа приложения."
+
+[error.app.actionFailed]
+other = "Действие {{.Action}} не выполнено. Подробности — в логах cozytempl."
+
 [page.appDetail.nodeGroupsTitle]
 other = "Группы узлов"
 

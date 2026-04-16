@@ -163,6 +163,57 @@ In passthrough, byok, and token modes, **a compromise of the cozytempl process c
 
 The Helm chart's `rbac.create: true` (default) renders the right shape per mode automatically.
 
+### Per-resource actions (VM start / stop / restart)
+
+The VMInstance detail page exposes Start / Stop / Restart buttons that
+POST to the KubeVirt VM subresource endpoints. The caller needs the
+tuple `(subresources.kubevirt.io/virtualmachines, verb=update,
+subresource={start,stop,restart})` — **not** the plain
+`kubevirt.io/virtualmachines` grant that stock `cozy:tenant:admin:base`
+carries. A tenant admin who hasn't been granted this tuple will see
+no action buttons (cozytempl probes the capability with a
+SelfSubjectAccessReview at page render and hides buttons the user
+cannot click), so the correct UX is to either:
+
+1. Grant the tuple in a custom Role that aggregates into
+   `cozy:tenant:admin`, or
+2. Leave the grant off; the buttons stay hidden and users fall back
+   to `virtctl` as before.
+
+Minimal `ClusterRole` that grants all three VM actions — apply once
+per cluster, then bind it where needed. The Cozystack-specific label
+`rbac.cozystack.io/aggregate-to-tenant-admin: "true"` folds the
+grant into the `cozy:tenant:admin` ClusterRole so every tenant admin
+picks it up automatically. Use the upstream
+`rbac.authorization.k8s.io/aggregate-to-admin` label instead only if
+you want to reach namespace admins that are not Cozystack tenant
+admins (unusual outside mixed deployments).
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cozytempl:vm-subresource-actions
+  labels:
+    rbac.cozystack.io/aggregate-to-tenant-admin: "true"
+rules:
+  - apiGroups: ["subresources.kubevirt.io"]
+    resources:
+      - virtualmachines/start
+      - virtualmachines/stop
+      - virtualmachines/restart
+    verbs: ["update"]
+```
+
+The capability probe is the single source of truth for **visibility**:
+a misconfigured cluster surfaces as "no button" rather than a confusing
+403 toast after the user clicks. Actions whose authorisation cannot be
+expressed as a single SSAR (multi-step backend operations, etc.) can
+declare an empty `Capability.Resource`; those always render and the
+apiserver enforces at click time. The opt-out is from the *probe*, not
+from the *action mechanism* — the button always exists once the
+action is registered.
+
 ## Observability
 
 ### Prometheus

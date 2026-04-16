@@ -49,12 +49,10 @@ var ErrEmptyUserCredential = errors.New("empty user credential")
 // Every resulting config has its transport Timeout pinned to
 // clientTimeout so a hung control plane cannot starve a goroutine.
 func NewUserClient(baseCfg *rest.Config, usr *auth.UserContext, mode config.AuthMode) (dynamic.Interface, error) {
-	cfg, err := buildUserRESTConfig(baseCfg, usr, mode)
+	cfg, err := BuildUserRESTConfig(baseCfg, usr, mode)
 	if err != nil {
 		return nil, err
 	}
-
-	cfg.Timeout = clientTimeout
 
 	client, err := dynamic.NewForConfig(cfg)
 	if err != nil {
@@ -64,11 +62,31 @@ func NewUserClient(baseCfg *rest.Config, usr *auth.UserContext, mode config.Auth
 	return client, nil
 }
 
-// buildUserRESTConfig returns a *rest.Config that carries the right
-// authentication data for mode. Callers that need more than a dynamic
-// client (e.g. the log streaming endpoint which needs a kubernetes
-// clientset) can reuse this helper directly and layer their own
-// concrete client on top.
+// BuildUserRESTConfig returns a *rest.Config that carries the right
+// authentication data for mode, with the package's clientTimeout
+// already applied at the rest.Config level (client-go sets it on the
+// HTTP client, not on the transport — behavioural equivalent, but
+// people hunting for Transport.ResponseHeaderTimeout will find this
+// comment first). Callers that need more than a dynamic client
+// (e.g. the log streaming endpoint which needs a kubernetes
+// clientset, or the action registry which POSTs to non-dynamic
+// subresource paths) can reuse this helper directly and layer their
+// own concrete client on top without losing the timeout guarantee
+// NewUserClient depends on.
+func BuildUserRESTConfig(baseCfg *rest.Config, usr *auth.UserContext, mode config.AuthMode) (*rest.Config, error) {
+	cfg, err := buildUserRESTConfig(baseCfg, usr, mode)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg.Timeout = clientTimeout
+
+	return cfg, nil
+}
+
+// buildUserRESTConfig is the package-internal implementation kept as
+// a second name so existing call sites need no churn. Exported helper
+// above is the stable surface.
 func buildUserRESTConfig(baseCfg *rest.Config, usr *auth.UserContext, mode config.AuthMode) (*rest.Config, error) {
 	switch mode {
 	case config.AuthModePassthrough:

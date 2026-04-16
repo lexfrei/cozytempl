@@ -148,6 +148,7 @@ func run() error {
 		EventSvc:  eventSvc,
 		LogSvc:    logSvc,
 		CAPISvc:   capiSvc,
+		BaseCfg:   k8sCfg,
 		Audit:     auditLog,
 		I18n:      i18nBundle,
 		AuthMode:  cfg.AuthMode,

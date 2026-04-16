@@ -10,6 +10,9 @@ import (
 	"strings"
 
 	"github.com/a-h/templ"
+	"k8s.io/client-go/rest"
+
+	"github.com/lexfrei/cozytempl/internal/actions"
 	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/config"
@@ -30,7 +33,20 @@ type PageHandler struct {
 	eventSvc  *k8s.EventService
 	logSvc    *k8s.LogService
 	capiSvc   *k8s.CAPIService
-	log       *slog.Logger
+	// appGetter is a narrow view of appSvc used by InvokeAction —
+	// split out so handler tests can inject a stub without dragging
+	// the whole ApplicationService concrete type in. Production
+	// wiring in NewPageHandler always sets this to deps.AppSvc, so
+	// behaviour is identical.
+	appGetter appGetter
+	// baseCfg is the in-cluster / kubeconfig rest.Config that backs
+	// every k8s service above. MUST be non-nil in any build that
+	// registers actions whose Run dereferences a user-credentialed
+	// client — InvokeAction panics otherwise, on the reasoning that
+	// a silently-nil BaseCfg is a wiring bug, not a runtime
+	// condition.
+	baseCfg *rest.Config
+	log     *slog.Logger
 	// auditLog receives structured events for every mutation and
 	// secret-view action the handler performs. nil is not allowed;
 	// NewPageHandler substitutes a NopLogger if the caller forgets
@@ -63,11 +79,16 @@ type PageHandlerDeps struct {
 	EventSvc  *k8s.EventService
 	LogSvc    *k8s.LogService
 	CAPISvc   *k8s.CAPIService
-	Audit     audit.Logger
-	I18n      *i18n.Bundle
-	Log       *slog.Logger
-	AuthMode  config.AuthMode
-	DevMode   bool
+	// BaseCfg is passed through to the handler for callers (like
+	// the per-resource action registry) that need to build a fresh
+	// user-credentialed rest.Config outside the concrete service
+	// wrappers above.
+	BaseCfg  *rest.Config
+	Audit    audit.Logger
+	I18n     *i18n.Bundle
+	Log      *slog.Logger
+	AuthMode config.AuthMode
+	DevMode  bool
 }
 
 // NewPageHandler creates a new page handler.
@@ -79,14 +100,26 @@ func NewPageHandler(deps PageHandlerDeps) *PageHandler {
 		auditLog = audit.NopLogger{}
 	}
 
+	// InvokeAction builds a user-credentialed rest.Config off
+	// deps.BaseCfg on every click. A silently-nil value here turns
+	// into a nil-pointer panic at click time, which is a much worse
+	// outcome than a loud startup failure — panic here so wiring
+	// bugs surface in unit tests / integration boot, not in
+	// production at 2am.
+	if deps.BaseCfg == nil {
+		panic("handler.NewPageHandler: BaseCfg must be non-nil; pass the rest.Config loadKubeConfig returned")
+	}
+
 	return &PageHandler{
 		tenantSvc:  deps.TenantSvc,
 		appSvc:     deps.AppSvc,
+		appGetter:  deps.AppSvc,
 		schemaSvc:  deps.SchemaSvc,
 		usageSvc:   deps.UsageSvc,
 		eventSvc:   deps.EventSvc,
 		logSvc:     deps.LogSvc,
 		capiSvc:    deps.CAPISvc,
+		baseCfg:    deps.BaseCfg,
 		auditLog:   auditLog,
 		i18nBundle: deps.I18n,
 		devMode:    deps.DevMode,
@@ -574,6 +607,8 @@ func (pgh *PageHandler) buildAppDetailData(
 		data.Pods, data.SelectedPod, data.SelectedContainer, data.LogTail, data.LogError = pgh.fetchAppLogs(req, usr, tenantNS, appName)
 	}
 
+	data.AllowedActions = pgh.capabilityProbedActions(req, usr, tenantNS, app.Kind)
+
 	// Kubernetes application = CAPI-managed Kubernetes cluster. Fetch
 	// the MachineDeployments owned by this cluster so the overview tab
 	// can show actual vs. desired node counts while a pool is scaling.
@@ -592,6 +627,57 @@ func (pgh *PageHandler) buildAppDetailData(
 	}
 
 	return data
+}
+
+// capabilityProbedActions turns the compile-time action registry
+// into the user-specific subset the UI should render. Runs one
+// SelfSubjectAccessReview per registered action in the tenant
+// namespace — no caching today, so N fresh round-trips per detail
+// page render. For the current registry (3 actions on VMInstance,
+// 0 elsewhere) that is one apiserver hop per page and trivially
+// cheap. Add a short-TTL decision cache here if the registry grows
+// past O(10) actions per Kind — RBAC decisions change when role
+// bindings flip, so any cache must invalidate quickly.
+//
+// A probe error drops the offending action (safer than showing a
+// button that 403s) but leaves the rest intact, and the first
+// probe error is logged for an operator to investigate without
+// spamming the log if every probe fails.
+//
+// Returns nil when no actions are registered for the Kind, so the
+// caller can treat empty-list and nil identically.
+func (pgh *PageHandler) capabilityProbedActions(
+	req *http.Request, usr *auth.UserContext, tenantNS, kind string,
+) []actions.Action {
+	list := actions.For(kind)
+	if len(list) == 0 {
+		return nil
+	}
+
+	userCfg, err := k8s.BuildUserRESTConfig(pgh.baseCfg, usr, pgh.authMode)
+	if err != nil {
+		pgh.log.Debug("building rest config for action probe", "error", err)
+
+		return nil
+	}
+
+	kept, errCount, probeErr := actions.FilterAllowed(req.Context(), userCfg, list, tenantNS)
+	if probeErr != nil {
+		// Warn, not Debug: a probe that errors hides a legitimate
+		// button from a user whose RBAC is correctly configured, and
+		// the user has no way to tell "no permission" from "apiserver
+		// wobble" — so operators need a visible signal without having
+		// to crank log verbosity. errorCount lets the log line
+		// distinguish "one probe flaked" from "all probes flaked"
+		// (the latter usually means virt-api or the control plane
+		// is down, not an RBAC edit).
+		pgh.log.Warn("probing action capabilities",
+			"tenant", tenantNS, "kind", kind,
+			"errorCount", errCount, "totalProbes", len(list),
+			"firstErr", probeErr)
+	}
+
+	return kept
 }
 
 // fetchAppLogs pulls the pod list for the app, picks the selected pod

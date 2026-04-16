@@ -449,6 +449,36 @@ other = "Журналдар"
 [page.appDetail.tabValues]
 other = "Мәндер"
 
+[page.appDetail.action.vmStart]
+other = "Іске қосу"
+
+[page.appDetail.action.vmStop]
+other = "Тоқтату"
+
+[page.appDetail.action.vmRestart]
+other = "Қайта іске қосу"
+
+[page.appDetail.action.confirmDestructive]
+other = "{{.Name}} үшін {{.Label}} орындалсын ба? Бұл қолданба трафигін үзеді."
+
+[toast.app.actionSucceeded]
+other = "{{.Name}} үшін {{.Action}} сәтті орындалды"
+
+[error.app.actionLookup]
+other = "Сұралған әрекет үшін {{.Name}} қолданбасы табылмады."
+
+[error.app.actionLookupNotFound]
+other = "{{.Name}} қолданбасы бар емес. Бет жүктелгеннен кейін жойылған болуы мүмкін."
+
+[error.app.actionLookupForbidden]
+other = "Бұл тенанттағы {{.Name}} әрекеттеріне рұқсатыңыз жоқ. RBAC тіркелімдерін әкімшіден сұраңыз."
+
+[error.app.actionUnknown]
+other = "{{.Action}} әрекеті бұл қолданба түрі үшін тіркелмеген."
+
+[error.app.actionFailed]
+other = "{{.Action}} әрекеті орындалмады. Толығырақ cozytempl журналдарында."
+
 [page.appDetail.nodeGroupsTitle]
 other = "Түйін топтары"
 
