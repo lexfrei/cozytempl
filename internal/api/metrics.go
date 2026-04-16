@@ -27,6 +27,11 @@ const (
 	// gauges would pin the +Inf bucket and leave the gauge
 	// permanently elevated with no meaningful load signal.
 	pathWatchPrefix = "/api/watch/"
+	// pathLogsPrefix is the WebSocket pod-log-tail endpoint. Same
+	// long-stream logic as pathWatchPrefix — including it in
+	// metrics would break the duration histogram and pin the
+	// inflight gauge for the 30-minute stream lifetime.
+	pathLogsPrefix = "/api/logs/"
 )
 
 // Request histogram buckets tuned for an htmx UI fronting a k8s API.
@@ -106,7 +111,8 @@ func withMetrics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
 		if req.URL.Path == pathSSEEvents ||
 			req.URL.Path == pathMetrics ||
-			strings.HasPrefix(req.URL.Path, pathWatchPrefix) {
+			strings.HasPrefix(req.URL.Path, pathWatchPrefix) ||
+			strings.HasPrefix(req.URL.Path, pathLogsPrefix) {
 			next.ServeHTTP(writer, req)
 
 			return

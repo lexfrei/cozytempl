@@ -16,17 +16,33 @@
 // any protocol overhead for binary-safe chunks.
 
 const RECONNECT_DELAY_MS = 3000;
+const MAX_RECONNECT_ATTEMPTS = 3;
 const MAX_BUFFERED_BYTES = 1_000_000; // ~1 MB of scrollback before we drop lines.
+
+// WebSocket close codes on which further reconnects are useless.
+// 1008 (Policy Violation) — same-origin / auth rejection; 1011
+// (Internal Server Error) — the apiserver 4xx'd our StreamLogs;
+// 4403 — reserved for our own "RBAC denied" close if ever sent.
+// Hitting any of these means the server has told us to stop
+// trying and a flapping retry loop would just burn apiserver
+// budget.
+const PERMANENT_CLOSE_CODES = new Set<number>([1008, 1011, 4403, 4404]);
 
 interface LogTarget {
   container: string;
   tenant: string;
   pod: string;
   containerName: string;
+  // initialTail is 500 on the first connect and 0 on every
+  // reconnect so an abnormal-close flap does not re-inject the
+  // same history on every cycle, multiplying the scrollback the
+  // MAX_BUFFERED_BYTES trimmer then has to chew through.
+  initialTail: number;
 }
 
 let activeSocket: WebSocket | null = null;
 let reconnectTimer: number | null = null;
+let reconnectAttempts = 0;
 
 // findTarget scans the document once for the log-tail <pre>. It
 // returns null on every page that is not the Logs tab so the
@@ -41,7 +57,7 @@ function findTarget(): LogTarget | null {
 
   if (!tenant || !pod) return null;
 
-  return { container: el.id, tenant, pod, containerName };
+  return { container: el.id, tenant, pod, containerName, initialTail: 500 };
 }
 
 // streamURL builds the absolute WebSocket URL for the caller's
@@ -53,6 +69,7 @@ function streamURL(target: LogTarget): string {
   const params = new URLSearchParams({
     tenant: target.tenant,
     pod: target.pod,
+    tail: String(target.initialTail),
   });
 
   if (target.containerName) params.set("container", target.containerName);
@@ -63,8 +80,8 @@ function streamURL(target: LogTarget): string {
 // attach opens the WebSocket, prepends a "connected" marker so
 // the user sees the transition from the server-rendered tail to
 // the live stream, and appends incoming text with auto-scroll.
-// Reconnects once on abnormal close; a second failure surfaces
-// an inline hint instead of flapping forever.
+// Reconnects on abnormal close only until MAX_RECONNECT_ATTEMPTS
+// and only on close codes that are not marked permanent.
 function attach(target: LogTarget): void {
   disconnect();
 
@@ -75,6 +92,7 @@ function attach(target: LogTarget): void {
   activeSocket = socket;
 
   socket.addEventListener("open", () => {
+    reconnectAttempts = 0;
     appendLine(host, "\n--- live stream attached ---\n", "log-marker");
   });
 
@@ -91,8 +109,35 @@ function attach(target: LogTarget): void {
       return;
     }
 
-    appendLine(host, "\n--- live stream dropped, retrying ---\n", "log-marker-warn");
-    scheduleReconnect(target);
+    if (PERMANENT_CLOSE_CODES.has(event.code)) {
+      appendLine(
+        host,
+        `\n--- live stream stopped (${event.code}) — refresh the page to retry ---\n`,
+        "log-marker-warn",
+      );
+      return;
+    }
+
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      appendLine(
+        host,
+        `\n--- live stream dropped after ${MAX_RECONNECT_ATTEMPTS} retries — refresh to reconnect ---\n`,
+        "log-marker-warn",
+      );
+      return;
+    }
+
+    reconnectAttempts++;
+
+    appendLine(
+      host,
+      `\n--- live stream dropped, retry ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} ---\n`,
+      "log-marker-warn",
+    );
+
+    // Subsequent connects skip the 500-line backfill so a flap
+    // does not duplicate history on every cycle.
+    scheduleReconnect({ ...target, initialTail: 0 });
   });
 
   socket.addEventListener("error", () => {
@@ -144,7 +189,8 @@ function scheduleReconnect(target: LogTarget): void {
     // target, and attach() becomes a no-op.
     const next = findTarget();
     if (next && next.pod === target.pod && next.tenant === target.tenant) {
-      attach(next);
+      // Preserve the "no backfill on reconnect" signal.
+      attach({ ...next, initialTail: target.initialTail });
     }
   }, RECONNECT_DELAY_MS);
 }
@@ -164,6 +210,7 @@ function disconnect(): void {
 function syncFromDOM(): void {
   const target = findTarget();
   if (target) {
+    reconnectAttempts = 0;
     attach(target);
   } else {
     disconnect();

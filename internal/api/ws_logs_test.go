@@ -7,7 +7,17 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/lexfrei/cozytempl/internal/audit"
 )
+
+// newWSLogHandlerForTest keeps every test from re-typing the four
+// constructor args. LogService is nil because no test here drives
+// Stream far enough to open a real log stream — the branches
+// under test bail before that (401 / 400 / same-origin).
+func newWSLogHandlerForTest() *WSLogHandler {
+	return NewWSLogHandler(nil, nil, "dev", slog.New(slog.DiscardHandler))
+}
 
 // TestWSLogHandlerRequiresAuth pins the 401 guard. In production
 // the /api/* routes sit behind RequireAuth, but the handler's
@@ -17,7 +27,7 @@ import (
 func TestWSLogHandlerRequiresAuth(t *testing.T) {
 	t.Parallel()
 
-	handler := NewWSLogHandler(nil, slog.New(slog.DiscardHandler))
+	handler := newWSLogHandlerForTest()
 
 	req := httptest.NewRequestWithContext(context.Background(),
 		http.MethodGet, "/api/logs/stream?tenant=ns&pod=vm", nil)
@@ -51,7 +61,7 @@ func TestWSLogHandlerRequiresTenantAndPod(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			handler := NewWSLogHandler(nil, slog.New(slog.DiscardHandler))
+			handler := newWSLogHandlerForTest()
 
 			req := httptest.NewRequestWithContext(
 				withTestUser(context.Background()),
@@ -110,4 +120,63 @@ func TestSameOriginOnlyAcceptsMatch(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestParseTailParam pins the ?tail= semantics:
+//
+//   - empty / invalid / negative → default (500) so a client
+//     that forgets the param still gets a useful bootstrap;
+//   - over the max → clamp to logTailMax so a caller cannot ask
+//     the apiserver for an arbitrarily large initial slice;
+//   - valid in-range → pass through unchanged.
+//
+// The reconnect path in static/ts/logs.ts sends tail=0 after the
+// first connect to skip history replay; that only works if this
+// code accepts 0 as a legitimate value, which the "zero passes
+// through" case documents.
+func TestParseTailParam(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		raw  string
+		want int64
+	}{
+		{"", logTailDefault},
+		{"not-a-number", logTailDefault},
+		{"-5", logTailDefault},
+		{"0", 0},
+		{"100", 100},
+		{"9999999", logTailMax},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.raw, func(t *testing.T) {
+			t.Parallel()
+
+			if got := parseTailParam(tc.raw); got != tc.want {
+				t.Errorf("parseTailParam(%q) = %d, want %d", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestWSLogHandlerAcceptsNilAudit confirms the constructor
+// substitutes a NopLogger when auditLog is nil so a production
+// wiring that forgot to pass the audit dependency does not
+// nil-panic on the first request. The handler's own Record call
+// is exercised implicitly by compile — if the substitution
+// regressed, every subsequent call would segfault.
+func TestWSLogHandlerAcceptsNilAudit(t *testing.T) {
+	t.Parallel()
+
+	h := NewWSLogHandler(nil, nil, "dev", slog.New(slog.DiscardHandler))
+	if h.audit == nil {
+		t.Fatal("audit logger left nil; constructor must substitute NopLogger")
+	}
+
+	// Touch Record to prove the substituted logger is usable.
+	h.audit.Record(context.Background(), &audit.Event{
+		Action:  audit.ActionPodLogView,
+		Outcome: audit.OutcomeSuccess,
+	})
 }

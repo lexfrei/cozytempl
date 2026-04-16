@@ -156,25 +156,26 @@ func (lsv *LogService) TailLogs(
 // HTTP response body remains open until ctx is cancelled OR the
 // apiserver closes its side.
 //
-// CRITICAL: zeroes cfg.Timeout before the stream opens.
-// buildUserRESTConfig applies a 10 s HTTP-client deadline so
-// LIST/GET wobbles fail loudly — on a follow stream that same
-// timeout would kill the log tail after 10 s regardless of
-// client activity. Matching the WatchProxy pattern keeps the
-// lifecycle driven by ctx + apiserver signals only.
+// Routes through the exported BuildUserRESTConfig so its 10 s
+// HTTP client deadline is applied, then explicitly zeros the
+// deadline — the same Timeout=0 dance WatchProxy.Stream performs,
+// and for the same reason. LIST/GET callers want the deadline
+// (loud failures on control-plane wobbles); a follow stream
+// would be killed by it, so long-lived streams must opt out
+// while keeping the user-credential plumbing intact. Going
+// through the exported helper rather than the internal one
+// keeps the two call sites symmetrical and immune to a future
+// refactor that starts applying per-mode overrides there.
 func (lsv *LogService) StreamLogs(
 	ctx context.Context, usr *auth.UserContext,
 	namespace, pod, container string, tailLines int64,
 ) (io.ReadCloser, error) {
-	if namespace == "" || pod == "" {
-		return nil, ErrNamespaceRequired
+	validateErr := validateStreamLogsParams(namespace, pod, container)
+	if validateErr != nil {
+		return nil, validateErr
 	}
 
-	if !isValidLabelValue(pod) {
-		return nil, fmt.Errorf("%w: invalid pod name %q", ErrAppNotFound, pod)
-	}
-
-	cfg, err := buildUserRESTConfig(lsv.baseCfg, usr, lsv.mode)
+	cfg, err := BuildUserRESTConfig(lsv.baseCfg, usr, lsv.mode)
 	if err != nil {
 		return nil, fmt.Errorf("building user rest config: %w", err)
 	}
@@ -207,4 +208,29 @@ func (lsv *LogService) StreamLogs(
 	}
 
 	return stream, nil
+}
+
+// validateStreamLogsParams centralises the defensive checks so
+// both TailLogs and StreamLogs apply them consistently. namespace
+// and container join pod on the isValidLabelValue fence — an
+// upstream apiserver error on a malformed name is ugly and
+// hides the actual misuse from the caller, so fail locally.
+func validateStreamLogsParams(namespace, pod, container string) error {
+	if namespace == "" || pod == "" {
+		return ErrNamespaceRequired
+	}
+
+	if !isValidLabelValue(namespace) {
+		return fmt.Errorf("%w: invalid namespace %q", ErrAppNotFound, namespace)
+	}
+
+	if !isValidLabelValue(pod) {
+		return fmt.Errorf("%w: invalid pod name %q", ErrAppNotFound, pod)
+	}
+
+	if container != "" && !isValidLabelValue(container) {
+		return fmt.Errorf("%w: invalid container name %q", ErrAppNotFound, container)
+	}
+
+	return nil
 }
