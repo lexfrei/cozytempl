@@ -199,9 +199,9 @@ func TestNameDerivedFromRelease(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := nameDerivedFromRelease(testCase.objName, testCase.release)
+			got := NameDerivedFromRelease(testCase.objName, testCase.release)
 			if got != testCase.want {
-				t.Errorf("nameDerivedFromRelease(%q, %q) = %v, want %v",
+				t.Errorf("NameDerivedFromRelease(%q, %q) = %v, want %v",
 					testCase.objName, testCase.release, got, testCase.want)
 			}
 		})

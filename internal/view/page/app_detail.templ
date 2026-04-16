@@ -285,48 +285,87 @@ templ conditionsTab(data view.AppDetailData) {
 	</div>
 }
 
+// eventsTab always emits the <tbody data-watch-*> — even when the
+// initial render has zero events. Without that unconditional
+// container the client-side watch.ts finds no subscription target
+// on an empty Events tab, and the user never sees the first event
+// live; they have to reload before the live stream activates. The
+// empty state renders INSIDE the table so the user still sees the
+// "no events yet" copy while the live subscription is active.
 templ eventsTab(data view.AppDetailData) {
-	if len(data.Events) == 0 {
-		<div class="empty-state">
-			<div class="empty-state-title">{ partial.Tc(ctx, "empty.events.title") }</div>
-			<p class="text-muted">{ partial.Tc(ctx, "empty.events.body") }</p>
-		</div>
-	} else {
-		<div class="card">
-			<div class="table-container">
-				<table>
-					<thead>
-						<tr>
-							<th>{ partial.Tc(ctx, "label.type") }</th>
-							<th>{ partial.Tc(ctx, "label.reason") }</th>
-							<th>{ partial.Tc(ctx, "label.message") }</th>
-							<th>{ partial.Tc(ctx, "label.source") }</th>
-							<th>{ partial.Tc(ctx, "label.count") }</th>
-							<th>{ partial.Tc(ctx, "label.lastSeen") }</th>
-						</tr>
-					</thead>
-					<tbody>
-						for _, evt := range data.Events {
-							<tr>
-								<td>
-									if evt.Type == "Warning" {
-										<span class="badge badge-failed">{ evt.Type }</span>
-									} else {
-										<span class="badge badge-ready">{ evt.Type }</span>
-									}
-								</td>
-								<td class="text-mono text-sm">{ evt.Reason }</td>
-								<td class="text-sm">{ evt.Message }</td>
-								<td class="text-sm text-muted">{ evt.Source }</td>
-								<td class="text-sm">{ fmt.Sprint(evt.Count) }</td>
-								<td class="text-sm text-muted">{ formatTime(evt.LastSeen) }</td>
-							</tr>
-						}
-					</tbody>
-				</table>
+	<div class="card">
+		<div class="table-container">
+			<table>
+				<thead>
+					<tr>
+						<th>{ partial.Tc(ctx, "label.type") }</th>
+						<th>{ partial.Tc(ctx, "label.reason") }</th>
+						<th>{ partial.Tc(ctx, "label.message") }</th>
+						<th>{ partial.Tc(ctx, "label.source") }</th>
+						<th>{ partial.Tc(ctx, "label.count") }</th>
+						<th>{ partial.Tc(ctx, "label.lastSeen") }</th>
+					</tr>
+				</thead>
+				<tbody id="event-rows"
+					data-watch-resource="events"
+					data-watch-tenant={ data.Tenant }
+					data-watch-object={ data.App.Name }>
+					for _, evt := range data.Events {
+						@EventRow(evt)
+					}
+				</tbody>
+			</table>
+			<!--
+			  The empty-state div is ALWAYS rendered, even on a
+			  page with events, so the watch.ts refreshEmptyState
+			  helper can unhide it when Kubernetes GC removes the
+			  last live row. Rendering it conditionally on
+			  len(data.Events)==0 left the div missing from the
+			  DOM on populated pages, so a later all-removed
+			  state showed a blank tbody with no explanation.
+
+			  The native `hidden` HTML attribute matches what
+			  refreshEmptyState toggles via emptyState.hidden, so
+			  show/hide stays in one mechanism across server and
+			  client rather than dancing between a CSS class and
+			  a DOM property.
+			-->
+			<div class="empty-state" id="event-empty-state"
+				if len(data.Events) > 0 {
+					hidden
+				}>
+				<div class="empty-state-title">{ partial.Tc(ctx, "empty.events.title") }</div>
+				<p class="text-muted">{ partial.Tc(ctx, "empty.events.body") }</p>
 			</div>
 		</div>
-	}
+	</div>
+}
+
+// EventRow renders one row in the Events tab. Exported so the SSE
+// watch-proxy handler (internal/api/sse_watch.go) can call it per
+// watch event and emit the rendered HTML as the row payload — the
+// client-side reducer replaces or inserts the element by its id.
+//
+// The id="event-row-{Name}" convention matches the rowIDPrefix
+// "event-row" in watchResourceConfig (internal/api/sse_watch.go).
+// The client-side reducer in static/ts/watch.ts reads rowIdPrefix
+// off the SSE message and looks up {rowIdPrefix}-{name} verbatim;
+// keep the three in sync.
+templ EventRow(evt k8s.Event) {
+	<tr id={ "event-row-" + evt.Name }>
+		<td>
+			if evt.Type == "Warning" {
+				<span class="badge badge-failed">{ evt.Type }</span>
+			} else {
+				<span class="badge badge-ready">{ evt.Type }</span>
+			}
+		</td>
+		<td class="text-mono text-sm">{ evt.Reason }</td>
+		<td class="text-sm">{ evt.Message }</td>
+		<td class="text-sm text-muted">{ evt.Source }</td>
+		<td class="text-sm">{ fmt.Sprint(evt.Count) }</td>
+		<td class="text-sm text-muted">{ formatTime(evt.LastSeen) }</td>
+	</tr>
 }
 
 // logsTab renders the pod selector + container selector + recent log

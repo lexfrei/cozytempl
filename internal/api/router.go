@@ -30,13 +30,19 @@ type RouterConfig struct {
 	AppHandler    *ApplicationHandler
 	SchemaHandler *SchemaHandler
 	SSEHandler    *SSEHandler
-	PageHandler   *handler.PageHandler
-	I18n          *i18n.Bundle
-	StaticFS      embed.FS
-	Log           *slog.Logger
-	AuthMode      config.AuthMode
-	DevMode       bool
-	DevUsername   string
+	// WatchSSEHandler streams user-credentialed watch events for
+	// arbitrary resources (see internal/api/sse_watch.go). Separate
+	// from SSEHandler because its auth model and connection
+	// lifecycle differ — one watch per subscriber vs. a shared SA
+	// fan-out.
+	WatchSSEHandler *WatchSSEHandler
+	PageHandler     *handler.PageHandler
+	I18n            *i18n.Bundle
+	StaticFS        embed.FS
+	Log             *slog.Logger
+	AuthMode        config.AuthMode
+	DevMode         bool
+	DevUsername     string
 	// TrustForwardedHeaders is threaded through to the pre-auth IP
 	// rate limiter. Only set when cozytempl runs behind a trusted
 	// reverse proxy that strips client-supplied XFF. Mirrors
@@ -75,7 +81,8 @@ const strictTransportSecurity = "max-age=63072000; includeSubDomains; preload"
 // alone — the stream handler manages its own lifecycle.
 func withRequestTimeout(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
-		if strings.HasPrefix(req.URL.Path, "/api/events") {
+		if strings.HasPrefix(req.URL.Path, "/api/events") ||
+			strings.HasPrefix(req.URL.Path, "/api/watch/") {
 			next.ServeHTTP(writer, req)
 
 			return
@@ -185,7 +192,7 @@ func Router(cfg *RouterConfig) http.Handler {
 
 	protect := buildAuthMiddleware(cfg, mux, rateStore)
 
-	apiMux := registerAPIRoutes(cfg.TenantHandler, cfg.AppHandler, cfg.SchemaHandler, cfg.SSEHandler)
+	apiMux := registerAPIRoutes(cfg.TenantHandler, cfg.AppHandler, cfg.SchemaHandler, cfg.SSEHandler, cfg.WatchSSEHandler)
 	pageMux := registerPageRoutes(cfg.PageHandler)
 
 	mux.HandleFunc("GET /healthz", healthHandler)
@@ -306,6 +313,7 @@ func registerAPIRoutes(
 	appHandler *ApplicationHandler,
 	schemaHandler *SchemaHandler,
 	sseHandler *SSEHandler,
+	watchSSE *WatchSSEHandler,
 ) *http.ServeMux {
 	apiMux := http.NewServeMux()
 
@@ -324,6 +332,14 @@ func registerAPIRoutes(
 	apiMux.HandleFunc("GET /api/schemas/{kind}", schemaHandler.Get)
 
 	apiMux.HandleFunc("GET /api/events", sseHandler.Stream)
+
+	// nil when the caller did not configure a WatchSSEHandler — skip
+	// the route entirely rather than registering a handler that would
+	// nil-panic on the first request. Tests build a minimal
+	// RouterConfig and rely on this lenient wiring.
+	if watchSSE != nil {
+		apiMux.HandleFunc("GET /api/watch/{resource}", watchSSE.Stream)
+	}
 
 	return apiMux
 }

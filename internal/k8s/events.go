@@ -62,7 +62,7 @@ func (evs *EventService) ListInNamespace(
 // (`myapp-r`), PVCs with a `data-` prefix (`data-myapp-0`), etc. The
 // previous exact-match policy left the Events tab looking empty
 // whenever the actual trouble was on a subresource, which is the
-// usual case. See nameDerivedFromRelease for the exact set of
+// usual case. See NameDerivedFromRelease for the exact set of
 // patterns.
 //
 // The filter runs client-side because the K8s fieldSelector for
@@ -93,7 +93,7 @@ func (evs *EventService) ListForObject(
 
 	for idx := range list.Items {
 		objName := nestedString(list.Items[idx].Object, "involvedObject", "name")
-		if nameDerivedFromRelease(objName, name) {
+		if NameDerivedFromRelease(objName, name) {
 			matched = append(matched, list.Items[idx])
 		}
 	}
@@ -101,7 +101,7 @@ func (evs *EventService) ListForObject(
 	return dedupeByObjectReason(toSortedEvents(matched, 0), limit), nil
 }
 
-// nameDerivedFromRelease reports whether objName looks like a
+// NameDerivedFromRelease reports whether objName looks like a
 // resource "belonging to" release: an exact match, or the release
 // embedded as a hyphen-delimited segment of the name. This covers:
 //
@@ -113,7 +113,7 @@ func (evs *EventService) ListForObject(
 // The segment boundary check avoids sub-string false positives like
 // "myapp2-foo" matching release "myapp", which a naive
 // strings.Contains would catch incorrectly.
-func nameDerivedFromRelease(objName, release string) bool {
+func NameDerivedFromRelease(objName, release string) bool {
 	if release == "" || objName == "" {
 		return false
 	}
@@ -190,10 +190,20 @@ func toSortedEvents(items []unstructured.Unstructured, limit int) []Event {
 	return events
 }
 
+// EventFromUnstructured converts a raw core/v1 Event unstructured
+// object into the simplified Event shape the UI renders. Exported
+// so the SSE watch-proxy handler can reuse the same conversion the
+// paginated list path uses — keeping "live event row" and "refreshed
+// tab row" visually identical.
+func EventFromUnstructured(obj *unstructured.Unstructured) Event {
+	return toEvent(obj)
+}
+
 func toEvent(obj *unstructured.Unstructured) Event {
 	count, _, _ := unstructured.NestedInt64(obj.Object, "count")
 
 	return Event{
+		Name:      obj.GetName(),
 		Type:      nestedString(obj.Object, "type"),
 		Reason:    nestedString(obj.Object, "reason"),
 		Message:   nestedString(obj.Object, "message"),
