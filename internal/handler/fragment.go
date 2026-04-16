@@ -108,8 +108,8 @@ func (pgh *PageHandler) AppFormYAMLFragment(writer http.ResponseWriter, req *htt
 // AppFormYAMLFragment: the user types YAML on the YAML tab,
 // clicks "Apply to Form", and this endpoint parses the YAML
 // and re-renders the schema-driven form fields with the
-// resulting values populated. Covers the tikcet's "server-
-// side parser back into form state" contract.
+// resulting values populated — closing the round-trip between
+// raw YAML editing and the schema-driven UI.
 //
 // On invalid YAML the schema fields are re-rendered without
 // values so the user can still fall back to the form — a

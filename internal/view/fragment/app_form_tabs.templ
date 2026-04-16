@@ -27,6 +27,17 @@ import "github.com/lexfrei/cozytempl/internal/view/partial"
 // :has(:focus-visible) so a sighted keyboard user sees the
 // selection. Arrow keys cycle between radios (native browser
 // behaviour for same-name radio groups).
+// schemaFieldsID returns the DOM id of the schema-fields
+// container for a given form body id. Both the create and edit
+// modals render a container with this id inside
+// .app-form-tab-body-form, and the Apply-to-Form button
+// targets it directly — scoping per-bodyID prevents the edit
+// modal from accidentally rewriting the create modal's form
+// pane when the two coexist in the DOM.
+func schemaFieldsID(bodyID string) string {
+	return bodyID + "-schema-fields"
+}
+
 templ AppFormTabs(loadURL, applyURL, bodyID string, fields templ.Component) {
 	<div class="app-form-tabs">
 		<input type="radio" name="_tabmode" id={ bodyID + "-mode-form" } value="form" class="app-form-tab-input" checked/>
@@ -39,23 +50,25 @@ templ AppFormTabs(loadURL, applyURL, bodyID string, fields templ.Component) {
 				{ partial.Tc(ctx, "page.appForm.tabYAML") }
 			</label>
 		</div>
-		<div class="app-form-tab-body app-form-tab-body-form">
+		<div class="app-form-tab-body app-form-tab-body-form" id={ schemaFieldsID(bodyID) }>
 			@fields
 		</div>
 		<div class="app-form-tab-body app-form-tab-body-yaml">
-			<div class="form-hint">{ partial.Tc(ctx, "page.appForm.yamlHint") }</div>
+			<label class="form-hint" for={ bodyID + "-yaml-text" }>
+				{ partial.Tc(ctx, "page.appForm.yamlHint") }
+			</label>
 			<div class="app-form-yaml-actions">
 				<button type="button" class="btn btn-sm"
 					hx-post={ loadURL }
-					hx-include={ "#" + bodyID + " .app-form-tab-body-form input, #" + bodyID + " .app-form-tab-body-form select, #" + bodyID + " .app-form-tab-body-form textarea, #" + bodyID + " > [name='name'], #" + bodyID + " > [name='kind']" }
+					hx-include={ "#" + bodyID + " .app-form-tab-body-form input, #" + bodyID + " .app-form-tab-body-form select, #" + bodyID + " .app-form-tab-body-form textarea, #" + bodyID + " [name='name'], #" + bodyID + " [name='kind']" }
 					hx-target={ "#" + bodyID + "-yaml-text" }
 					hx-swap="innerHTML">
 					{ partial.Tc(ctx, "page.appForm.yamlLoadFromForm") }
 				</button>
 				<button type="button" class="btn btn-sm"
 					hx-post={ applyURL }
-					hx-include={ "#" + bodyID + "-yaml-text, #" + bodyID + " > [name='kind']" }
-					hx-target="#schema-fields"
+					hx-include={ "#" + bodyID + "-yaml-text, #" + bodyID + " [name='kind']" }
+					hx-target={ "#" + schemaFieldsID(bodyID) }
 					hx-swap="innerHTML">
 					{ partial.Tc(ctx, "page.appForm.yamlApplyToForm") }
 				</button>

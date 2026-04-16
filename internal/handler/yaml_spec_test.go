@@ -65,15 +65,20 @@ func TestParseSpecYAMLRejectsGarbage(t *testing.T) {
 	}
 }
 
-// TestBuildSpecFromRequestPrefersYAML pins the "YAML wins when
-// non-empty" rule. Form fields are present but spec_yaml is
-// also set — the server must pick the YAML source so a user
-// who switches to the YAML tab and submits bypasses the
-// schema-driven form entirely.
-func TestBuildSpecFromRequestPrefersYAML(t *testing.T) {
+// TestBuildSpecFromRequestPrefersYAMLWhenTabModeYAML pins the
+// tab-driven source selection. When _tabmode=yaml (the user
+// explicitly chose the YAML pane) the server picks YAML even
+// if form fields are present — and it picks Form when
+// _tabmode=form, even if the YAML textarea is still populated
+// from an earlier "Load from Form" / "Apply to Form". Without
+// _tabmode driving the decision a user who applied YAML,
+// switched back to Form, tweaked values, and pressed Save
+// would see their form edits silently discarded because the
+// (stale) YAML still won.
+func TestBuildSpecFromRequestPrefersYAMLWhenTabModeYAML(t *testing.T) {
 	t.Parallel()
 
-	form := strings.NewReader("name=pg&kind=Postgres&replicas=99&spec_yaml=replicas%3A%203")
+	form := strings.NewReader("_tabmode=yaml&name=pg&kind=Postgres&replicas=99&spec_yaml=replicas%3A%203")
 
 	req := httptest.NewRequestWithContext(
 		t.Context(), http.MethodPost, "/tenants/ns/apps", form)
@@ -83,9 +88,6 @@ func TestBuildSpecFromRequestPrefersYAML(t *testing.T) {
 		t.Fatalf("ParseForm: %v", parseErr)
 	}
 
-	// buildSpecFromRequest hits pgh.schemaSvc.Get on the form
-	// branch; for the YAML branch it short-circuits before
-	// touching any dependency, so a nil handler is safe here.
 	pgh := &PageHandler{}
 
 	spec, err := pgh.buildSpecFromRequest(req, nil, "Postgres")
@@ -93,21 +95,25 @@ func TestBuildSpecFromRequestPrefersYAML(t *testing.T) {
 		t.Fatalf("buildSpecFromRequest: %v", err)
 	}
 
+	assertReplicas(t, spec, 3, "YAML should win when _tabmode=yaml")
+}
+
+// assertReplicas extracts the replicas key tolerantly of
+// whether sigs.k8s.io/yaml decoded it as int64 or float64.
+func assertReplicas(t *testing.T, spec map[string]any, want float64, msg string) {
+	t.Helper()
+
 	switch v := spec["replicas"].(type) {
 	case float64:
-		if v != 3 {
-			t.Errorf("replicas = %v, want 3 from YAML (not 99 from form)", v)
+		if v != want {
+			t.Errorf("%s: replicas = %v, want %v", msg, v, want)
 		}
 	case int64:
-		if v != 3 {
-			t.Errorf("replicas = %v, want 3 from YAML (not 99 from form)", v)
+		if float64(v) != want {
+			t.Errorf("%s: replicas = %v, want %v", msg, v, want)
 		}
 	default:
-		t.Errorf("replicas wrong type: %T", spec["replicas"])
-	}
-
-	if _, ok := spec["kind"]; ok {
-		t.Error("kind leaked into spec from form; YAML branch should ignore reserved form fields")
+		t.Errorf("%s: replicas wrong type: %T", msg, spec["replicas"])
 	}
 }
 

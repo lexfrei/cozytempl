@@ -421,16 +421,21 @@ func (pgh *PageHandler) reportSpecBuildError(
 // accurate; the YAML branch skips schema entirely because
 // sigs.k8s.io/yaml already decodes native types.
 //
-// YAML mode wins when spec_yaml is non-empty — an empty
-// textarea means the user never touched the YAML tab, and
-// preserving that "ignore" rule keeps the default UX
-// (schema-driven form) intact for anyone who never clicks the
-// YAML tab.
+// The UI radio _tabmode is the source of truth: the user
+// explicitly chose YAML if the value is "yaml", otherwise the
+// form pane wins. Older clients or direct API consumers that
+// never set _tabmode fall back to "yaml wins if non-empty" so
+// cozytempl's /api/.../apps POST with a raw spec_yaml still
+// works without the radio in the payload.
 func (pgh *PageHandler) buildSpecFromRequest(
 	req *http.Request, usr *auth.UserContext, appKind string,
 ) (map[string]any, error) {
-	if raw := strings.TrimSpace(req.FormValue(formFieldSpecYAML)); raw != "" {
-		return parseSpecYAML(raw)
+	tabMode := req.FormValue(formFieldTabMode)
+	yamlRaw := strings.TrimSpace(req.FormValue(formFieldSpecYAML))
+
+	useYAML := tabMode == "yaml" || (tabMode == "" && yamlRaw != "")
+	if useYAML && yamlRaw != "" {
+		return parseSpecYAML(yamlRaw)
 	}
 
 	schema, err := pgh.schemaSvc.Get(req.Context(), usr, appKind)
