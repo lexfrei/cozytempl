@@ -3,6 +3,15 @@ import tsparser from "@typescript-eslint/parser";
 
 export default [
   {
+    // Test files (*.test.ts) are excluded from tsconfig's
+    // browser-typed project so they can pull in bun-types via
+    // a triple-slash reference without contaminating production
+    // code. Keeping them out of eslint here too avoids a
+    // "file not in project" parser error while still running
+    // the real linter on everything that ends up in the bundle.
+    ignores: ["static/ts/**/*.test.ts"],
+  },
+  {
     files: ["static/ts/**/*.ts"],
     languageOptions: {
       parser: tsparser,

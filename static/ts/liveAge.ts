@@ -1,64 +1,79 @@
 // LiveAge ticker.
 //
-// The server emits <time data-age-start="RFC3339"
-// data-server-now="RFC3339"> elements for Kubernetes-style
-// age columns. This module re-reads the data attribute on a
-// 1-second interval and rewrites the element's text so a row
-// that appeared "5s" ago becomes "6s", "7s", …, "1m", without
-// any server round-trip. The wire-up is document-wide and
-// idempotent: new rows arriving via htmx or SSE are picked up
-// on the next tick because the selector is re-evaluated every
-// iteration.
+// The server emits <time data-age-start="RFC3339"> elements
+// for Kubernetes-style age columns. A single
+// data-server-now attribute on <body> (set by the base
+// layout) carries the server's wall clock at render time
+// and is the only clock-skew anchor the ticker reads. This
+// module re-reads the per-element data-age-start on a
+// 1-second interval and rewrites the element's text so a
+// row that appeared "5s" ago becomes "6s", "7s", …, "1m",
+// without any server round-trip. The wire-up is
+// document-wide and idempotent: new rows arriving via htmx
+// or SSE are picked up on the next tick because the
+// selector is re-evaluated every iteration.
 //
 // Single-unit output matches kubectl: "2m", "5h", "3d". The
-// humaniser lives here in TypeScript (server also has its own
-// Go copy in internal/view/partial/live_age.templ) — the
-// first-paint value is server-rendered so a user on a slow
-// JS-gate doesn't stare at a raw timestamp, and the ticker
-// takes over on the first interval firing. Both humanisers
-// must stay in sync; the Go side pins the boundaries via
-// TestHumanizeAgeBoundaries and the TS side via its own
-// sibling test (liveAge.test.ts).
+// humaniser lives here in TypeScript (server also has its
+// own Go copy in internal/view/partial/live_age.templ) —
+// the first-paint value is server-rendered so a user on a
+// slow JS-gate doesn't stare at a raw timestamp, and the
+// ticker takes over on the first interval firing. Both
+// humanisers must stay in sync; the Go side pins the
+// boundaries via TestHumanizeAgeBoundaries and the TS side
+// via its own sibling test (liveAge.test.ts).
 //
 // Two real-world concerns handled:
 //
 //  1. Clock skew. A user whose laptop drifted by 40s would
 //     see the column jump on the first tick if the ticker
 //     computed deltas against the browser clock alone. On
-//     init we read data-server-now from the first visible
-//     live-age element and compute a fixed offset; every
-//     tick uses `Date.now() - offset` as the reference
-//     "now", so the first tick agrees with the first paint.
+//     init we read <body data-server-now> and compute a
+//     fixed offset; every tick uses `Date.now() + offset`
+//     as the reference "now", so the first tick agrees
+//     with the first paint.
 //
-//  2. Idle tabs. A user who opens the dashboard, locks their
-//     screen for 8 hours, and comes back should not have
-//     paid for 28,800 DOM walks. The ticker early-returns
-//     when document.hidden is true; visibilitychange
-//     re-runs one tick on resume so the column catches up
-//     to the current time instead of jumping second-by-
-//     second back to present.
+//  2. Idle tabs. Modern browsers already throttle hidden-
+//     tab setInterval callbacks to about once per minute,
+//     so the raw firing rate is already modest. What the
+//     ticker still wants to avoid is the DOM walk itself:
+//     a tab open for a long time on a page with hundreds
+//     of rows would wake querySelectorAll every tick even
+//     while the user is not looking. document.hidden → no
+//     tick; a visibilitychange listener re-runs a single
+//     catch-up tick on resume so the column jumps straight
+//     to the right value instead of marching second-by-
+//     second from the last paint.
 
 const TICK_INTERVAL_MS = 1000;
 const SELECTOR = "[data-age-start]";
+
+// The clock-skew anchor lives on <body>; a querySelector
+// against this selector returns either the <body> or (if
+// a future change moves the marker) whichever element
+// carries it. Scoping it document-wide keeps the ticker
+// agnostic to where the marker is rendered.
 const SERVER_NOW_SELECTOR = "[data-server-now]";
 
 let tickerHandle: ReturnType<typeof setInterval> | null = null;
+let visibilityListenerAttached = false;
 
 // serverClockOffsetMs is `serverNow - clientNow` at init
 // time, in milliseconds. Positive means the server is ahead
-// of the client; the ticker subtracts this from Date.now() to
-// produce a "server-wall-clock now" that agrees with what the
-// server used for the first-paint values. Recomputed on every
-// visibilitychange resume because long sleeps can drift the
-// client clock (e.g. phones / laptops across time zones).
+// of the client; the ticker adds this to Date.now() to
+// produce a "server-wall-clock now" that agrees with what
+// the server used for the first-paint values. A missing or
+// malformed server-now marker leaves the offset at its last
+// known value — zeroing would re-introduce the skew jump
+// this logic exists to prevent.
 let serverClockOffsetMs = 0;
 
 // humanizeAge mirrors the Go side byte-for-byte: <1s → "0s",
 // <60s → "Ns", <60m → "Nm", <24h → "Nh", <365d → "Nd", else
 // "Ny". If the Go side flips a boundary this function must
-// move too — the server renders the first-paint value and the
-// client paints every tick after, and a divergence would make
-// the column visibly jump on the first tick.
+// move too — the server renders the first-paint value and
+// the client paints every tick after, and a divergence
+// would make the column visibly jump on the first tick.
 export function humanizeAge(deltaMs: number): string {
   if (deltaMs < 1000) {
     return "0s";
@@ -89,43 +104,35 @@ export function humanizeAge(deltaMs: number): string {
   return `${years}y`;
 }
 
-// refreshServerClockOffset re-reads the first live-age
-// element's data-server-now and sets serverClockOffsetMs.
-// Called on init and on visibilitychange resume so a laptop
-// that was asleep across a timezone change does not carry a
-// stale offset forever.
+// refreshServerClockOffset re-reads the first element
+// carrying data-server-now (in production: <body>) and
+// updates serverClockOffsetMs. If the anchor is missing or
+// malformed the previous offset is preserved — an earlier
+// revision zeroed out, which threw away a valid offset
+// every time the anchor row disappeared (e.g. if the
+// marker moved to a deletable table row in a refactor) and
+// re-introduced the client-clock-jump this function exists
+// to prevent.
 function refreshServerClockOffset(): void {
   const anchor = document.querySelector<HTMLElement>(SERVER_NOW_SELECTOR);
-  if (!anchor) {
-    serverClockOffsetMs = 0;
-
-    return;
-  }
+  if (!anchor) return;
 
   const raw = anchor.dataset.serverNow;
-  if (!raw) {
-    serverClockOffsetMs = 0;
-
-    return;
-  }
+  if (!raw) return;
 
   const serverMs = Date.parse(raw);
-  if (Number.isNaN(serverMs)) {
-    serverClockOffsetMs = 0;
-
-    return;
-  }
+  if (Number.isNaN(serverMs)) return;
 
   serverClockOffsetMs = serverMs - Date.now();
 }
 
 // titleForTimestamp formats the absolute timestamp into the
-// USER's locale and timezone. Server-side the Go renderer has
-// no way to know either: it runs in whatever container
-// timezone (usually UTC) and whatever locale the OS was built
-// with. Formatting client-side on init means a user in Berlin
-// sees "15.01.2026, 10:30:00 MEZ" instead of the server's
-// "Jan 15, 2026, 10:30:00 AM UTC".
+// USER's locale and timezone. Server-side the Go renderer
+// has no way to know either: it runs in whatever container
+// timezone (usually UTC) and whatever locale the OS was
+// built with. Formatting client-side on init means a user
+// in Berlin sees "15.01.2026, 10:30:00 MEZ" instead of the
+// server's "Jan 15, 2026, 10:30:00 AM UTC".
 function titleForTimestamp(raw: string): string {
   const ms = Date.parse(raw);
   if (Number.isNaN(ms)) return raw;
@@ -145,22 +152,6 @@ function titleForTimestamp(raw: string): string {
     // default locale string.
     return new Date(ms).toLocaleString();
   }
-}
-
-// populateTitles walks every live-age element and sets the
-// title= attribute if it isn't set yet. Idempotent so it can
-// run on init AND on each tick without double-setting.
-function populateTitles(): void {
-  const elements = document.querySelectorAll<HTMLElement>(SELECTOR);
-
-  elements.forEach((el) => {
-    if (el.title) return;
-
-    const raw = el.dataset.ageStart;
-    if (!raw) return;
-
-    el.title = titleForTimestamp(raw);
-  });
 }
 
 function tick(clientNow: number): void {
@@ -186,8 +177,10 @@ function tick(clientNow: number): void {
       el.textContent = next;
     }
 
-    // New elements showing up via htmx swap may not have had
-    // populateTitles run on them yet; fill the tooltip now.
+    // Populate the locale-aware tooltip lazily. The
+    // attribute is server-omitted (server does not know the
+    // user's timezone) so the first time the ticker sees an
+    // element it fills title=; idempotent on later ticks.
     if (!el.title) {
       el.title = titleForTimestamp(raw);
     }
@@ -201,7 +194,7 @@ function handleVisibilityChange(): void {
   // sleep (suspended laptops, cellular handoffs). Re-read
   // the server-now offset and run one catch-up tick so the
   // column jumps straight to the right value instead of
-  // marching second-by-second.
+  // marching second-by-second back to present.
   refreshServerClockOffset();
   tick(Date.now());
 }
@@ -210,16 +203,36 @@ export function initLiveAge(): void {
   if (tickerHandle !== null) return;
 
   refreshServerClockOffset();
-  populateTitles();
 
-  // Paint once immediately so a row added between ticks does
-  // not show its stale server-rendered value for up to a
-  // second. Subsequent ticks run on a plain setInterval.
+  // Paint once immediately so a row added between ticks
+  // does not show its stale server-rendered value for up
+  // to a second. Subsequent ticks run on a plain
+  // setInterval. tick also handles the title=populate so
+  // we do not need a separate walk.
   tick(Date.now());
 
   tickerHandle = setInterval(() => {
     tick(Date.now());
   }, TICK_INTERVAL_MS);
 
-  document.addEventListener("visibilitychange", handleVisibilityChange);
+  if (!visibilityListenerAttached) {
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    visibilityListenerAttached = true;
+  }
+}
+
+// stopLiveAge tears down the interval and visibility
+// listener. Exposed for tests and for any future SPA-style
+// navigation that re-initialises modules; not called from
+// the current initAll() path.
+export function stopLiveAge(): void {
+  if (tickerHandle !== null) {
+    clearInterval(tickerHandle);
+    tickerHandle = null;
+  }
+
+  if (visibilityListenerAttached) {
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+    visibilityListenerAttached = false;
+  }
 }

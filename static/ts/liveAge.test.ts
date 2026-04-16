@@ -1,3 +1,5 @@
+/// <reference types="bun-types" />
+
 // liveAge.test.ts — bun test
 //
 // Pins the TypeScript humaniser against the same boundary
@@ -8,6 +10,13 @@
 // what these tests prevent.
 //
 // Run with: bun test static/ts/liveAge.test.ts
+//
+// The triple-slash reference scopes bun globals to THIS file
+// so the setInterval/setTimeout overloads in reveal.ts and
+// friends keep the browser return types they were written
+// against. A plain `"types": ["bun-types"]` in the root
+// tsconfig silently overwrites those for every .ts file and
+// breaks `tsc --noEmit` in unrelated modules.
 
 import { describe, expect, test } from "bun:test";
 

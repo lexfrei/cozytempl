@@ -12,14 +12,17 @@ import (
 // TypeScript module (static/ts/liveAge.ts) re-reads the data
 // attribute on a 1-second interval and rewrites the text.
 //
-// A per-element `data-server-now` attribute carries the
-// server's wall clock at render time so the ticker can
-// compute a clock-skew offset against the browser's clock on
-// init. Without it, a user whose laptop clock drifted by 40
-// seconds would see the column "jump" from the server's
-// value to the client's on the first tick; the offset makes
-// the first tick agree with the first paint regardless of
-// whose clock is right.
+// Clock-skew correction lives in the layout, not here. The
+// base layout (internal/view/layout/base.templ) stamps the
+// server wall-clock into a single data-server-now attribute
+// on <body>, which the ticker reads exactly once to compute
+// its offset. Emitting the server-now marker per element
+// would bloat the wire on pages with hundreds of age columns
+// and, worse, would create a moving target: SSE-injected
+// rows would carry a fresher server-now that the ticker
+// would ignore anyway, until the anchor row it *did* read
+// got removed and the next visibility-resume picked up an
+// arbitrary later row's value — a silent offset jump.
 //
 // Rendered as a <time> element so the datetime= attribute is
 // available to assistive tech and screen readers that prefer
@@ -36,8 +39,7 @@ templ LiveAge(t time.Time) {
 		<time
 			class="live-age"
 			datetime={ t.UTC().Format(time.RFC3339) }
-			data-age-start={ t.UTC().Format(time.RFC3339) }
-			data-server-now={ time.Now().UTC().Format(time.RFC3339) }>
+			data-age-start={ t.UTC().Format(time.RFC3339) }>
 			{ HumanizeAge(time.Since(t)) }
 		</time>
 	}

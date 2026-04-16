@@ -184,6 +184,21 @@ jobs:
       - name: go test (race)
         run: go test ./cmd/... ./internal/... ./static/... -count=1 -race
 
+      # The TypeScript humaniser in liveAge.ts MUST produce
+      # the same output as the Go HumanizeAge function on
+      # every boundary — the server paints the first value
+      # and the client ticks from there, so a divergence
+      # makes the age column visibly jump. bun:test pins this
+      # invariant. Installed via the official oven-sh setup
+      # action pinned to v2 (stable major).
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: bun test (TypeScript)
+        run: bun test static/ts/
+
       - name: go build
         run: CGO_ENABLED=0 go build -o bin/cozytempl ./cmd/cozytempl
 

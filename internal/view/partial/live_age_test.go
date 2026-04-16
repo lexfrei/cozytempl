@@ -103,13 +103,14 @@ func TestLiveAgeRendersDataAttribute(t *testing.T) {
 		t.Errorf("output missing live-age class — ticker selector would miss this element:\n%s", got)
 	}
 
-	// The server-now attribute is how the TS ticker computes
-	// the clock-skew offset. Its absence would leave the
-	// ticker using the raw browser clock, which can differ
-	// from the server's by seconds-to-minutes on laptops
-	// that were asleep or phones on cellular.
-	if !containsSubstring(got, `data-server-now="`) {
-		t.Errorf("output missing data-server-now for clock-skew correction:\n%s", got)
+	// The clock-skew marker (data-server-now) is emitted
+	// once per document on <body>, NOT per live-age element.
+	// A regression that moved the marker back onto the
+	// <time> would inflate the wire on pages with hundreds
+	// of age columns and create a moving-target footgun for
+	// SSE-injected rows. Guard against it here.
+	if containsSubstring(got, `data-server-now`) {
+		t.Errorf("LiveAge must not emit data-server-now; the base layout owns the one-per-document marker:\n%s", got)
 	}
 }
 
