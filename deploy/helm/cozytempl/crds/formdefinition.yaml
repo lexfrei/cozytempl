@@ -29,7 +29,6 @@ kind: CustomResourceDefinition
 metadata:
   name: formdefinitions.cozytempl.cozystack.io
   annotations:
-    controller-gen.kubebuilder.io/version: v0.0.0
     cozytempl.cozystack.io/hand-written: "true"
 spec:
   group: cozytempl.cozystack.io

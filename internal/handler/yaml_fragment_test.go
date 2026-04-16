@@ -72,6 +72,103 @@ func fakePostgresSchema() *k8s.AppSchema {
 	}
 }
 
+// fakeFormDefinitionService is the formDefinitionService
+// stub. Returns the canned overrides slice for a given kind
+// or nil if the kind is absent. An err lets tests exercise
+// the "degrade to schema-only on service error" branch.
+type fakeFormDefinitionService struct {
+	overrides map[string][]k8s.FormFieldOverride
+	err       error
+}
+
+func (f *fakeFormDefinitionService) GetOverridesForKind(
+	_ context.Context, _ *auth.UserContext, kind string,
+) ([]k8s.FormFieldOverride, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+
+	return f.overrides[kind], nil
+}
+
+// TestSchemaFieldsFragmentAppliesFormDefinitionOverrides pins
+// the end-to-end FormDefinition rendering path: a handler with
+// a fake formDefSvc returning a label override must emit that
+// label in the HTML. Without this test every pure-function
+// merge test passes and the integration point can still break
+// — the handler, the resolveFormOverrides helper, and the
+// templ render are only exercised together here.
+func TestSchemaFieldsFragmentAppliesFormDefinitionOverrides(t *testing.T) {
+	t.Parallel()
+
+	pgh := &PageHandler{
+		log:       slog.New(slog.DiscardHandler),
+		schemaSvc: &fakeSchemaService{schemas: map[string]*k8s.AppSchema{"Postgres": fakePostgresSchema()}},
+		formDefSvc: &fakeFormDefinitionService{overrides: map[string][]k8s.FormFieldOverride{
+			"Postgres": {{Path: "replicas", Label: "Replica count"}},
+		}},
+	}
+
+	req := httptest.NewRequestWithContext(
+		withFragmentTestUser(t), http.MethodGet,
+		"/fragments/schema-fields?kind=Postgres", nil)
+
+	rec := httptest.NewRecorder()
+	pgh.SchemaFieldsFragment(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	body := rec.Body.String()
+
+	if !strings.Contains(body, "Replica count") {
+		t.Errorf("overridden label missing from response; overlay not applied:\n%s", body)
+	}
+
+	// The schema's raw title ("replicas", since the schema
+	// has no explicit title=) should not land in the output
+	// when an override is in effect — the overlay replaces
+	// the title.
+	if strings.Contains(body, ">replicas<") {
+		t.Errorf("raw schema title leaked through override:\n%s", body)
+	}
+}
+
+// TestSchemaFieldsFragmentNoFormDefinitionService pins that a
+// nil formDefSvc (tests, or production clusters where the CRD
+// is not installed) falls through to schema-only rendering.
+// resolveFormOverrides short-circuits on nil.
+func TestSchemaFieldsFragmentNoFormDefinitionService(t *testing.T) {
+	t.Parallel()
+
+	pgh := &PageHandler{
+		log:       slog.New(slog.DiscardHandler),
+		schemaSvc: &fakeSchemaService{schemas: map[string]*k8s.AppSchema{"Postgres": fakePostgresSchema()}},
+		// formDefSvc intentionally left nil.
+	}
+
+	req := httptest.NewRequestWithContext(
+		withFragmentTestUser(t), http.MethodGet,
+		"/fragments/schema-fields?kind=Postgres", nil)
+
+	rec := httptest.NewRecorder()
+	pgh.SchemaFieldsFragment(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 — nil formDefSvc must not break schema rendering", rec.Code)
+	}
+
+	body := rec.Body.String()
+
+	// Schema-only rendering emits the raw property key as the
+	// label (since fakePostgresSchema has no title=). Confirm
+	// that fallback path works.
+	if !strings.Contains(body, `name="replicas"`) {
+		t.Errorf("schema-only fallback failed to render replicas input:\n%s", body)
+	}
+}
+
 // TestAppFormYAMLFragmentRequiresAuth pins the 401 guard — a
 // misconfigured route without the middleware must not leak
 // form-sourced spec YAML to an anonymous caller.

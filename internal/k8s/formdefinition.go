@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"sync"
-	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -22,8 +20,6 @@ import (
 // ErrInvalidFormDefinition is returned when a FormDefinition
 // object cannot be parsed into the typed struct below.
 var ErrInvalidFormDefinition = errors.New("invalid FormDefinition")
-
-const formDefCacheTTL = 5 * time.Minute
 
 // formDefGVR mirrors the CRD shipped at
 // deploy/helm/cozytempl/crds/formdefinition.yaml. Cluster-
@@ -113,34 +109,33 @@ type FormFieldOverride struct {
 	Hidden bool `json:"hidden,omitempty"`
 }
 
-// FormDefinitionService lists and caches FormDefinition
-// resources using the same impersonated-dynamic-client stack
-// SchemaService uses. Cluster-scoped reads go through the
-// caller's Kubernetes identity so operators can scope
-// visibility with RBAC just like they do for
-// ApplicationDefinitions.
+// FormDefinitionService lists FormDefinition resources using
+// the same impersonated-dynamic-client stack SchemaService
+// uses. Cluster-scoped reads go through the caller's
+// Kubernetes identity so the RBAC the operator configures on
+// FormDefinitions is what actually decides what the user sees.
+//
+// The service is deliberately cacheless. An earlier revision
+// shared a single map[kind]overrides across every caller,
+// which meant the first viewer to trigger a refresh filled
+// the cache and every subsequent caller read that viewer's
+// RBAC-filtered list — a cross-user leak. Per-render list
+// calls are cheap (FormDefinitions are small, few, and the
+// apiserver's etcd Get is fast) and keep the "user identity
+// drives visibility" contract honest. If telemetry later
+// shows the list call is a real bottleneck, the fix is a
+// per-user cache keyed on UserContext.Username, NOT a return
+// to the shared bucket.
 type FormDefinitionService struct {
-	baseCfg *restConfigLike
+	baseCfg *rest.Config
 	mode    config.AuthMode
-	cache   map[string][]FormFieldOverride
-	mu      sync.RWMutex
-	fetched time.Time
 }
-
-// restConfigLike is the narrow interface the service needs
-// from rest.Config: enough to build a user client through
-// NewUserClient. Kept local so the file does not need to
-// import "k8s.io/client-go/rest" directly for the typed
-// signature; NewUserClient already pulls the real type in
-// through the same package.
-type restConfigLike = rest.Config
 
 // NewFormDefinitionService constructs the service.
 func NewFormDefinitionService(baseCfg *rest.Config, mode config.AuthMode) *FormDefinitionService {
 	return &FormDefinitionService{
 		baseCfg: baseCfg,
 		mode:    mode,
-		cache:   map[string][]FormFieldOverride{},
 	}
 }
 
@@ -152,13 +147,11 @@ func NewFormDefinitionService(baseCfg *rest.Config, mode config.AuthMode) *FormD
 // on alphabetical ordering to pick the winner.
 //
 // Returns nil (not an error) when no FormDefinition targets
-// the kind — an absent CRD is the pre-existing behaviour and
-// callers fall through to schema-only rendering.
-//
-// The cache is a single all-kinds slice refreshed every
-// formDefCacheTTL; we refetch every kind's list on the same
-// cadence so a newly-applied FormDefinition becomes visible
-// within the TTL without a cozytempl restart.
+// the kind, when the CRD is not installed, or when RBAC
+// forbids the list. An absent overlay is the pre-existing
+// behaviour and callers fall through to schema-only rendering
+// — a render path must not break because the FormDefinition
+// machinery failed.
 func (fds *FormDefinitionService) GetOverridesForKind(
 	ctx context.Context, usr *auth.UserContext, kind string,
 ) ([]FormFieldOverride, error) {
@@ -166,24 +159,35 @@ func (fds *FormDefinitionService) GetOverridesForKind(
 		return nil, nil
 	}
 
-	fds.mu.RLock()
-
-	fresh := time.Since(fds.fetched) < formDefCacheTTL
-	cached, have := fds.cache[kind]
-
-	fds.mu.RUnlock()
-
-	if fresh && have {
-		return cached, nil
+	client, err := NewUserClient(fds.baseCfg, usr, fds.mode)
+	if err != nil {
+		return nil, err
 	}
 
-	return fds.refreshAndLookup(ctx, usr, kind)
+	defs, listErr := listFormDefinitions(ctx, client)
+	if listErr != nil {
+		slog.Debug("listing FormDefinitions failed; falling back to schema-only render",
+			"kind", kind, "error", listErr)
+
+		return nil, nil
+	}
+
+	var merged []FormFieldOverride
+
+	for _, def := range defs {
+		if def.Kind != kind {
+			continue
+		}
+
+		merged = append(merged, def.Fields...)
+	}
+
+	return merged, nil
 }
 
 // List returns every FormDefinition visible to the user.
 // Exposed for diagnostic surfaces (e.g. an admin page that
-// wants to enumerate overlays) and for tests; the render
-// path uses GetOverridesForKind, which is cache-backed.
+// wants to enumerate overlays) and for tests.
 func (fds *FormDefinitionService) List(
 	ctx context.Context, usr *auth.UserContext,
 ) ([]FormDefinition, error) {
@@ -195,41 +199,6 @@ func (fds *FormDefinitionService) List(
 	return listFormDefinitions(ctx, client)
 }
 
-func (fds *FormDefinitionService) refreshAndLookup(
-	ctx context.Context, usr *auth.UserContext, kind string,
-) ([]FormFieldOverride, error) {
-	client, err := NewUserClient(fds.baseCfg, usr, fds.mode)
-	if err != nil {
-		return nil, err
-	}
-
-	defs, err := listFormDefinitions(ctx, client)
-	if err != nil {
-		// Cache miss + fetch error: return nil, no error —
-		// a render path failing because the FormDefinition
-		// CRD is not installed, or because RBAC forbids the
-		// list, should not break the form. Log and fall
-		// through to schema-only behaviour.
-		slog.Debug("listing FormDefinitions failed; falling back to schema-only render",
-			"kind", kind, "error", err)
-
-		return nil, nil
-	}
-
-	byKind := map[string][]FormFieldOverride{}
-
-	for _, def := range defs {
-		byKind[def.Kind] = append(byKind[def.Kind], def.Fields...)
-	}
-
-	fds.mu.Lock()
-	fds.cache = byKind
-	fds.fetched = time.Now()
-	fds.mu.Unlock()
-
-	return byKind[kind], nil
-}
-
 // listFormDefinitions is the raw fetch-and-parse helper,
 // split out so the service can call it without holding the
 // cache lock and the test layer can drive it directly.
@@ -239,13 +208,28 @@ func listFormDefinitions(ctx context.Context, client dynamic.Interface) ([]FormD
 		return nil, fmt.Errorf("listing FormDefinitions: %w", err)
 	}
 
-	defs := make([]FormDefinition, 0, len(list.Items))
+	return formDefinitionsFromList(list.Items), nil
+}
 
-	names := make([]string, 0, len(list.Items))
+// formDefinitionsFromList is the pure sort-and-parse core of
+// listFormDefinitions, split out so merge-by-name precedence
+// can be tested without a fake dynamic client. Invariants:
+//
+//   - Items are sorted by metadata.name before parsing so the
+//     returned slice has a stable, operator-visible order that
+//     GetOverridesForKind then folds into a last-write-wins
+//     overlay.
+//   - Malformed entries (missing spec, missing spec.kind) are
+//     logged and skipped; one bad FormDefinition does not hide
+//     the rest.
+func formDefinitionsFromList(items []unstructured.Unstructured) []FormDefinition {
+	defs := make([]FormDefinition, 0, len(items))
+
+	names := make([]string, 0, len(items))
 	byName := map[string]*unstructured.Unstructured{}
 
-	for i := range list.Items {
-		obj := &list.Items[i]
+	for i := range items {
+		obj := &items[i]
 		name := obj.GetName()
 		names = append(names, name)
 		byName[name] = obj
@@ -268,7 +252,7 @@ func listFormDefinitions(ctx context.Context, client dynamic.Interface) ([]FormD
 		defs = append(defs, *def)
 	}
 
-	return defs, nil
+	return defs
 }
 
 func parseFormDefinition(obj *unstructured.Unstructured) (*FormDefinition, error) {

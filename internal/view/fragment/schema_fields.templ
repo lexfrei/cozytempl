@@ -58,29 +58,24 @@ func looksLikeSecret(key string) bool {
 	return false
 }
 
-// SchemaFields renders form fields dynamically from a JSON Schema.
-// For edit flows use SchemaFieldsWithValues to pre-populate the form.
-templ SchemaFields(schema k8s.AppSchema) {
-	@SchemaFieldsWithOverrides(schema, nil, nil)
-}
-
-// SchemaFieldsWithValues is the variant used by edit flows: the values
-// map overrides the schema-level default so the form opens displaying
-// whatever the user previously submitted. A nil values map is equivalent
-// to SchemaFields. Nested object properties are recursively flattened
-// into dot-path form-field names ("backup.enabled", "backup.schedule"),
-// up to maxNestedDepth, and grouped by their top-level key so the user
-// sees a visual hierarchy.
-templ SchemaFieldsWithValues(schema k8s.AppSchema, values map[string]any) {
-	@SchemaFieldsWithOverrides(schema, values, nil)
-}
-
-// SchemaFieldsWithOverrides is the FormDefinition-aware variant. The
-// overrides map is keyed by field dot-path and layers label, hint,
-// placeholder, order, and hidden on top of the schema-derived values.
-// A nil overrides map is equivalent to SchemaFieldsWithValues; every
-// code path must survive "no FormDefinition applies to this kind"
-// without changing behaviour.
+// SchemaFieldsWithOverrides is the single entry point for
+// schema-driven form rendering. Nested object properties are
+// recursively flattened into dot-path form-field names
+// ("backup.enabled", "backup.schedule"), up to
+// maxNestedDepth, and grouped by their top-level key so the
+// user sees a visual hierarchy.
+//
+// The values map, when non-nil, overrides per-field schema
+// defaults with the user's current spec — used by edit flows
+// so the form opens with the live cluster state. A nil values
+// map renders the pure schema defaults.
+//
+// The overrides map is the FormDefinition overlay for this
+// kind, keyed by field dot-path. It layers label, hint,
+// placeholder, order, and hidden on top of the schema-derived
+// values. A nil overrides map renders the pure schema — every
+// code path must survive "no FormDefinition applies to this
+// kind" without changing behaviour.
 //
 // Rendering stays a single pass: walkProperties already applies the
 // Hidden flag (so a skipped field is absent from the flat list),

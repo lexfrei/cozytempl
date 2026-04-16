@@ -1,7 +1,10 @@
 package k8s
 
 import (
+	"errors"
 	"testing"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func TestOverridesByPathLastWriteWins(t *testing.T) {
@@ -235,5 +238,121 @@ func TestParseFieldOverrideRejectsEmptyPath(t *testing.T) {
 	got := parseFieldOverride(map[string]any{"path": ""})
 	if got != nil {
 		t.Error("parseFieldOverride accepted empty path; malformed entries must be dropped")
+	}
+}
+
+// TestFormDefinitionsFromListPrecedence pins the "later name
+// in sort order wins on path conflict" contract that the whole
+// merge layer depends on. If this flips, operators who layer
+// overlays like "00-base" + "50-tenant-a-overrides" get the
+// wrong overlay rendered.
+func TestFormDefinitionsFromListPrecedence(t *testing.T) {
+	t.Parallel()
+
+	items := []unstructured.Unstructured{
+		{Object: map[string]any{
+			"metadata": map[string]any{"name": "50-override"},
+			"spec": map[string]any{
+				"kind": "Postgres",
+				"fields": []any{
+					map[string]any{"path": "replicas", "label": "Override"},
+				},
+			},
+		}},
+		{Object: map[string]any{
+			"metadata": map[string]any{"name": "00-base"},
+			"spec": map[string]any{
+				"kind": "Postgres",
+				"fields": []any{
+					map[string]any{"path": "replicas", "label": "Base"},
+				},
+			},
+		}},
+	}
+
+	defs := formDefinitionsFromList(items)
+	if len(defs) != 2 {
+		t.Fatalf("got %d defs, want 2", len(defs))
+	}
+
+	// Sort is on metadata.name alphabetical; "00-base" sorts
+	// first, "50-override" second.
+	if defs[0].Fields[0].Label != "Base" {
+		t.Errorf("defs[0] = %q, want Base — sort-by-name broken", defs[0].Fields[0].Label)
+	}
+
+	if defs[1].Fields[0].Label != "Override" {
+		t.Errorf("defs[1] = %q, want Override — sort-by-name broken", defs[1].Fields[0].Label)
+	}
+
+	// Fold the slice through OverridesByPath: last-write-wins
+	// means "50-override" must be the effective label.
+	var all []FormFieldOverride
+	for _, d := range defs {
+		all = append(all, d.Fields...)
+	}
+
+	merged := OverridesByPath(all)
+	if merged["replicas"].Label != "Override" {
+		t.Errorf("merged label = %q, want Override (last-write-wins on path conflict)", merged["replicas"].Label)
+	}
+}
+
+// TestFormDefinitionsFromListSkipsMalformed confirms that a
+// single malformed CR in the list does not taint every other
+// overlay. An operator who applies a FormDefinition with a
+// missing spec.kind should see their own CR ignored, not every
+// sibling FormDefinition silently dropped.
+func TestFormDefinitionsFromListSkipsMalformed(t *testing.T) {
+	t.Parallel()
+
+	items := []unstructured.Unstructured{
+		{Object: map[string]any{
+			"metadata": map[string]any{"name": "good"},
+			"spec": map[string]any{
+				"kind": "Postgres",
+				"fields": []any{
+					map[string]any{"path": "replicas", "label": "OK"},
+				},
+			},
+		}},
+		{Object: map[string]any{
+			"metadata": map[string]any{"name": "bad-missing-kind"},
+			"spec":     map[string]any{},
+		}},
+		{Object: map[string]any{
+			"metadata": map[string]any{"name": "bad-no-spec"},
+		}},
+	}
+
+	defs := formDefinitionsFromList(items)
+	if len(defs) != 1 {
+		t.Fatalf("got %d defs, want 1 (the good one)", len(defs))
+	}
+
+	if defs[0].Kind != "Postgres" {
+		t.Errorf("surviving def kind = %q, want Postgres", defs[0].Kind)
+	}
+}
+
+// TestParseFormDefinitionMissingSpecKind pins the specific
+// error the CRD's schema also enforces: spec.kind is required.
+// A CR without it is rejected as ErrInvalidFormDefinition so
+// the higher-level list loop can log + skip.
+func TestParseFormDefinitionMissingSpecKind(t *testing.T) {
+	t.Parallel()
+
+	obj := &unstructured.Unstructured{Object: map[string]any{
+		"metadata": map[string]any{"name": "no-kind"},
+		"spec":     map[string]any{"kind": ""},
+	}}
+
+	_, err := parseFormDefinition(obj)
+	if err == nil {
+		t.Fatal("parseFormDefinition accepted empty spec.kind")
+	}
+
+	if !errors.Is(err, ErrInvalidFormDefinition) {
+		t.Errorf("err = %v, want wraps ErrInvalidFormDefinition", err)
 	}
 }

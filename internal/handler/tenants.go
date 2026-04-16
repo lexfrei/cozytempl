@@ -97,6 +97,7 @@ func (pgh *PageHandler) TenantsPage(writer http.ResponseWriter, req *http.Reques
 	data := view.TenantsPageData{
 		Tenants:         items,
 		TenantSchema:    pgh.fetchTenantSchema(req, usr),
+		TenantOverrides: pgh.resolveFormOverrides(req.Context(), usr, tenantSchemaKind),
 		MetricsEnabled:  metricsEnabled,
 		PreselectedKind: pgh.resolvePreselectedKind(req, usr),
 	}
