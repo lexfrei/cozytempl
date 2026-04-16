@@ -37,6 +37,7 @@ type RouterConfig struct {
 	// fan-out.
 	WatchSSEHandler *WatchSSEHandler
 	PaletteHandler  *PaletteHandler
+	WSLogHandler    *WSLogHandler
 	PageHandler     *handler.PageHandler
 	I18n            *i18n.Bundle
 	StaticFS        embed.FS
@@ -83,7 +84,8 @@ const strictTransportSecurity = "max-age=63072000; includeSubDomains; preload"
 func withRequestTimeout(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
 		if strings.HasPrefix(req.URL.Path, "/api/events") ||
-			strings.HasPrefix(req.URL.Path, "/api/watch/") {
+			strings.HasPrefix(req.URL.Path, "/api/watch/") ||
+			strings.HasPrefix(req.URL.Path, "/api/logs/") {
 			next.ServeHTTP(writer, req)
 
 			return
@@ -193,7 +195,11 @@ func Router(cfg *RouterConfig) http.Handler {
 
 	protect := buildAuthMiddleware(cfg, mux, rateStore)
 
-	apiMux := registerAPIRoutes(cfg.TenantHandler, cfg.AppHandler, cfg.SchemaHandler, cfg.SSEHandler, cfg.WatchSSEHandler, cfg.PaletteHandler)
+	apiMux := registerAPIRoutes(
+		cfg.TenantHandler, cfg.AppHandler, cfg.SchemaHandler,
+		cfg.SSEHandler, cfg.WatchSSEHandler, cfg.PaletteHandler,
+		cfg.WSLogHandler,
+	)
 	pageMux := registerPageRoutes(cfg.PageHandler)
 
 	mux.HandleFunc("GET /healthz", healthHandler)
@@ -316,6 +322,7 @@ func registerAPIRoutes(
 	sseHandler *SSEHandler,
 	watchSSE *WatchSSEHandler,
 	paletteHandler *PaletteHandler,
+	wsLogs *WSLogHandler,
 ) *http.ServeMux {
 	apiMux := http.NewServeMux()
 
@@ -347,6 +354,10 @@ func registerAPIRoutes(
 	// RouterConfig without every dependency wired.
 	if paletteHandler != nil {
 		apiMux.HandleFunc("GET /api/palette-index", paletteHandler.Index)
+	}
+
+	if wsLogs != nil {
+		apiMux.HandleFunc("GET /api/logs/stream", wsLogs.Stream)
 	}
 
 	return apiMux

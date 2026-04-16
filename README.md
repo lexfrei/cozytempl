@@ -92,7 +92,7 @@ KUBECONFIG=~/.kube/config COZYTEMPL_AUTH_MODE=dev ./bin/cozytempl
 - **Prometheus `/metrics`** with bounded label cardinality: `cozytempl_http_requests_total`, `cozytempl_http_request_duration_seconds`, `cozytempl_http_requests_inflight`, plus Go runtime and process collectors. Path labels are normalised (`/tenants/:ns`, `/tenants/:ns/apps/:name`) so tenant and app names never leak into the label space.
 - **Request correlation IDs** on every request (`X-Request-ID` header, honours trusted upstream values, otherwise mints a UUID). Every access-log line and every audit event carries the same ID.
 - **Structured access log** — one `http` log line per request with method, path, status, duration and request ID.
-- **Structured audit log** — one `audit` log line per mutation (tenant/app create/update/delete) and per `connection.view` on the Connection tab. JSON-serialisable, keyed on stable action strings (`tenant.create`, `app.update`, `secret.view`, ...). Pod logs forwarded to Loki / ELK become the append-only audit store; no new storage dependency.
+- **Structured audit log** — one `audit` log line per mutation (tenant/app create/update/delete), per per-resource action (`app.action` on the VM Start/Stop/Restart buttons), per `connection.view` on the Connection tab, and per `pod.log.view` when a user opens the live-tail log stream. JSON-serialisable, keyed on stable action strings (`tenant.create`, `app.update`, `secret.view`, `pod.log.view`, ...). Pod logs forwarded to Loki / ELK become the append-only audit store; no new storage dependency.
 
 ### Security
 

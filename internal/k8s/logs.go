@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"io"
 	"strconv"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
@@ -11,6 +12,11 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/rest"
 )
+
+// logAPIPath is the legacy /api root that serves core/v1 pod
+// subresources. Shared by TailLogs and StreamLogs so the two
+// paths cannot drift.
+const logAPIPath = "/api"
 
 // LogService streams pod logs for UI consumption. The user identity is
 // passed on every call so read permission follows normal Kubernetes RBAC —
@@ -100,12 +106,9 @@ func (lsv *LogService) TailLogs(
 	ctx context.Context, usr *auth.UserContext,
 	namespace, pod, container string, tailLines int64,
 ) (string, error) {
-	if namespace == "" || pod == "" {
-		return "", ErrNamespaceRequired
-	}
-
-	if !isValidLabelValue(pod) {
-		return "", fmt.Errorf("%w: invalid pod name %q", ErrAppNotFound, pod)
+	validateErr := validateLogsParams(namespace, pod, container)
+	if validateErr != nil {
+		return "", validateErr
 	}
 
 	// Build a user-scoped REST config using the same auth logic as
@@ -115,7 +118,7 @@ func (lsv *LogService) TailLogs(
 		return "", fmt.Errorf("building user rest config: %w", err)
 	}
 
-	cfg.APIPath = "/api"
+	cfg.APIPath = logAPIPath
 	cfg.GroupVersion = &corev1GV
 	cfg.NegotiatedSerializer = basicSerializer{}
 
@@ -141,4 +144,99 @@ func (lsv *LogService) TailLogs(
 	}
 
 	return string(raw), nil
+}
+
+// StreamLogs opens a follow=true pod log stream under the caller's
+// credentials and returns the raw io.ReadCloser so the HTTP
+// handler can pump bytes into a WebSocket. The caller MUST Close
+// the reader when the subscriber disconnects; the underlying
+// HTTP response body remains open until ctx is cancelled OR the
+// apiserver closes its side.
+//
+// Routes through the exported BuildUserRESTConfig so its 10 s
+// HTTP client deadline is applied, then explicitly zeros the
+// deadline — the same Timeout=0 dance WatchProxy.Stream performs,
+// and for the same reason. LIST/GET callers want the deadline
+// (loud failures on control-plane wobbles); a follow stream
+// would be killed by it, so long-lived streams must opt out
+// while keeping the user-credential plumbing intact. Going
+// through the exported helper rather than the internal one
+// keeps the two call sites symmetrical and immune to a future
+// refactor that starts applying per-mode overrides there.
+func (lsv *LogService) StreamLogs(
+	ctx context.Context, usr *auth.UserContext,
+	namespace, pod, container string, tailLines int64,
+) (io.ReadCloser, error) {
+	validateErr := validateLogsParams(namespace, pod, container)
+	if validateErr != nil {
+		return nil, validateErr
+	}
+
+	cfg, err := BuildUserRESTConfig(lsv.baseCfg, usr, lsv.mode)
+	if err != nil {
+		return nil, fmt.Errorf("building user rest config: %w", err)
+	}
+
+	cfg.APIPath = logAPIPath
+	cfg.GroupVersion = &corev1GV
+	cfg.NegotiatedSerializer = basicSerializer{}
+	cfg.Timeout = 0
+
+	restClient, err := rest.RESTClientFor(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("building rest client: %w", err)
+	}
+
+	request := restClient.Get().
+		Namespace(namespace).
+		Resource("pods").
+		Name(pod).
+		SubResource("log").
+		Param("follow", "true").
+		Param("tailLines", strconv.FormatInt(tailLines, 10))
+
+	if container != "" {
+		request = request.Param("container", container)
+	}
+
+	stream, streamErr := request.Stream(ctx)
+	if streamErr != nil {
+		return nil, fmt.Errorf("opening pod log stream %s/%s: %w", namespace, pod, streamErr)
+	}
+
+	return stream, nil
+}
+
+// ValidateLogsParams is the exported form of the same fence
+// the TailLogs / StreamLogs constructors apply. Exposed so the
+// WebSocket handler (internal/api/ws_logs.go) can reject
+// malformed input pre-upgrade instead of paying the handshake
+// cost only to fail inside the stream-open call.
+func ValidateLogsParams(namespace, pod, container string) error {
+	return validateLogsParams(namespace, pod, container)
+}
+
+// validateLogsParams centralises the defensive checks so
+// both TailLogs and StreamLogs apply them consistently. namespace
+// and container join pod on the isValidLabelValue fence — an
+// upstream apiserver error on a malformed name is ugly and
+// hides the actual misuse from the caller, so fail locally.
+func validateLogsParams(namespace, pod, container string) error {
+	if namespace == "" || pod == "" {
+		return ErrNamespaceRequired
+	}
+
+	if !isValidLabelValue(namespace) {
+		return fmt.Errorf("%w: invalid namespace %q", ErrAppNotFound, namespace)
+	}
+
+	if !isValidLabelValue(pod) {
+		return fmt.Errorf("%w: invalid pod name %q", ErrAppNotFound, pod)
+	}
+
+	if container != "" && !isValidLabelValue(container) {
+		return fmt.Errorf("%w: invalid container name %q", ErrAppNotFound, container)
+	}
+
+	return nil
 }

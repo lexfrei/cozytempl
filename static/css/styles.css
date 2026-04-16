@@ -1784,6 +1784,19 @@ tr[hx-get]:hover {
   text-align: center;
 }
 
+/* Live log-stream lifecycle markers. Rendered inline inside the
+ * log-tail <pre> to annotate connect / disconnect events without
+ * interrupting the surrounding raw log text. */
+.log-marker {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.log-marker-warn {
+  color: var(--color-warning);
+  font-style: italic;
+}
+
 .command-palette-notice {
   flex: 0 0 auto;
   padding: 8px 20px;

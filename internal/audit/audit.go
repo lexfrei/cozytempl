@@ -71,8 +71,14 @@ const (
 	ActionAppAction      Action = "app.action"
 	ActionSecretView     Action = "secret.view"
 	ActionConnectionView Action = "connection.view"
-	ActionAuthLogin      Action = "auth.login"
-	ActionAuthLogout     Action = "auth.logout"
+	// ActionPodLogView fires whenever a user opens a pod log
+	// stream (WebSocket /api/logs/stream). Pod stdout can carry
+	// PII, tokens, or application secrets that leaked into
+	// logs, so a read is at least as sensitive as a
+	// connection-tab view and needs equivalent audit coverage.
+	ActionPodLogView Action = "pod.log.view"
+	ActionAuthLogin  Action = "auth.login"
+	ActionAuthLogout Action = "auth.logout"
 )
 
 // Outcome captures whether the action succeeded. Keeping it as a
