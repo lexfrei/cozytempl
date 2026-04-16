@@ -1,4 +1,4 @@
-.PHONY: generate build test test-ts dev lint clean install-tools ts helm-test
+.PHONY: generate build test test-all test-ts dev lint clean install-tools ts helm-test
 
 # Generate templ output
 generate:
@@ -18,23 +18,33 @@ ts:
 # Go file that Go tooling would otherwise pick up. Also runs the Helm chart
 # unit tests if the helm-unittest plugin is installed — silently skipped
 # otherwise so CI that doesn't have it yet stays green.
-test: generate test-ts
+# test runs the Go + Helm tests ONLY. Fast, no TS runtime
+# dependency, passes on any dev machine with Go + Helm
+# installed. Use this for quick local iteration.
+test: generate
 	go test ./cmd/... ./internal/... ./static/... -count=1 -race
 	@helm plugin list 2>/dev/null | grep -q unittest && helm unittest deploy/helm/cozytempl || echo "helm-unittest plugin not installed; skipping chart tests"
 
-# TypeScript tests run under bun. Bun is the stated preferred
-# runtime for TS work in this repo; it requires zero setup and
-# reads bun:test out of the imports. Kept as its own target so
-# contributors without bun can run `go test` alone without
-# tripping over the TS side, but `make test` runs both so CI
-# catches divergence between the Go and TS humanisers in the
-# live-age column.
+# test-all runs everything: Go + Helm + TypeScript. CI calls
+# this target so cross-language invariants (e.g. Go
+# HumanizeAge vs TS humanizeAge in the live-age column) are
+# enforced on every PR. bun is a hard requirement here —
+# silently skipping on a missing runtime was the old
+# behaviour and it let real divergences slip through local
+# dev without anyone noticing until a user reported the age
+# column flickering.
+test-all: test test-ts
+
+# TypeScript tests run under bun. Fails loudly if bun is
+# missing so a dev who runs `make test-all` on a machine
+# without bun gets told to install it rather than a false
+# green.
 test-ts:
-	@if command -v bun >/dev/null 2>&1; then \
-		bun test static/ts/; \
-	else \
-		echo "bun not found on PATH; skipping TypeScript tests"; \
-	fi
+	@command -v bun >/dev/null 2>&1 || { \
+		echo "error: bun not found on PATH; install via 'brew install oven-sh/bun/bun' or run 'make test' (Go only)"; \
+		exit 1; \
+	}
+	bun test static/ts/
 
 # Run just the Helm chart unit tests.
 helm-test:

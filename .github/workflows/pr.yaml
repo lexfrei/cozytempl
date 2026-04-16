@@ -189,12 +189,17 @@ jobs:
       # every boundary — the server paints the first value
       # and the client ticks from there, so a divergence
       # makes the age column visibly jump. bun:test pins this
-      # invariant. Installed via the official oven-sh setup
-      # action pinned to v2 (stable major).
+      # invariant. The runtime pin is explicit (not `latest`)
+      # so a bun release that changes bun test semantics —
+      # globals, exit codes, formatter, module resolution —
+      # has to land as a deliberate commit to this file
+      # instead of a silent CI pull on the day it ships.
+      # Renovate tracks bun releases and opens PRs to bump
+      # this pin, same pattern as trivy-action above.
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.12
 
       - name: bun test (TypeScript)
         run: bun test static/ts/

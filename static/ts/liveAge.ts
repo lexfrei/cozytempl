@@ -33,6 +33,19 @@
 //     as the reference "now", so the first tick agrees
 //     with the first paint.
 //
+//     The offset is only refreshed on visibilitychange
+//     resume — not on every tick, and not on htmx
+//     #main-content swaps (which keep <body> in place).
+//     On multi-hour sessions this means the offset is
+//     frozen against the client clock at initial page
+//     load. In practice NTP-synced clocks do not drift
+//     meaningfully across hours, and the cost of
+//     re-reading the marker on every tick (another
+//     querySelector walk) outweighs the win. If a future
+//     telemetry signal shows long-lived pages drifting,
+//     the fix is to re-read on tick N%60 rather than
+//     every tick.
+//
 //  2. Idle tabs. Modern browsers already throttle hidden-
 //     tab setInterval callbacks to about once per minute,
 //     so the raw firing rate is already modest. What the
