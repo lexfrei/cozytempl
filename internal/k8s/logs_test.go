@@ -50,6 +50,44 @@ func TestValidateLogsParams(t *testing.T) {
 	}
 }
 
+// TestTailLogsAppliesTheSameFence pins the cross-path contract:
+// TailLogs and StreamLogs share validateLogsParams, so a
+// malformed namespace or container that one rejects must reject
+// on the other too. Previously TailLogs only fenced `pod` while
+// StreamLogs fenced all three — a user switching between the
+// paginated tail and the live stream could see one accept input
+// the other refused.
+func TestTailLogsAppliesTheSameFence(t *testing.T) {
+	t.Parallel()
+
+	lsv := NewLogService(nil, "dev")
+
+	cases := []struct {
+		name      string
+		namespace string
+		pod       string
+		container string
+	}{
+		{"bad-namespace", "tenant!", "myvm-0", ""},
+		{"bad-container", "tenant-root", "myvm-0", "bad/container"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := lsv.TailLogs(t.Context(), nil, tc.namespace, tc.pod, tc.container, 500)
+			if err == nil {
+				t.Fatal("expected validation error")
+			}
+
+			if !errors.Is(err, ErrAppNotFound) {
+				t.Errorf("err = %v, want wraps ErrAppNotFound", err)
+			}
+		})
+	}
+}
+
 // TestStreamLogsTimeoutZero confirms the critical comment in
 // StreamLogs is enforced. Calling StreamLogs against a nil
 // config surfaces an error chain we can fingerprint; we only

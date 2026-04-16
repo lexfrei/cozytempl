@@ -6,11 +6,14 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	// gorilla/websocket sits on a post-v1.5.3 pseudo-version
 	// because the tagged v1.5.3 conflicts with the k8s.io/client-go
@@ -95,16 +98,11 @@ var wsLogUpgrader = websocket.Upgrader{
 // is either a misconfigured reverse proxy or a CSRF attempt.
 // Matches the CSP connect-src 'self' policy.
 //
-// Uses net/url to compare so a browser that sends the default
-// port explicitly (https://host:443, http://host:80) still
-// matches the bare-host Host header. A literal string compare
-// against "http://"+Host would reject those.
+// Uses net/url's Port()/Hostname() pair (not a naive ":port"
+// suffix compare) so default-port Origins and IPv6 literals
+// compare correctly. Both sides are normalised to "host:port"
+// with default ports stripped before the equality check.
 func sameOriginOnly(req *http.Request) bool {
-	const (
-		schemeHTTP  = "http"
-		schemeHTTPS = "https"
-	)
-
 	origin := req.Header.Get("Origin")
 	if origin == "" {
 		// Non-browser client (curl with wscat). Safe to accept
@@ -118,18 +116,68 @@ func sameOriginOnly(req *http.Request) bool {
 		return false
 	}
 
-	if parsed.Scheme != schemeHTTP && parsed.Scheme != schemeHTTPS {
+	originKey := normaliseOriginHost(parsed.Scheme, parsed.Hostname(), parsed.Port())
+	if originKey == "" {
 		return false
 	}
 
-	originHost := parsed.Host
-	// Strip the default port so https://host:443 matches host.
-	if (parsed.Scheme == schemeHTTP && strings.HasSuffix(originHost, ":80")) ||
-		(parsed.Scheme == schemeHTTPS && strings.HasSuffix(originHost, ":443")) {
-		originHost = parsed.Hostname()
+	reqHost, reqPort := splitHostPort(req.Host)
+
+	return originKey == normaliseOriginHost(parsed.Scheme, reqHost, reqPort)
+}
+
+// normaliseOriginHost collapses (scheme, host, port) into a
+// canonical "host:port" string with default ports (80 for http,
+// 443 for https) stripped. IPv6 hostnames are returned bare
+// (no brackets) so the compare aligns across bracketed and
+// unbracketed sources. Returns "" for schemes other than
+// http/https so a file:// or data: Origin cannot sneak through.
+func normaliseOriginHost(scheme, host, port string) string {
+	const (
+		schemeHTTP  = "http"
+		schemeHTTPS = "https"
+	)
+
+	if scheme != schemeHTTP && scheme != schemeHTTPS {
+		return ""
 	}
 
-	return originHost == req.Host
+	if (scheme == schemeHTTP && port == "80") ||
+		(scheme == schemeHTTPS && port == "443") {
+		port = ""
+	}
+
+	if port == "" {
+		return host
+	}
+
+	return host + ":" + port
+}
+
+// splitHostPort pulls (host, port) out of a net/http Request
+// Host value. Handles bracketed IPv6 ("[::1]:8080", "[::1]").
+// Unbracketed IPv4/DNS with no port returns (host, "").
+// Naming the returns would read cleanest but nonamedreturns
+// forbids it; the sentence above is the contract.
+//
+//nolint:gocritic // unnamedResult: nonamedreturns forbids the alternative
+func splitHostPort(raw string) (string, string) {
+	if raw == "" {
+		return "", ""
+	}
+
+	host, port, err := net.SplitHostPort(raw)
+	if err != nil {
+		// No port → strip bracket pair if present so IPv6
+		// hosts round-trip through normaliseOriginHost the
+		// same as parsed.Hostname() output.
+		trimmed := strings.TrimPrefix(raw, "[")
+		trimmed = strings.TrimSuffix(trimmed, "]")
+
+		return trimmed, ""
+	}
+
+	return host, port
 }
 
 // WSLogHandler streams pod logs from the apiserver to the
@@ -183,13 +231,23 @@ func (wlh *WSLogHandler) Stream(writer http.ResponseWriter, req *http.Request) {
 	tailLines := parseTailParam(req.URL.Query().Get("tail"))
 
 	if tenant == "" || pod == "" {
-		// Authenticated user asked for logs but the request was
-		// malformed. Audit the denial so operators grepping
-		// outcome=denied see the probe; matches the
-		// SecretReveal / ConnectionView precedent.
 		wlh.recordAudit(req.Context(), usr, tenant, pod, container, tailLines,
 			audit.OutcomeDenied, "tenant and pod parameters required")
 		Error(writer, http.StatusBadRequest, "tenant and pod parameters required")
+
+		return
+	}
+
+	// Validate format BEFORE the WebSocket upgrade. A malformed
+	// name (e.g. ?pod=';') would otherwise burn a handshake +
+	// buffer allocations, round-trip to the apiserver, and
+	// surface as an abnormal-close frame. Moving the fence up
+	// returns a clean 400 and cuts off a cheap DoS path.
+	paramErr := k8s.ValidateLogsParams(tenant, pod, container)
+	if paramErr != nil {
+		wlh.recordAudit(req.Context(), usr, tenant, pod, container, tailLines,
+			audit.OutcomeDenied, paramErr.Error())
+		Error(writer, http.StatusBadRequest, "invalid tenant/pod/container parameter")
 
 		return
 	}
@@ -198,6 +256,8 @@ func (wlh *WSLogHandler) Stream(writer http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		wlh.log.Info("websocket upgrade failed",
 			"tenant", tenant, "pod", pod, "error", err)
+		wlh.recordAudit(req.Context(), usr, tenant, pod, container, tailLines,
+			audit.OutcomeDenied, "websocket upgrade rejected: "+err.Error())
 
 		return
 	}
@@ -325,13 +385,16 @@ func (wlh *WSLogHandler) pump(
 }
 
 // classifyStreamError maps a StreamLogs error to an audit
-// Outcome. The apiserver's "forbidden" text pattern is stable
-// across kubectl versions; we match on the rendered wrap's
-// body rather than unwrapping a typed error because client-go's
-// REST error comes through fmt.Errorf already.
+// Outcome. Unwraps the typed apierrors.StatusError via
+// errors.As so a Forbidden/Unauthorized from the apiserver
+// (wrapped by fmt.Errorf in StreamLogs) reliably lands in
+// OutcomeDenied regardless of the rendered message text.
+// Substring matching on "forbidden" / "Unauthorized" is brittle
+// across apiserver versions and loses case-sensitive variants
+// entirely; apierrors.IsForbidden / IsUnauthorized walk the
+// Unwrap chain and compare HTTP status codes instead.
 func classifyStreamError(err error) audit.Outcome {
-	msg := err.Error()
-	if strings.Contains(msg, "forbidden") || strings.Contains(msg, "Unauthorized") {
+	if apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err) {
 		return audit.OutcomeDenied
 	}
 

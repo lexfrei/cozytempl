@@ -2,12 +2,17 @@ package api
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/auth"
@@ -165,6 +170,15 @@ func TestSameOriginOnlyAcceptsMatch(t *testing.T) {
 		{"https-same-origin", "https://cozytempl.example.com", "cozytempl.example.com", true},
 		{"cross-origin-rejected", "https://evil.example.com", "cozytempl.example.com", false},
 		{"scheme-mismatch-rejected", "http://cozytempl.example.com", "other.example.com", false},
+		// IPv6 coverage: a browser sending https://[::1]:443
+		// against a Host header of "[::1]" (no port) must
+		// resolve to the same canonical host after bracket +
+		// default-port stripping. The previous suffix-compare
+		// implementation misclassified this as cross-origin.
+		{"ipv6-default-port", "https://[::1]:443", "[::1]", true},
+		{"ipv6-bare", "http://[::1]", "[::1]:80", true},
+		{"ipv6-nondefault-port", "http://[::1]:8080", "[::1]:8080", true},
+		{"ipv6-different-port-rejected", "http://[::1]:8080", "[::1]:9090", false},
 	}
 
 	for _, tc := range cases {
@@ -226,43 +240,64 @@ func TestParseTailParam(t *testing.T) {
 }
 
 // TestClassifyStreamError pins the outcome mapping the audit
-// event records for a failed StreamLogs. An apiserver
-// "forbidden" reply must surface as OutcomeDenied so downstream
-// audit queries looking for denied-access events see it; every
-// other failure (pod missing, apiserver down, transport glitch)
-// falls through to OutcomeError.
+// event records for a failed StreamLogs. A Forbidden or
+// Unauthorized error from the apiserver — wrapped via
+// fmt.Errorf the way StreamLogs wraps its returns — must
+// surface as OutcomeDenied so downstream audit queries looking
+// for denied-access events see it. Everything else (pod
+// missing, apiserver down, transport glitch) falls through to
+// OutcomeError.
+//
+// Uses the real apierrors factories so the test would catch a
+// regression to substring matching on rendered messages, which
+// is brittle across apiserver versions and broke with the
+// original implementation.
 func TestClassifyStreamError(t *testing.T) {
 	t.Parallel()
 
+	gr := schema.GroupResource{Group: "", Resource: "pods"}
+
 	cases := []struct {
 		name string
-		msg  string
+		err  error
 		want audit.Outcome
 	}{
-		{"forbidden-lowercase", "pods \"x\" is forbidden: User cannot get", audit.OutcomeDenied},
-		{"unauthorized-title", "Unauthorized", audit.OutcomeDenied},
-		{"not-found-wrapped", "opening pod log stream ns/pod: pods \"pod\" not found", audit.OutcomeError},
-		{"timeout", "context deadline exceeded", audit.OutcomeError},
+		{
+			"forbidden-wrapped",
+			fmt.Errorf("opening pod log stream ns/pod: %w",
+				apierrors.NewForbidden(gr, "pod", errors.New("no RBAC"))),
+			audit.OutcomeDenied,
+		},
+		{
+			"unauthorized-wrapped",
+			fmt.Errorf("opening pod log stream ns/pod: %w",
+				apierrors.NewUnauthorized("token expired")),
+			audit.OutcomeDenied,
+		},
+		{
+			"not-found-wrapped",
+			fmt.Errorf("opening pod log stream ns/pod: %w",
+				apierrors.NewNotFound(gr, "pod")),
+			audit.OutcomeError,
+		},
+		{
+			"plain-error",
+			errors.New("context deadline exceeded"),
+			audit.OutcomeError,
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := classifyStreamError(&streamLogError{tc.msg})
+			got := classifyStreamError(tc.err)
 			if got != tc.want {
-				t.Errorf("classifyStreamError(%q) = %q, want %q", tc.msg, got, tc.want)
+				t.Errorf("classifyStreamError(%v) = %q, want %q", tc.err, got, tc.want)
 			}
 		})
 	}
 }
-
-// streamLogError is a tiny error implementation so the test
-// table can drive classifyStreamError without importing
-// client-go's error types.
-type streamLogError struct{ msg string }
-
-func (s *streamLogError) Error() string { return s.msg }
 
 // TestRecordAuditEmitsOutcome pins that recordAudit actually
 // passes the provided outcome through to the underlying

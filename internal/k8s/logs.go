@@ -207,6 +207,15 @@ func (lsv *LogService) StreamLogs(
 	return stream, nil
 }
 
+// ValidateLogsParams is the exported form of the same fence
+// the TailLogs / StreamLogs constructors apply. Exposed so the
+// WebSocket handler (internal/api/ws_logs.go) can reject
+// malformed input pre-upgrade instead of paying the handshake
+// cost only to fail inside the stream-open call.
+func ValidateLogsParams(namespace, pod, container string) error {
+	return validateLogsParams(namespace, pod, container)
+}
+
 // validateLogsParams centralises the defensive checks so
 // both TailLogs and StreamLogs apply them consistently. namespace
 // and container join pod on the isValidLabelValue fence — an
