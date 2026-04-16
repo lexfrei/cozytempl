@@ -73,9 +73,9 @@ func NewPaletteHandler(
 //
 // JSON field names are effectively an API contract with the
 // TypeScript side — rename one here and `static/ts/palette.ts`
-// starts reading `undefined` silently. paletteJSONField* constants
-// below lock them down from the Go side; the client file has a
-// mirror comment pointing back here.
+// starts reading `undefined` silently. The struct tags below
+// are the single source of truth; TestPaletteIndexShape pins
+// them against the exact strings the client reads.
 type PaletteIndex struct {
 	Tenants []PaletteTenant `json:"tenants"`
 	Apps    []PaletteApp    `json:"apps"`
