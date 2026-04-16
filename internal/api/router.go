@@ -265,6 +265,7 @@ func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {
 	// match to exactly "/" so unknown paths fall through to the
 	// NotFoundPage handler below.
 	pageMux.HandleFunc("GET /{$}", pgh.Dashboard)
+	pageMux.HandleFunc("GET /overview", pgh.OverviewPage)
 	pageMux.HandleFunc("GET /marketplace", pgh.MarketplacePage)
 	pageMux.HandleFunc("GET /marketplace/launch", pgh.MarketplaceLaunchPage)
 	pageMux.HandleFunc("GET /profile", pgh.ProfilePage)

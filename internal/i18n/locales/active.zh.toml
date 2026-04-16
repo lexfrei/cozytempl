@@ -5,6 +5,9 @@
 [nav.dashboard]
 other = "控制台"
 
+[nav.overview]
+other = "全部应用"
+
 [nav.marketplace]
 other = "应用市场"
 
@@ -100,6 +103,32 @@ other = "从应用市场选择一种类型,cozytempl 会根据模式将相应的
 
 [empty.apps.cta]
 other = "创建第一个应用"
+
+# --- Overview page ---
+
+[page.overview.title]
+other = "全部应用"
+
+[page.overview.summary]
+other = "{{.Tenants}} 个租户中共 {{.Apps}} 个应用"
+
+[page.overview.searchPlaceholder]
+other = "按名称或租户过滤..."
+
+[page.overview.groupCount]
+other = "{{.Count}} 个实例"
+
+[page.overview.empty.title]
+other = "暂无应用"
+
+[page.overview.empty.body]
+other = "可见的租户中没有应用，或者您的 RBAC 不允许列出它们。"
+
+[page.overview.noMatch.title]
+other = "没有匹配的应用"
+
+[page.overview.noMatch.body]
+other = "清除搜索框以再次查看所有应用。"
 
 # --- Dev-mode banner ---
 

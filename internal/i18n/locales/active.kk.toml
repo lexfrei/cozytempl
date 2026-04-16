@@ -6,6 +6,9 @@
 [nav.dashboard]
 other = "Басты бет"
 
+[nav.overview]
+other = "Барлық қолданбалар"
+
 [nav.marketplace]
 other = "Маркетплейс"
 
@@ -101,6 +104,32 @@ other = "Маркетплейстен түрін таңдаңыз — cozytempl 
 
 [empty.apps.cta]
 other = "Алғашқы қолданбаны жасау"
+
+# --- Overview page ---
+
+[page.overview.title]
+other = "Барлық қолданбалар"
+
+[page.overview.summary]
+other = "{{.Tenants}} тенанттағы {{.Apps}} қолданба"
+
+[page.overview.searchPlaceholder]
+other = "Аты немесе тенант бойынша сүзгі..."
+
+[page.overview.groupCount]
+other = "{{.Count}} дана"
+
+[page.overview.empty.title]
+other = "Қолданбалар жоқ"
+
+[page.overview.empty.body]
+other = "Қол жетімді тенанттарда қолданбалар жоқ немесе сіздің RBAC оларды тізімдеуге рұқсат бермейді."
+
+[page.overview.noMatch.title]
+other = "Ештеңе табылмады"
+
+[page.overview.noMatch.body]
+other = "Барлық қолданбаларды көру үшін іздеу жолын тазалаңыз."
 
 # --- Dev-mode banner ---
 
