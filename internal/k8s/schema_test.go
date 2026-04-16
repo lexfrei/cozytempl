@@ -56,8 +56,8 @@ func TestSchemaCacheScopedPerUser(t *testing.T) {
 func TestCacheUserKeyAnonymousFallback(t *testing.T) {
 	t.Parallel()
 
-	if got := cacheUserKey(nil); got != "anonymous" {
-		t.Errorf("cacheUserKey(nil) = %q, want anonymous", got)
+	if got := cacheUserKey(nil); got != anonymousCacheUser {
+		t.Errorf("cacheUserKey(nil) = %q, want %q", got, anonymousCacheUser)
 	}
 
 	if got := cacheUserKey(&auth.UserContext{Username: ""}); got != "" {

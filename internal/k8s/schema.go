@@ -71,13 +71,21 @@ func NewSchemaService(baseCfg *rest.Config, mode config.AuthMode) *SchemaService
 	}
 }
 
-// cacheUserKey turns a UserContext into a cache-bucket key. nil user
-// (tests, bootstrap-only paths) uses "anonymous" so cache entries
-// are still scoped to a dedicated non-user bucket instead of
-// colliding across test fixtures and production code.
+// anonymousCacheUser is the sentinel bucket nil UserContext
+// entries fall into. Distinct from the empty string (which
+// would collide with a real user whose Username was never
+// set) and from any legal Kubernetes username (colon is not
+// allowed in usernames that appear in impersonation headers).
+const anonymousCacheUser = "anonymous"
+
+// cacheUserKey turns a UserContext into a cache-bucket key.
+// A nil user (tests, bootstrap-only paths) lands in the
+// anonymousCacheUser bucket so cache entries are scoped to a
+// dedicated non-user bucket instead of colliding across test
+// fixtures and production code.
 func cacheUserKey(usr *auth.UserContext) string {
 	if usr == nil {
-		return "anonymous"
+		return anonymousCacheUser
 	}
 
 	return usr.Username
