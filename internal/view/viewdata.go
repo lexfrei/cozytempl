@@ -82,6 +82,12 @@ type AppDetailData struct {
 	// UI renders no action bar in either case, which is the right
 	// collapse for a user who can't act.
 	AllowedActions []actions.Action
+	// NodeGroups is populated only for applications of Kind "Kubernetes"
+	// (Cluster API-managed Kubernetes clusters). Holds the spec /
+	// status replica counts of every MachineDeployment owned by this
+	// cluster so the overview tab can surface "3 desired, 2 ready"
+	// while the node group is scaling up or draining.
+	NodeGroups []k8s.NodeGroup
 }
 
 // MarketplaceData holds data for the marketplace page.

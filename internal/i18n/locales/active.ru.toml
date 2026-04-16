@@ -481,6 +481,24 @@ other = "Действие {{.Action}} не зарегистрировано дл
 [error.app.actionFailed]
 other = "Действие {{.Action}} не выполнено. Подробности — в логах cozytempl."
 
+[page.appDetail.nodeGroupsTitle]
+other = "Группы узлов"
+
+[page.appDetail.nodeGroupsCount]
+other = "{{.Count}} групп"
+
+[page.appDetail.nodeGroupName]
+other = "Имя"
+
+[page.appDetail.nodeGroupDesired]
+other = "Желаемо"
+
+[page.appDetail.nodeGroupReady]
+other = "Готово"
+
+[page.appDetail.nodeGroupPhase]
+other = "Фаза"
+
 [page.appDetail.noLogs]
 other = "(нет вывода)"
 

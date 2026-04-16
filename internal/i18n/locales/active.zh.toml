@@ -478,6 +478,24 @@ other = "操作 {{.Action}} 未为此应用类型注册。"
 [error.app.actionFailed]
 other = "操作 {{.Action}} 失败。详细信息请查看 cozytempl 日志。"
 
+[page.appDetail.nodeGroupsTitle]
+other = "节点组"
+
+[page.appDetail.nodeGroupsCount]
+other = "{{.Count}} 组"
+
+[page.appDetail.nodeGroupName]
+other = "名称"
+
+[page.appDetail.nodeGroupDesired]
+other = "期望数"
+
+[page.appDetail.nodeGroupReady]
+other = "就绪数"
+
+[page.appDetail.nodeGroupPhase]
+other = "状态"
+
 [page.appDetail.noLogs]
 other = "（无日志输出）"
 
