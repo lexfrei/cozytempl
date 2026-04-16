@@ -1784,6 +1784,15 @@ tr[hx-get]:hover {
   text-align: center;
 }
 
+.command-palette-notice {
+  flex: 0 0 auto;
+  padding: 8px 20px;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  background: var(--color-bg-elevated);
+}
+
 .command-palette-footer {
   flex: 0 0 auto;
   display: flex;

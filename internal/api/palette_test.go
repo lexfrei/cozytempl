@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
@@ -23,7 +24,7 @@ type stubTenantLister struct {
 	err   error
 }
 
-func (s *stubTenantLister) List(context.Context, *auth.UserContext) ([]k8s.Tenant, error) {
+func (s *stubTenantLister) ListMinimal(context.Context, *auth.UserContext) ([]k8s.Tenant, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -34,13 +35,21 @@ func (s *stubTenantLister) List(context.Context, *auth.UserContext) ([]k8s.Tenan
 // stubAppLister returns a per-tenant ApplicationList from a map.
 // Missing keys return an empty list; tenants listed in errs
 // return the matching error so the "one broken tenant must not
-// blank the palette" invariant has a driver.
+// blank the palette" invariant has a driver. The call counter
+// lets perf tests pin the exact apiserver round-trip count.
 type stubAppLister struct {
 	byTenant map[string]k8s.ApplicationList
 	errs     map[string]error
+	calls    atomic.Int64
 }
 
-func (s *stubAppLister) List(_ context.Context, _ *auth.UserContext, tenant string) (k8s.ApplicationList, error) {
+func (s *stubAppLister) List(ctx context.Context, _ *auth.UserContext, tenant string) (k8s.ApplicationList, error) {
+	s.calls.Add(1)
+
+	if ctx.Err() != nil {
+		return k8s.ApplicationList{}, ctx.Err() //nolint:wrapcheck // propagating the exact ctx error is the test contract
+	}
+
 	if err, ok := s.errs[tenant]; ok {
 		return k8s.ApplicationList{}, err
 	}
@@ -255,6 +264,105 @@ func TestPaletteIndexSurfacesTruncation(t *testing.T) {
 
 	if len(got.Apps) != 1 {
 		t.Errorf("apps truncated-case lost visible items: %+v", got.Apps)
+	}
+}
+
+// TestPaletteIndexOneAppListPerTenant pins the perf contract:
+// exactly N apps.List calls for N tenants. A future regression
+// that re-introduces a second per-tenant list (e.g. switching
+// the lister back to tenants.List's AppCount variant) would
+// double the apiserver round-trip cost and surface here as an
+// off-by-N counter.
+func TestPaletteIndexOneAppListPerTenant(t *testing.T) {
+	t.Parallel()
+
+	tl := &stubTenantLister{items: []k8s.Tenant{
+		{Namespace: "tenant-a", DisplayName: "Tenant A"},
+		{Namespace: "tenant-b", DisplayName: "Tenant B"},
+		{Namespace: "tenant-c", DisplayName: "Tenant C"},
+	}}
+	al := &stubAppLister{byTenant: map[string]k8s.ApplicationList{
+		"tenant-a": {Items: []k8s.Application{{Name: "pg", Kind: "Postgres"}}},
+		"tenant-b": {Items: []k8s.Application{}},
+		"tenant-c": {Items: []k8s.Application{{Name: "vm", Kind: "VMInstance"}}},
+	}}
+
+	handler := paletteTestHandler(t, tl, al)
+	rec := httptest.NewRecorder()
+	handler.Index(rec, paletteGET(t))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	if got := al.calls.Load(); got != 3 {
+		t.Errorf("apps.List fired %d times, want 3 (one per tenant, no more)", got)
+	}
+}
+
+// TestPaletteIndexContextCancelShortCircuits drives a request
+// whose context is cancelled before Index is called. The
+// cancellation must propagate through the fanout so workers
+// bail fast, and context-cancel errors must NOT produce Warn
+// lines (that was the log-spam regression path).
+func TestPaletteIndexContextCancelShortCircuits(t *testing.T) {
+	t.Parallel()
+
+	tl := &stubTenantLister{items: []k8s.Tenant{
+		{Namespace: "tenant-a", DisplayName: "Tenant A"},
+		{Namespace: "tenant-b", DisplayName: "Tenant B"},
+	}}
+	al := &stubAppLister{byTenant: map[string]k8s.ApplicationList{
+		"tenant-a": {Items: []k8s.Application{{Name: "pg", Kind: "Postgres"}}},
+		"tenant-b": {Items: []k8s.Application{}},
+	}}
+
+	handler := paletteTestHandler(t, tl, al)
+
+	ctx, cancel := context.WithCancel(withPaletteTestUser(context.Background()))
+	cancel() // cancel before the handler runs
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/palette-index", nil)
+
+	rec := httptest.NewRecorder()
+	handler.Index(rec, req)
+
+	// The handler still returns 200 — tenants were listed before
+	// the cancellation propagated. The fanout short-circuits and
+	// the apps slice may be empty. The important contract is:
+	// no panic, no 500, no log spam.
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200 on cancelled-ctx request", rec.Code)
+	}
+}
+
+// TestPaletteIndexEmptyTenants pins the zero-tenant path. Clean
+// 200 with empty arrays, not a 500 and not a nil body — the
+// client expects well-formed JSON with the structural keys so
+// the subsequent buildCatalog() can read indexCache.tenants
+// without null-guards.
+func TestPaletteIndexEmptyTenants(t *testing.T) {
+	t.Parallel()
+
+	handler := paletteTestHandler(t, &stubTenantLister{}, &stubAppLister{})
+	rec := httptest.NewRecorder()
+	handler.Index(rec, paletteGET(t))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 on zero-tenant visibility", rec.Code)
+	}
+
+	var got PaletteIndex
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if got.Tenants == nil {
+		t.Error("tenants must be an empty slice, not null")
+	}
+
+	if got.Apps == nil {
+		t.Error("apps must be an empty slice, not null")
 	}
 }
 

@@ -494,6 +494,7 @@ function openModalById(id: string): void {
 let overlay: HTMLDivElement | null = null;
 let searchInput: HTMLInputElement | null = null;
 let listEl: HTMLUListElement | null = null;
+let noticeEl: HTMLDivElement | null = null;
 let items: PaletteAction[] = [];
 let filtered: PaletteAction[] = [];
 let activeIndex = 0;
@@ -518,6 +519,7 @@ function ensureOverlay(): HTMLDivElement {
              spellcheck="false"
              aria-label="Filter commands" />
       <ul class="command-palette-list" role="listbox"></ul>
+      <div class="command-palette-notice" role="status" aria-live="polite" hidden></div>
       <div class="command-palette-footer">
         <span><kbd>↑↓</kbd> navigate</span>
         <span><kbd>⏎</kbd> run</span>
@@ -531,6 +533,7 @@ function ensureOverlay(): HTMLDivElement {
   overlay = root;
   searchInput = root.querySelector<HTMLInputElement>(".command-palette-input");
   listEl = root.querySelector<HTMLUListElement>(".command-palette-list");
+  noticeEl = root.querySelector<HTMLDivElement>(".command-palette-notice");
 
   root.addEventListener("click", (evt) => {
     const target = evt.target as HTMLElement | null;
@@ -606,6 +609,34 @@ function labelFor(item: PaletteAction): string {
   return item.labelSuffix ? base + item.labelSuffix : base;
 }
 
+// renderTruncationNotice shows a muted footer line when the
+// server capped at least one tenant's app list at AppListLimit
+// (500). Without it an operator with 501 apps in one namespace
+// types app #501's name, sees "No matching commands", and has
+// no way to know the index is incomplete. The aria-live on the
+// container announces the change so screen readers pick it up.
+function renderTruncationNotice(): void {
+  if (!noticeEl) return;
+
+  const truncated = indexCache?.truncatedTenants ?? [];
+  if (truncated.length === 0) {
+    noticeEl.hidden = true;
+    noticeEl.textContent = "";
+
+    return;
+  }
+
+  // Only the first few namespaces are inlined to keep the line
+  // readable when an entire cluster is over the cap. The count
+  // is what the operator actually needs to act on.
+  const preview = truncated.slice(0, 3).join(", ");
+  const extra = truncated.length > 3 ? `, +${truncated.length - 3} more` : "";
+
+  noticeEl.textContent =
+    `Showing first 500 apps per tenant — ${preview}${extra} capped. Use kubectl for the full list.`;
+  noticeEl.hidden = false;
+}
+
 function updateFiltered(): void {
   const query = searchInput?.value.trim().toLowerCase() ?? "";
   if (!query) {
@@ -622,6 +653,8 @@ function updateFiltered(): void {
 
 function render(): void {
   if (!listEl) return;
+
+  renderTruncationNotice();
 
   if (filtered.length === 0) {
     listEl.innerHTML = `<li class="command-palette-empty">No matching commands.</li>`;

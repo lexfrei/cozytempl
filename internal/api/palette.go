@@ -2,12 +2,26 @@ package api
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
+	"sort"
+	"sync"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 )
+
+// paletteFanoutConcurrency bounds the number of concurrent per-
+// tenant HelmRelease list calls the palette-index handler fans
+// out. Picked high enough that a 20-tenant deployment completes
+// in ~one apiserver round-trip worth of latency, low enough that
+// a misconfigured cluster with hundreds of tenants doesn't bury
+// the apiserver under a thundering herd from a single palette
+// open. Tune by measuring p99 palette latency vs apiserver CPU.
+const paletteFanoutConcurrency = 8
 
 // PaletteHandler serves the command-palette search index. The
 // client-side palette (static/ts/palette.ts) fetches this once per
@@ -28,11 +42,12 @@ type PaletteHandler struct {
 }
 
 // paletteTenantLister is the narrow slice of TenantService the
-// handler uses. Split out so unit tests can inject a stub without
-// standing up the concrete k8s client — the real service
-// satisfies it by construction.
+// handler uses. ListMinimal (not the heavier List) is chosen
+// deliberately: the palette never reads AppCount / ChildCount,
+// and List's per-tenant counter fan-out would double the
+// apiserver round-trip cost on the request hot path.
 type paletteTenantLister interface {
-	List(ctx context.Context, usr *auth.UserContext) ([]k8s.Tenant, error)
+	ListMinimal(ctx context.Context, usr *auth.UserContext) ([]k8s.Tenant, error)
 }
 
 // paletteAppLister mirrors the slice of ApplicationService the
@@ -55,14 +70,20 @@ func NewPaletteHandler(
 // PaletteIndex is the JSON payload the client consumes. Kept in
 // one place so the TypeScript side can mirror the shape exactly
 // (static/ts/palette.ts PaletteIndex interface).
+//
+// JSON field names are effectively an API contract with the
+// TypeScript side — rename one here and `static/ts/palette.ts`
+// starts reading `undefined` silently. paletteJSONField* constants
+// below lock them down from the Go side; the client file has a
+// mirror comment pointing back here.
 type PaletteIndex struct {
 	Tenants []PaletteTenant `json:"tenants"`
 	Apps    []PaletteApp    `json:"apps"`
 	// TruncatedTenants lists namespaces whose app list hit the
-	// 500-entry cap (see k8s.AppListLimit). The client can render
-	// a hint so an operator who fails to find app #501 knows
-	// why; without surfacing the bit, the palette would silently
-	// skip apps past the limit.
+	// AppListLimit cap. The palette renders a muted notice when
+	// this list is non-empty so an operator with 500+ apps in
+	// one tenant knows why app #501 is not searchable without
+	// running a kubectl list directly.
 	TruncatedTenants []string `json:"truncatedTenants,omitempty"`
 }
 
@@ -87,14 +108,14 @@ type PaletteApp struct {
 }
 
 // Index serves GET /api/palette-index. Fans out one application
-// List per visible tenant (same pattern as the dashboard and
-// overview page) and assembles the {tenants, apps} payload.
+// List per visible tenant using a bounded errgroup so a 20-tenant
+// deployment completes in roughly one apiserver round-trip worth
+// of latency instead of N serial round-trips.
 //
 // Per-tenant List errors are logged but do not abort the response
-// — a single broken tenant should not blank the palette. The
-// client gets whatever succeeded. If a tenant's list was
-// truncated by the server-side cap, its namespace is reported in
-// TruncatedTenants so the UI can surface the limitation.
+// — a single broken tenant should not blank the palette. Context
+// cancellation short-circuits the loop so a client disconnect
+// does not emit one Warn line per remaining tenant.
 func (plh *PaletteHandler) Index(writer http.ResponseWriter, req *http.Request) {
 	usr := auth.UserFromContext(req.Context())
 	if usr == nil {
@@ -103,7 +124,7 @@ func (plh *PaletteHandler) Index(writer http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	tenants, err := plh.tenants.List(req.Context(), usr)
+	tenants, err := plh.tenants.ListMinimal(req.Context(), usr)
 	if err != nil {
 		plh.log.Error("listing tenants for palette", "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to list tenants")
@@ -121,39 +142,93 @@ func (plh *PaletteHandler) Index(writer http.ResponseWriter, req *http.Request) 
 			Namespace:   tenants[idx].Namespace,
 			DisplayName: tenants[idx].DisplayName,
 		})
-
-		plh.appendTenantApps(req.Context(), usr, tenants[idx].Namespace, &index)
 	}
+
+	plh.fanoutAppLists(req.Context(), usr, tenants, &index)
+
+	// Fan-out appends apps in completion order, not tenant order.
+	// Sorting by (tenant, name) gives the palette a deterministic
+	// display across opens — an operator who scans top-to-bottom
+	// sees the same layout every time, and tests can pin order
+	// without threading execution determinism through the workers.
+	sort.Slice(index.Apps, func(i, j int) bool {
+		if index.Apps[i].Tenant != index.Apps[j].Tenant {
+			return index.Apps[i].Tenant < index.Apps[j].Tenant
+		}
+
+		return index.Apps[i].Name < index.Apps[j].Name
+	})
+
+	sort.Strings(index.TruncatedTenants)
 
 	JSON(writer, http.StatusOK, index)
 }
 
-// appendTenantApps lists one tenant's apps and folds them into
-// the shared index. Split from Index so the main handler stays
-// under the funlen budget and the per-tenant error / truncation
-// branches can be read in isolation.
-func (plh *PaletteHandler) appendTenantApps(
-	ctx context.Context, usr *auth.UserContext, tenant string, index *PaletteIndex,
+// fanoutAppLists fires per-tenant app list calls through a
+// bounded errgroup and folds the results into index. A mutex
+// serialises the slice appends; the critical section is tiny
+// (two appends per tenant at most) so contention is negligible
+// even at paletteFanoutConcurrency workers.
+func (plh *PaletteHandler) fanoutAppLists(
+	ctx context.Context, usr *auth.UserContext, tenants []k8s.Tenant, index *PaletteIndex,
 ) {
-	appList, err := plh.apps.List(ctx, usr, tenant)
-	if err != nil {
-		plh.log.Warn("listing apps for palette", "tenant", tenant, "error", err)
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(paletteFanoutConcurrency)
 
+	var mu sync.Mutex
+
+	for idx := range tenants {
+		tenant := tenants[idx].Namespace
+
+		group.Go(func() error {
+			// Bail on request context cancellation so a 50-tenant
+			// palette does not emit 50 warn lines when the
+			// client disconnects mid-fan-out.
+			if groupCtx.Err() != nil {
+				return nil
+			}
+
+			appList, listErr := plh.apps.List(groupCtx, usr, tenant)
+			if listErr != nil {
+				plh.logTenantListErr(tenant, listErr)
+
+				return nil
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if appList.Truncated {
+				plh.log.Warn("palette index truncated for tenant",
+					"tenant", tenant, "limit", k8s.AppListLimit)
+
+				index.TruncatedTenants = append(index.TruncatedTenants, tenant)
+			}
+
+			for i := range appList.Items {
+				index.Apps = append(index.Apps, PaletteApp{
+					Name:   appList.Items[i].Name,
+					Tenant: tenant,
+					Kind:   appList.Items[i].Kind,
+				})
+			}
+
+			return nil
+		})
+	}
+
+	_ = group.Wait() // individual errors are already logged; fanoutAppLists never returns one.
+}
+
+// logTenantListErr separates context-cancel errors from real
+// apiserver failures so a client disconnect does not look like a
+// swarm of tenant-level problems in the log. Context errors drop
+// silently; anything else gets a Warn line with the tenant name
+// so operators can triage.
+func (plh *PaletteHandler) logTenantListErr(tenant string, err error) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return
 	}
 
-	if appList.Truncated {
-		plh.log.Warn("palette index truncated for tenant",
-			"tenant", tenant, "limit", k8s.AppListLimit)
-
-		index.TruncatedTenants = append(index.TruncatedTenants, tenant)
-	}
-
-	for i := range appList.Items {
-		index.Apps = append(index.Apps, PaletteApp{
-			Name:   appList.Items[i].Name,
-			Tenant: tenant,
-			Kind:   appList.Items[i].Kind,
-		})
-	}
+	plh.log.Warn("listing apps for palette", "tenant", tenant, "error", err)
 }
