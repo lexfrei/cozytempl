@@ -36,6 +36,7 @@ type RouterConfig struct {
 	// lifecycle differ — one watch per subscriber vs. a shared SA
 	// fan-out.
 	WatchSSEHandler *WatchSSEHandler
+	PaletteHandler  *PaletteHandler
 	PageHandler     *handler.PageHandler
 	I18n            *i18n.Bundle
 	StaticFS        embed.FS
@@ -192,7 +193,7 @@ func Router(cfg *RouterConfig) http.Handler {
 
 	protect := buildAuthMiddleware(cfg, mux, rateStore)
 
-	apiMux := registerAPIRoutes(cfg.TenantHandler, cfg.AppHandler, cfg.SchemaHandler, cfg.SSEHandler, cfg.WatchSSEHandler)
+	apiMux := registerAPIRoutes(cfg.TenantHandler, cfg.AppHandler, cfg.SchemaHandler, cfg.SSEHandler, cfg.WatchSSEHandler, cfg.PaletteHandler)
 	pageMux := registerPageRoutes(cfg.PageHandler)
 
 	mux.HandleFunc("GET /healthz", healthHandler)
@@ -314,6 +315,7 @@ func registerAPIRoutes(
 	schemaHandler *SchemaHandler,
 	sseHandler *SSEHandler,
 	watchSSE *WatchSSEHandler,
+	paletteHandler *PaletteHandler,
 ) *http.ServeMux {
 	apiMux := http.NewServeMux()
 
@@ -339,6 +341,12 @@ func registerAPIRoutes(
 	// RouterConfig and rely on this lenient wiring.
 	if watchSSE != nil {
 		apiMux.HandleFunc("GET /api/watch/{resource}", watchSSE.Stream)
+	}
+
+	// Same nil-safe pattern: handler-assembly tests build a minimal
+	// RouterConfig without every dependency wired.
+	if paletteHandler != nil {
+		apiMux.HandleFunc("GET /api/palette-index", paletteHandler.Index)
 	}
 
 	return apiMux

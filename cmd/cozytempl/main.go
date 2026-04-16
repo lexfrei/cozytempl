@@ -162,6 +162,7 @@ func run() error {
 		SchemaHandler:         api.NewSchemaHandler(schemaSvc, log),
 		SSEHandler:            api.NewSSEHandler(watcher, k8sCfg, cfg.AuthMode, log),
 		WatchSSEHandler:       api.NewWatchSSEHandler(k8s.NewWatchProxy(), k8sCfg, cfg.AuthMode, log),
+		PaletteHandler:        api.NewPaletteHandler(tenantSvc, appSvc, log),
 		PageHandler:           pageHandler,
 		I18n:                  i18nBundle,
 		StaticFS:              static.FS,

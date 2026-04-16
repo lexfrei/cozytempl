@@ -59,6 +59,7 @@ const PALETTE_STRINGS: Record<string, Record<string, string>> = {
     "app.open-logs": "Open Logs tab",
     "app.open-connection": "Open Connection tab",
     "app.open-overview": "Open Overview tab",
+    "palette.open-app": "Open application",
     "hint.headerButton": "Header button",
     "hint.opensModal": "Opens a modal",
     "hint.newTab": "Opens in a new tab",
@@ -89,6 +90,7 @@ const PALETTE_STRINGS: Record<string, Record<string, string>> = {
     "app.open-logs": "Открыть вкладку Логи",
     "app.open-connection": "Открыть вкладку Подключение",
     "app.open-overview": "Открыть вкладку Обзор",
+    "palette.open-app": "Открыть приложение",
     "hint.headerButton": "Кнопка в шапке",
     "hint.opensModal": "Открывает модальное окно",
     "hint.newTab": "Откроется в новой вкладке",
@@ -119,6 +121,7 @@ const PALETTE_STRINGS: Record<string, Record<string, string>> = {
     "app.open-logs": "Логтар қойындысын ашу",
     "app.open-connection": "Қосылу қойындысын ашу",
     "app.open-overview": "Шолу қойындысын ашу",
+    "palette.open-app": "Қолданбаны ашу",
     "hint.headerButton": "Жоғарғы жолақтағы түйме",
     "hint.opensModal": "Модальді ашады",
     "hint.newTab": "Жаңа қойындыда ашылады",
@@ -149,6 +152,7 @@ const PALETTE_STRINGS: Record<string, Record<string, string>> = {
     "app.open-logs": "打开日志标签页",
     "app.open-connection": "打开连接标签页",
     "app.open-overview": "打开概览标签页",
+    "palette.open-app": "打开应用",
     "hint.headerButton": "顶栏按钮",
     "hint.opensModal": "打开一个弹窗",
     "hint.newTab": "在新标签页打开",
@@ -322,7 +326,83 @@ function buildCatalog(): PaletteAction[] {
     );
   }
 
+  // Instance search — merge the server-fetched index (see
+  // fetchPaletteIndex). Skipped on the first open() before the
+  // fetch resolves; the second render() call after the fetch
+  // settles picks them up.
+  if (indexCache) {
+    for (const tenant of indexCache.tenants) {
+      // Avoid duplicating the context-aware "tenant.view" entry
+      // for the tenant the user is already on — the above block
+      // already pushed it with a hint.
+      if (tenant.namespace === currentTenantNamespace()) continue;
+      actions.push({
+        id: `palette.tenant.${tenant.namespace}`,
+        labelKey: "tenant.view",
+        labelSuffix: ` — ${tenant.displayName}`,
+        hint: `/tenants/${tenant.namespace}`,
+        handler: () => navigate(`/tenants/${tenant.namespace}`),
+      });
+    }
+
+    for (const appEntry of indexCache.apps) {
+      actions.push({
+        id: `palette.app.${appEntry.tenant}.${appEntry.name}`,
+        labelKey: "palette.open-app",
+        labelSuffix: ` — ${appEntry.name}`,
+        hint: `${appEntry.kind} · ${appEntry.tenant}`,
+        handler: () => navigate(`/tenants/${appEntry.tenant}/apps/${appEntry.name}`),
+      });
+    }
+  }
+
   return actions;
+}
+
+// --- Instance index ----------------------------------------------------
+
+// PaletteIndex mirrors internal/api/palette.go's PaletteIndex. Any
+// field rename on the server must be mirrored here.
+interface PaletteIndex {
+  tenants: Array<{ namespace: string; displayName: string }>;
+  apps: Array<{ name: string; tenant: string; kind: string }>;
+}
+
+// indexCache stores the last successful /api/palette-index
+// response. Fetched on first open() and refreshed on every
+// subsequent open() so a palette still works instantly while the
+// index is rebuilding. Also means a newly-created app becomes
+// searchable on the next Cmd+K — no full page reload required.
+let indexCache: PaletteIndex | null = null;
+let indexFetchInFlight: Promise<void> | null = null;
+
+function fetchPaletteIndex(): Promise<void> {
+  if (indexFetchInFlight) return indexFetchInFlight;
+
+  indexFetchInFlight = fetch("/api/palette-index", {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+  })
+    .then(async (response): Promise<void> => {
+      if (!response.ok) {
+        // 401 means the session expired between page render and
+        // the palette fetch; silently keep the last known index
+        // so the user can still navigate from the static
+        // catalogue. 5xx covers apiserver wobbles.
+        return;
+      }
+
+      indexCache = (await response.json()) as PaletteIndex;
+    })
+    .catch((): void => {
+      // Network blip — keep whatever we had before. The next
+      // palette open() will try again.
+    })
+    .finally((): void => {
+      indexFetchInFlight = null;
+    });
+
+  return indexFetchInFlight;
 }
 
 // --- Action helpers ----------------------------------------------------
@@ -491,6 +571,19 @@ function open(): void {
   root.hidden = false;
   document.body.classList.add("command-palette-open");
   requestAnimationFrame(() => searchInput?.focus());
+
+  // Fire-and-forget index refresh. The palette renders instantly
+  // from the static catalogue; dynamic instance entries appear
+  // when the fetch resolves, without blocking the first paint. A
+  // stale cache from a previous open() keeps instance search
+  // working between fetches.
+  void fetchPaletteIndex().then((): void => {
+    if (overlay?.hidden === false) {
+      items = buildCatalog();
+      updateFiltered();
+      render();
+    }
+  });
 }
 
 function close(): void {
