@@ -14,6 +14,17 @@ import (
 // server. If two users have the same form open and one hits Save
 // first, the second save returns 409 Conflict and the user sees a
 // "resource was modified" error instead of a silent clobber.
+// editFormFields renders the pre-populated schema-driven fields
+// so AppFormTabs can wrap them with the YAML pane uniformly.
+// Extracted for symmetry with the create path.
+templ editFormFields(schema *k8s.AppSchema, spec map[string]any) {
+	if schema != nil {
+		@SchemaFieldsWithValues(*schema, spec)
+	} else {
+		<p class="text-muted text-sm">{ partial.Tc(ctx, "form.app.noFields") }</p>
+	}
+}
+
 templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, spec map[string]any, resourceVersion string) {
 	<div id="app-edit-modal" class="modal-backdrop" style="display: flex;">
 		<div class="modal">
@@ -23,10 +34,12 @@ templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, sp
 					aria-label={ partial.Tc(ctx, "aria.closeEditApp") }
 					data-action="modal-dismiss" data-modal="app-edit-modal">&times;</button>
 			</div>
-			<form hx-put={ "/tenants/" + tenant + "/apps/" + app.Name }
+			<form id="app-edit-form"
+				hx-put={ "/tenants/" + tenant + "/apps/" + app.Name }
 				hx-target="#main-content"
 				hx-push-url="false">
 				<input type="hidden" name="_resource_version" value={ resourceVersion }/>
+				<input type="hidden" name="kind" value={ app.Kind }/>
 				<div class="form-group">
 					<label class="form-label">{ partial.Tc(ctx, "form.app.typeLabel") }</label>
 					<input class="form-input" type="text" value={ app.Kind } disabled/>
@@ -41,11 +54,7 @@ templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, sp
 						{ partial.Tc(ctx, "form.app.nameHint") }
 					</div>
 				</div>
-				if schema != nil {
-					@SchemaFieldsWithValues(*schema, spec)
-				} else {
-					<p class="text-muted text-sm">{ partial.Tc(ctx, "form.app.noFields") }</p>
-				}
+				@AppFormTabs("/fragments/app-yaml", "app-edit-form", editFormFields(schema, spec))
 				<div class="modal-footer">
 					<button type="button" class="btn"
 						data-action="modal-dismiss" data-modal="app-edit-modal">{ partial.Tc(ctx, "action.cancel") }</button>

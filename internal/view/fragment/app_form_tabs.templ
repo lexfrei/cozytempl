@@ -1,0 +1,55 @@
+package fragment
+
+import "github.com/lexfrei/cozytempl/internal/view/partial"
+
+// AppFormTabs wraps the schema-driven form fields in a tab
+// widget that lets the user switch between "Form" (the
+// generated fields) and "YAML" (a raw textarea that submits as
+// spec_yaml). Server-side buildSpecFromRequest prefers
+// spec_yaml when it is non-empty, so a user who pastes YAML
+// bypasses the form fields entirely — and a user who never
+// touches the YAML tab sees the original UX unchanged.
+//
+// loadURL is where the "Load from Form" button POSTs the
+// current form values to get back YAML for the textarea. The
+// same target id wires both directions: hx-post populates
+// #app-form-yaml with the server-rendered YAML.
+//
+// The tab switch is CSS-only: a hidden radio input + :checked
+// selector toggles which pane is visible. No new JS; the
+// existing form submit wraps both panes and carries whichever
+// fields are populated.
+templ AppFormTabs(loadURL string, bodyID string, fields templ.Component) {
+	<div class="app-form-tabs">
+		<input type="radio" name={ "mode-" + bodyID } id={ bodyID + "-mode-form" } value="form" class="app-form-tab-input" checked/>
+		<input type="radio" name={ "mode-" + bodyID } id={ bodyID + "-mode-yaml" } value="yaml" class="app-form-tab-input"/>
+		<div class="app-form-tab-bar" role="tablist">
+			<label class="app-form-tab app-form-tab-form" for={ bodyID + "-mode-form" } role="tab">
+				{ partial.Tc(ctx, "page.appForm.tabForm") }
+			</label>
+			<label class="app-form-tab app-form-tab-yaml" for={ bodyID + "-mode-yaml" } role="tab">
+				{ partial.Tc(ctx, "page.appForm.tabYAML") }
+			</label>
+		</div>
+		<div class="app-form-tab-body app-form-tab-body-form">
+			@fields
+		</div>
+		<div class="app-form-tab-body app-form-tab-body-yaml">
+			<div class="form-hint">{ partial.Tc(ctx, "page.appForm.yamlHint") }</div>
+			<button type="button" class="btn btn-sm"
+				hx-post={ loadURL }
+				hx-include={ "#" + bodyID + " .app-form-tab-body-form :input, #" + bodyID + " [name='name'], #" + bodyID + " [name='kind']" }
+				hx-target={ "#" + bodyID + "-yaml-text" }
+				hx-swap="innerHTML">
+				{ partial.Tc(ctx, "page.appForm.yamlLoadFromForm") }
+			</button>
+			<textarea class="form-textarea app-form-yaml-textarea"
+				id={ bodyID + "-yaml-text" }
+				name="spec_yaml"
+				spellcheck="false"
+				autocomplete="off"
+				rows="14"
+				placeholder="spec:\n  replicas: 1"></textarea>
+		</div>
+	</div>
+}

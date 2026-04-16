@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"sigs.k8s.io/yaml"
+
 	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view/fragment"
@@ -41,6 +43,65 @@ func (pgh *PageHandler) AppTableFragment(writer http.ResponseWriter, req *http.R
 	if renderErr != nil {
 		pgh.log.Error("rendering app table fragment", "error", renderErr)
 	}
+}
+
+// AppFormYAMLFragment renders the current form values (whatever
+// is on the wire, form-mode fields only) as YAML, suitable for
+// pasting into the spec_yaml textarea. The endpoint is POST so
+// the client can send form-encoded state without cramming it
+// into a URL; the reply is the raw YAML text inside the same
+// textarea element so htmx can swap it verbatim.
+//
+// Used by the "Load from Form" button on the YAML tab of the
+// create / edit modal — the user fills the form visually,
+// switches to YAML, clicks Load, and gets a starting point they
+// can tweak by hand.
+func (pgh *PageHandler) AppFormYAMLFragment(writer http.ResponseWriter, req *http.Request) {
+	usr := pgh.requireUser(writer, req)
+	if usr == nil {
+		return
+	}
+
+	req.Body = http.MaxBytesReader(writer, req.Body, maxFormBytes)
+
+	parseErr := req.ParseForm()
+	if parseErr != nil {
+		http.Error(writer, "bad form", http.StatusBadRequest)
+
+		return
+	}
+
+	kind := req.FormValue(formFieldKind)
+	if kind == "" {
+		// No kind yet — return an empty textarea. The create
+		// modal only shows the YAML tab once the kind has been
+		// picked, so this branch is mostly defensive.
+		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = writer.Write([]byte(""))
+
+		return
+	}
+
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, kind)
+	if schemaErr != nil {
+		pgh.log.Error("fetching schema for yaml preview", "kind", kind, "error", schemaErr)
+		http.Error(writer, "schema not found", http.StatusNotFound)
+
+		return
+	}
+
+	spec := extractSpecFromForm(req, extractFieldTypes(schema))
+
+	raw, marshalErr := yaml.Marshal(spec)
+	if marshalErr != nil {
+		pgh.log.Error("marshalling spec to yaml", "kind", kind, "error", marshalErr)
+		http.Error(writer, "yaml marshal failed", http.StatusInternalServerError)
+
+		return
+	}
+
+	writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = writer.Write(raw)
 }
 
 // SchemaFieldsFragment renders schema-driven form fields for the create app modal.

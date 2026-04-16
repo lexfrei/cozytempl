@@ -2,10 +2,13 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"sigs.k8s.io/yaml"
 
 	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/auth"
@@ -91,21 +94,20 @@ func (pgh *PageHandler) doCreateApp(
 	usr *auth.UserContext,
 	tenantNS, appName, appKind string,
 ) {
-	// Fetch schema to know field types for correct JSON encoding
-	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, appKind)
-	if schemaErr != nil {
-		pgh.log.Error("fetching schema for create", "kind", appKind, "error", schemaErr)
-		pgh.renderErrorToast(writer, req, pgh.t(req, "error.schema.load", map[string]any{"Kind": appKind}))
+	spec, specErr := pgh.buildSpecFromRequest(req, usr, appKind)
+	if specErr != nil {
+		pgh.log.Warn("building spec for create", "tenant", tenantNS, "name", appName, "kind", appKind, "error", specErr)
+		pgh.recordAudit(req, usr, audit.ActionAppCreate, appName, tenantNS,
+			audit.OutcomeDenied, map[string]any{"kind": appKind, "reason": "invalid_spec", "error": specErr.Error()})
+		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.invalidSpec"))
 
 		return
 	}
 
-	fieldTypes := extractFieldTypes(schema)
-
 	createReq := k8s.CreateApplicationRequest{
 		Name: appName,
 		Kind: appKind,
-		Spec: extractSpecFromForm(req, fieldTypes),
+		Spec: spec,
 	}
 
 	_, err := pgh.appSvc.Create(req.Context(), usr, tenantNS, createReq)
@@ -244,15 +246,14 @@ func (pgh *PageHandler) doUpdateApp(
 
 	kind := snap.Kind
 
-	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, kind)
-	if schemaErr != nil {
-		pgh.log.Error("loading schema for update", "kind", kind, "error", schemaErr)
-		pgh.renderErrorToast(writer, req, pgh.t(req, "error.schema.load", map[string]any{"Kind": kind}))
+	newSpec, specBuildErr := pgh.buildSpecFromRequest(req, usr, kind)
+	if specBuildErr != nil {
+		pgh.log.Warn("building spec for update",
+			"tenant", tenantNS, "name", appName, "error", specBuildErr)
+		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.invalidSpec"))
 
 		return
 	}
-
-	newSpec := extractSpecFromForm(req, extractFieldTypes(schema))
 	// The edit form echoes the resourceVersion it observed as a
 	// hidden input so the Update can pin optimistic-lock semantics.
 	// An empty value falls back to last-write-wins behaviour for
@@ -350,6 +351,57 @@ func (pgh *PageHandler) emitSuccessToast(writer http.ResponseWriter, req *http.R
 	if renderErr != nil {
 		pgh.log.Error("rendering success toast", "error", renderErr)
 	}
+}
+
+// formFieldSpecYAML is the textarea name the create / update
+// modal submits when the user chose the YAML tab. The field is
+// always in the DOM (hidden when the form tab is active) so
+// request parsing is uniform; whether to use its value is a
+// non-empty check on the server.
+const formFieldSpecYAML = "spec_yaml"
+
+// buildSpecFromRequest picks a spec source — form fields or a
+// YAML payload — and returns the resulting map. Fetches the
+// schema on the form-mode branch so the kind-specific type
+// coercion (booleans, integers) in extractSpecFromForm stays
+// accurate; the YAML branch skips schema entirely because
+// sigs.k8s.io/yaml already decodes native types.
+//
+// YAML mode wins when spec_yaml is non-empty — an empty
+// textarea means the user never touched the YAML tab, and
+// preserving that "ignore" rule keeps the default UX
+// (schema-driven form) intact for anyone who never clicks the
+// YAML tab.
+func (pgh *PageHandler) buildSpecFromRequest(
+	req *http.Request, usr *auth.UserContext, appKind string,
+) (map[string]any, error) {
+	if raw := strings.TrimSpace(req.FormValue(formFieldSpecYAML)); raw != "" {
+		return parseSpecYAML(raw)
+	}
+
+	schema, err := pgh.schemaSvc.Get(req.Context(), usr, appKind)
+	if err != nil {
+		return nil, fmt.Errorf("fetching schema: %w", err)
+	}
+
+	return extractSpecFromForm(req, extractFieldTypes(schema)), nil
+}
+
+// parseSpecYAML unmarshals the textarea content into the
+// spec map. sigs.k8s.io/yaml is preferred over gopkg.in/yaml.v3
+// because the former already goes through encoding/json —
+// integers, floats, booleans end up as native types matching
+// what the Kubernetes apiserver accepts, without the
+// float64/int coercion dance yaml.v3 requires.
+func parseSpecYAML(raw string) (map[string]any, error) {
+	spec := map[string]any{}
+
+	err := yaml.Unmarshal([]byte(raw), &spec)
+	if err != nil {
+		return nil, fmt.Errorf("parsing spec yaml: %w", err)
+	}
+
+	return spec, nil
 }
 
 // extractSpecFromForm pulls known schema fields out of the submitted form.

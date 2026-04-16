@@ -298,6 +298,7 @@ func registerPageRoutes(pgh *handler.PageHandler) *http.ServeMux {
 	pageMux.HandleFunc("GET /fragments/app-table", pgh.AppTableFragment)
 	pageMux.HandleFunc("GET /fragments/marketplace", pgh.MarketplaceFragment)
 	pageMux.HandleFunc("GET /fragments/schema-fields", pgh.SchemaFieldsFragment)
+	pageMux.HandleFunc("POST /fragments/app-yaml", pgh.AppFormYAMLFragment)
 	pageMux.HandleFunc("GET /fragments/tenant-edit", pgh.TenantEditFragment)
 	pageMux.HandleFunc("GET /fragments/app-edit", pgh.AppEditFragment)
 	pageMux.HandleFunc("GET /fragments/secrets/reveal", pgh.SecretRevealFragment)

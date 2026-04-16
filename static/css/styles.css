@@ -1784,6 +1784,70 @@ tr[hx-get]:hover {
   text-align: center;
 }
 
+/* Form / YAML tab switcher for the create + edit app modals.
+ * Pure CSS state machine: two sibling radio inputs drive which
+ * pane the :checked pseudo-class reveals. No JavaScript needed,
+ * which matches the rest of the project's minimal-TS posture. */
+.app-form-tabs {
+  margin-top: 16px;
+}
+
+.app-form-tab-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.app-form-tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 12px;
+}
+
+.app-form-tab {
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  user-select: none;
+}
+
+.app-form-tab:hover {
+  color: var(--color-text);
+}
+
+.app-form-tab-body {
+  display: none;
+}
+
+.app-form-tabs .app-form-tab-input[value="form"]:checked ~ .app-form-tab-bar .app-form-tab-form,
+.app-form-tabs .app-form-tab-input[value="yaml"]:checked ~ .app-form-tab-bar .app-form-tab-yaml {
+  color: var(--color-text);
+  border-bottom-color: var(--color-primary);
+}
+
+.app-form-tabs .app-form-tab-input[value="form"]:checked ~ .app-form-tab-body-form,
+.app-form-tabs .app-form-tab-input[value="yaml"]:checked ~ .app-form-tab-body-yaml {
+  display: block;
+}
+
+.app-form-yaml-textarea {
+  width: 100%;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85rem;
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin-top: 8px;
+  resize: vertical;
+  min-height: 200px;
+}
+
 /* Live log-stream lifecycle markers. Rendered inline inside the
  * log-tail <pre> to annotate connect / disconnect events without
  * interrupting the surrounding raw log text. */

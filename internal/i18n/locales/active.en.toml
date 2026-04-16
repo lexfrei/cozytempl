@@ -699,6 +699,24 @@ other = "Selected pod not found in this application."
 [error.app.invalidName]
 other = "Invalid name: lowercase letters, digits and hyphens only, must start and end with a letter or digit, max 53 characters."
 
+[error.app.invalidSpec]
+other = "Invalid spec: could not parse the YAML payload. Check indentation and structure, then try again."
+
+[page.appForm.tabForm]
+other = "Form"
+
+[page.appForm.tabYAML]
+other = "YAML"
+
+[page.appForm.yamlHint]
+other = "Paste or edit the raw spec YAML. When this textarea is non-empty, it overrides any values in the Form tab."
+
+[page.appForm.yamlLoadFromForm]
+other = "Load from Form"
+
+[page.appForm.yamlLoading]
+other = "Converting form values to YAML..."
+
 [error.schema.load]
 other = "Failed to load schema for {{.Kind}}."
 
