@@ -1,5 +1,7 @@
 package authpage
 
+import "github.com/lexfrei/cozytempl/static"
+
 // TokenUpload renders the token-mode paste form. Shown when a user
 // visits cozytempl in token mode and has no Bearer token stored in
 // their session yet. The form posts application/x-www-form-urlencoded
@@ -12,7 +14,9 @@ templ TokenUpload(errorMessage string) {
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>{ tc(ctx, "page.token.title") } &mdash; cozytempl</title>
-			<link rel="stylesheet" href="/static/dist/styles.css"/>
+			<!-- See kubeconfig_upload.templ for why the path is
+			     /static/css/styles.css and not /static/dist/. -->
+			<link rel="stylesheet" href={ "/static/css/styles.css?v=" + static.AssetVersion() }/>
 		</head>
 		<body>
 			<main class="container" style="max-width: 560px; margin-top: 4rem;">
