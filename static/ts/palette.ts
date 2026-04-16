@@ -331,17 +331,18 @@ function buildCatalog(): PaletteAction[] {
   // fetch resolves; the second render() call after the fetch
   // settles picks them up.
   if (indexCache) {
-    for (const tenant of indexCache.tenants) {
+    const currentTenantNS = currentTenantNamespace();
+    for (const tenantEntry of indexCache.tenants) {
       // Avoid duplicating the context-aware "tenant.view" entry
       // for the tenant the user is already on — the above block
       // already pushed it with a hint.
-      if (tenant.namespace === currentTenantNamespace()) continue;
+      if (tenantEntry.namespace === currentTenantNS) continue;
       actions.push({
-        id: `palette.tenant.${tenant.namespace}`,
+        id: `palette.tenant.${tenantEntry.namespace}`,
         labelKey: "tenant.view",
-        labelSuffix: ` — ${tenant.displayName}`,
-        hint: `/tenants/${tenant.namespace}`,
-        handler: () => navigate(`/tenants/${tenant.namespace}`),
+        labelSuffix: ` — ${tenantEntry.displayName}`,
+        hint: `/tenants/${tenantEntry.namespace}`,
+        handler: () => navigate(`/tenants/${tenantEntry.namespace}`),
       });
     }
 
@@ -366,6 +367,10 @@ function buildCatalog(): PaletteAction[] {
 interface PaletteIndex {
   tenants: Array<{ namespace: string; displayName: string }>;
   apps: Array<{ name: string; tenant: string; kind: string }>;
+  // Tenants whose app list hit the server-side 500-entry cap
+  // (k8s.AppListLimit). Reserved for a future UI hint; today
+  // just kept in the cache so it survives a payload roundtrip.
+  truncatedTenants?: string[];
 }
 
 // indexCache stores the last successful /api/palette-index
@@ -385,10 +390,12 @@ function fetchPaletteIndex(): Promise<void> {
   })
     .then(async (response): Promise<void> => {
       if (!response.ok) {
-        // 401 means the session expired between page render and
-        // the palette fetch; silently keep the last known index
-        // so the user can still navigate from the static
-        // catalogue. 5xx covers apiserver wobbles.
+        // Any non-2xx means we can't trust the body: 3xx hits
+        // when RequireAuth redirects an expired session to
+        // /auth/login (auto-follow lands on HTML, not JSON),
+        // 5xx on apiserver wobbles. Either way, silently keep
+        // the last known index so the user can still navigate
+        // from the static catalogue until the next open().
         return;
       }
 

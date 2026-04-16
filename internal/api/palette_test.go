@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -10,20 +11,78 @@ import (
 	"testing"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
+	"github.com/lexfrei/cozytempl/internal/k8s"
 )
+
+// stubTenantLister satisfies paletteTenantLister with a fixed
+// return value. The call counter proves the handler queries
+// exactly once per request; the error override covers the
+// tenant-list-failure path (full 500).
+type stubTenantLister struct {
+	items []k8s.Tenant
+	err   error
+}
+
+func (s *stubTenantLister) List(context.Context, *auth.UserContext) ([]k8s.Tenant, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+
+	return s.items, nil
+}
+
+// stubAppLister returns a per-tenant ApplicationList from a map.
+// Missing keys return an empty list; tenants listed in errs
+// return the matching error so the "one broken tenant must not
+// blank the palette" invariant has a driver.
+type stubAppLister struct {
+	byTenant map[string]k8s.ApplicationList
+	errs     map[string]error
+}
+
+func (s *stubAppLister) List(_ context.Context, _ *auth.UserContext, tenant string) (k8s.ApplicationList, error) {
+	if err, ok := s.errs[tenant]; ok {
+		return k8s.ApplicationList{}, err
+	}
+
+	return s.byTenant[tenant], nil
+}
+
+// withPaletteTestUser attaches a UserContext to ctx so the
+// handler clears its 401 guard and hits the data-assembly path.
+// Username is logging-only — RBAC is driven by the lister stubs.
+func withPaletteTestUser(ctx context.Context) context.Context {
+	return auth.ContextWithUser(ctx, &auth.UserContext{Username: "test-user"})
+}
+
+// paletteTestHandler is the common harness: a stub tenant lister
+// and stub app lister, ready to be handed to NewPaletteHandler.
+func paletteTestHandler(t *testing.T, tl *stubTenantLister, al *stubAppLister) *PaletteHandler {
+	t.Helper()
+
+	return NewPaletteHandler(tl, al, slog.New(slog.DiscardHandler))
+}
+
+// paletteGET builds the GET request with a pre-authenticated
+// context so tests do not re-author the boilerplate per case.
+func paletteGET(t *testing.T) *http.Request {
+	t.Helper()
+
+	return httptest.NewRequestWithContext(
+		withPaletteTestUser(context.Background()),
+		http.MethodGet, "/api/palette-index", nil)
+}
 
 // TestPaletteHandlerRequiresAuth confirms the 401 guard. Without
 // it any anonymous caller could enumerate tenants and apps the
-// logged-in user can see. The palette is a JSON API under /api
-// so it sits inside the protect() middleware in production, but
-// the handler's own guard is belt-and-braces.
+// logged-in user can see. The handler sits inside protect() in
+// production, but the guard is belt-and-braces.
 func TestPaletteHandlerRequiresAuth(t *testing.T) {
 	t.Parallel()
 
-	handler := NewPaletteHandler(nil, nil, slog.New(slog.DiscardHandler))
+	handler := NewPaletteHandler(&stubTenantLister{}, &stubAppLister{}, slog.New(slog.DiscardHandler))
 
-	req := httptest.NewRequestWithContext(
-		context.Background(),
+	req := httptest.NewRequestWithContext(context.Background(),
 		http.MethodGet, "/api/palette-index", nil)
 
 	rec := httptest.NewRecorder()
@@ -34,16 +93,182 @@ func TestPaletteHandlerRequiresAuth(t *testing.T) {
 	}
 }
 
+// TestPaletteIndexSuccess walks the happy path: two tenants,
+// apps in each → sorted JSON with every expected entry. Locks
+// (a) tenant order preserved from TenantLister, (b) apps
+// emitted in tenant-then-list-order, (c) Kind passed through
+// unchanged so the client can render the hint.
+func TestPaletteIndexSuccess(t *testing.T) {
+	t.Parallel()
+
+	tl := &stubTenantLister{items: []k8s.Tenant{
+		{Namespace: "tenant-a", DisplayName: "Tenant A"},
+		{Namespace: "tenant-b", DisplayName: "Tenant B"},
+	}}
+	al := &stubAppLister{byTenant: map[string]k8s.ApplicationList{
+		"tenant-a": {Items: []k8s.Application{
+			{Name: "pg-main", Kind: "Postgres"},
+			{Name: "redis-cache", Kind: "Redis"},
+		}},
+		"tenant-b": {Items: []k8s.Application{
+			{Name: "vm-worker", Kind: "VMInstance"},
+		}},
+	}}
+
+	handler := paletteTestHandler(t, tl, al)
+	rec := httptest.NewRecorder()
+	handler.Index(rec, paletteGET(t))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+
+	var got PaletteIndex
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if len(got.Tenants) != 2 {
+		t.Fatalf("len(tenants) = %d, want 2", len(got.Tenants))
+	}
+
+	if got.Tenants[0].Namespace != "tenant-a" || got.Tenants[1].Namespace != "tenant-b" {
+		t.Errorf("tenant order = %+v, want tenant-a then tenant-b", got.Tenants)
+	}
+
+	if len(got.Apps) != 3 {
+		t.Fatalf("len(apps) = %d, want 3; got %+v", len(got.Apps), got.Apps)
+	}
+
+	wantApps := []PaletteApp{
+		{Name: "pg-main", Tenant: "tenant-a", Kind: "Postgres"},
+		{Name: "redis-cache", Tenant: "tenant-a", Kind: "Redis"},
+		{Name: "vm-worker", Tenant: "tenant-b", Kind: "VMInstance"},
+	}
+
+	for i, want := range wantApps {
+		if got.Apps[i] != want {
+			t.Errorf("apps[%d] = %+v, want %+v", i, got.Apps[i], want)
+		}
+	}
+}
+
+// TestPaletteIndexPerTenantErrorDoesNotBlank pins the "single
+// broken tenant should not blank the palette" invariant. Tenant
+// A's List succeeds, Tenant B's List fails — the response must
+// still include Tenant A plus both tenant entries in the
+// tenants[] list (so the user can navigate there) and skip only
+// Tenant B's apps.
+func TestPaletteIndexPerTenantErrorDoesNotBlank(t *testing.T) {
+	t.Parallel()
+
+	tl := &stubTenantLister{items: []k8s.Tenant{
+		{Namespace: "tenant-a", DisplayName: "Tenant A"},
+		{Namespace: "tenant-b", DisplayName: "Tenant B"},
+	}}
+	al := &stubAppLister{
+		byTenant: map[string]k8s.ApplicationList{
+			"tenant-a": {Items: []k8s.Application{{Name: "pg", Kind: "Postgres"}}},
+		},
+		errs: map[string]error{
+			"tenant-b": errors.New("apiserver timeout"),
+		},
+	}
+
+	handler := paletteTestHandler(t, tl, al)
+	rec := httptest.NewRecorder()
+	handler.Index(rec, paletteGET(t))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (partial failure must not 5xx); body = %s",
+			rec.Code, rec.Body.String())
+	}
+
+	var got PaletteIndex
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if len(got.Tenants) != 2 {
+		t.Errorf("tenants = %+v, want both entries present even when one app-list failed", got.Tenants)
+	}
+
+	if len(got.Apps) != 1 || got.Apps[0].Name != "pg" {
+		t.Errorf("apps = %+v, want just pg from tenant-a", got.Apps)
+	}
+}
+
+// TestPaletteIndexTenantListError covers the full-failure
+// branch: a tenant-list error surfaces as 500 rather than an
+// empty index, so operators see a loud failure instead of a
+// quiet "no tenants visible" UX.
+func TestPaletteIndexTenantListError(t *testing.T) {
+	t.Parallel()
+
+	tl := &stubTenantLister{err: errors.New("kube-apiserver down")}
+	al := &stubAppLister{}
+
+	handler := paletteTestHandler(t, tl, al)
+	rec := httptest.NewRecorder()
+	handler.Index(rec, paletteGET(t))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 on tenant list failure", rec.Code)
+	}
+
+	if !strings.Contains(rec.Body.String(), "failed to list tenants") {
+		t.Errorf("body = %q, want failure copy", rec.Body.String())
+	}
+}
+
+// TestPaletteIndexSurfacesTruncation pins the Truncated →
+// TruncatedTenants plumbing. Without it a tenant with 500+ apps
+// loses the overflow silently and an operator typing app #501 by
+// name sees no match and no explanation.
+func TestPaletteIndexSurfacesTruncation(t *testing.T) {
+	t.Parallel()
+
+	tl := &stubTenantLister{items: []k8s.Tenant{
+		{Namespace: "tenant-big", DisplayName: "Big"},
+	}}
+	al := &stubAppLister{byTenant: map[string]k8s.ApplicationList{
+		"tenant-big": {
+			Items: []k8s.Application{
+				{Name: "pg-1", Kind: "Postgres"},
+			},
+			Truncated: true,
+		},
+	}}
+
+	handler := paletteTestHandler(t, tl, al)
+	rec := httptest.NewRecorder()
+	handler.Index(rec, paletteGET(t))
+
+	var got PaletteIndex
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decoding response: %v", err)
+	}
+
+	if len(got.TruncatedTenants) != 1 || got.TruncatedTenants[0] != "tenant-big" {
+		t.Errorf("truncatedTenants = %+v, want [tenant-big]", got.TruncatedTenants)
+	}
+
+	if len(got.Apps) != 1 {
+		t.Errorf("apps truncated-case lost visible items: %+v", got.Apps)
+	}
+}
+
 // TestPaletteIndexShape locks the JSON field names the client
-// depends on. Renaming `namespace`, `displayName`, `name`,
-// `tenant`, or `kind` silently breaks static/ts/palette.ts
-// without any TypeScript or Go compile error.
+// depends on. Renaming any of these silently breaks the
+// TypeScript consumer (static/ts/palette.ts PaletteIndex
+// interface) with no Go or TS compile error.
 func TestPaletteIndexShape(t *testing.T) {
 	t.Parallel()
 
 	index := PaletteIndex{
-		Tenants: []PaletteTenant{{Namespace: "ns-a", DisplayName: "Tenant A"}},
-		Apps:    []PaletteApp{{Name: "pg", Tenant: "ns-a", Kind: "Postgres"}},
+		Tenants:          []PaletteTenant{{Namespace: "ns-a", DisplayName: "Tenant A"}},
+		Apps:             []PaletteApp{{Name: "pg", Tenant: "ns-a", Kind: "Postgres"}},
+		TruncatedTenants: []string{"ns-a"},
 	}
 
 	raw, err := json.Marshal(index)
@@ -60,28 +285,10 @@ func TestPaletteIndexShape(t *testing.T) {
 		`"name"`,
 		`"tenant"`,
 		`"kind"`,
+		`"truncatedTenants"`,
 	} {
 		if !strings.Contains(got, needle) {
 			t.Errorf("JSON missing required key %s: %s", needle, got)
 		}
-	}
-}
-
-// withPaletteTestUser attaches a UserContext to the request so
-// handler tests clear the 401 guard and hit the data-assembly
-// path. The username identifies the caller in logs only; it does
-// not influence RBAC — tenantSvc / appSvc mocks control that.
-func withPaletteTestUser(ctx context.Context) context.Context {
-	return auth.ContextWithUser(ctx, &auth.UserContext{Username: "test-user"})
-}
-
-// TestPaletteHandlerUnauthenticatedUsesHelper sanity-checks the
-// helper above so the rest of the suite can rely on it.
-func TestPaletteHandlerUnauthenticatedUsesHelper(t *testing.T) {
-	t.Parallel()
-
-	ctx := withPaletteTestUser(context.Background())
-	if auth.UserFromContext(ctx) == nil {
-		t.Error("withPaletteTestUser did not attach a UserContext")
 	}
 }

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -21,19 +22,34 @@ import (
 // palette open avoids the per-keystroke round-trip that a
 // server-side search would require.
 type PaletteHandler struct {
-	tenantSvc *k8s.TenantService
-	appSvc    *k8s.ApplicationService
-	log       *slog.Logger
+	tenants paletteTenantLister
+	apps    paletteAppLister
+	log     *slog.Logger
 }
 
-// NewPaletteHandler wires the palette handler. Takes both the
-// tenant and application services because the index needs both —
-// splitting into two endpoints would just double the round-trip
-// without simplifying either call site.
+// paletteTenantLister is the narrow slice of TenantService the
+// handler uses. Split out so unit tests can inject a stub without
+// standing up the concrete k8s client — the real service
+// satisfies it by construction.
+type paletteTenantLister interface {
+	List(ctx context.Context, usr *auth.UserContext) ([]k8s.Tenant, error)
+}
+
+// paletteAppLister mirrors the slice of ApplicationService the
+// handler actually calls. Same test-seam motivation as
+// paletteTenantLister.
+type paletteAppLister interface {
+	List(ctx context.Context, usr *auth.UserContext, tenant string) (k8s.ApplicationList, error)
+}
+
+// NewPaletteHandler wires the palette handler. Takes both listers
+// because the index needs both — splitting into two endpoints
+// would just double the round-trip without simplifying either
+// call site.
 func NewPaletteHandler(
-	tenantSvc *k8s.TenantService, appSvc *k8s.ApplicationService, log *slog.Logger,
+	tenants paletteTenantLister, apps paletteAppLister, log *slog.Logger,
 ) *PaletteHandler {
-	return &PaletteHandler{tenantSvc: tenantSvc, appSvc: appSvc, log: log}
+	return &PaletteHandler{tenants: tenants, apps: apps, log: log}
 }
 
 // PaletteIndex is the JSON payload the client consumes. Kept in
@@ -42,6 +58,12 @@ func NewPaletteHandler(
 type PaletteIndex struct {
 	Tenants []PaletteTenant `json:"tenants"`
 	Apps    []PaletteApp    `json:"apps"`
+	// TruncatedTenants lists namespaces whose app list hit the
+	// 500-entry cap (see k8s.AppListLimit). The client can render
+	// a hint so an operator who fails to find app #501 knows
+	// why; without surfacing the bit, the palette would silently
+	// skip apps past the limit.
+	TruncatedTenants []string `json:"truncatedTenants,omitempty"`
 }
 
 // PaletteTenant is the minimum the client needs to render a "Go
@@ -70,7 +92,9 @@ type PaletteApp struct {
 //
 // Per-tenant List errors are logged but do not abort the response
 // — a single broken tenant should not blank the palette. The
-// client gets whatever succeeded.
+// client gets whatever succeeded. If a tenant's list was
+// truncated by the server-side cap, its namespace is reported in
+// TruncatedTenants so the UI can surface the limitation.
 func (plh *PaletteHandler) Index(writer http.ResponseWriter, req *http.Request) {
 	usr := auth.UserFromContext(req.Context())
 	if usr == nil {
@@ -79,7 +103,7 @@ func (plh *PaletteHandler) Index(writer http.ResponseWriter, req *http.Request) 
 		return
 	}
 
-	tenants, err := plh.tenantSvc.List(req.Context(), usr)
+	tenants, err := plh.tenants.List(req.Context(), usr)
 	if err != nil {
 		plh.log.Error("listing tenants for palette", "error", err)
 		Error(writer, http.StatusInternalServerError, "failed to list tenants")
@@ -98,22 +122,38 @@ func (plh *PaletteHandler) Index(writer http.ResponseWriter, req *http.Request) 
 			DisplayName: tenants[idx].DisplayName,
 		})
 
-		appList, listErr := plh.appSvc.List(req.Context(), usr, tenants[idx].Namespace)
-		if listErr != nil {
-			plh.log.Warn("listing apps for palette",
-				"tenant", tenants[idx].Namespace, "error", listErr)
-
-			continue
-		}
-
-		for i := range appList.Items {
-			index.Apps = append(index.Apps, PaletteApp{
-				Name:   appList.Items[i].Name,
-				Tenant: tenants[idx].Namespace,
-				Kind:   appList.Items[i].Kind,
-			})
-		}
+		plh.appendTenantApps(req.Context(), usr, tenants[idx].Namespace, &index)
 	}
 
 	JSON(writer, http.StatusOK, index)
+}
+
+// appendTenantApps lists one tenant's apps and folds them into
+// the shared index. Split from Index so the main handler stays
+// under the funlen budget and the per-tenant error / truncation
+// branches can be read in isolation.
+func (plh *PaletteHandler) appendTenantApps(
+	ctx context.Context, usr *auth.UserContext, tenant string, index *PaletteIndex,
+) {
+	appList, err := plh.apps.List(ctx, usr, tenant)
+	if err != nil {
+		plh.log.Warn("listing apps for palette", "tenant", tenant, "error", err)
+
+		return
+	}
+
+	if appList.Truncated {
+		plh.log.Warn("palette index truncated for tenant",
+			"tenant", tenant, "limit", k8s.AppListLimit)
+
+		index.TruncatedTenants = append(index.TruncatedTenants, tenant)
+	}
+
+	for i := range appList.Items {
+		index.Apps = append(index.Apps, PaletteApp{
+			Name:   appList.Items[i].Name,
+			Tenant: tenant,
+			Kind:   appList.Items[i].Kind,
+		})
+	}
 }
