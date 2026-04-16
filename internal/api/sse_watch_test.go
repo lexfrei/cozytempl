@@ -63,7 +63,7 @@ func TestRenderEventRowRequiresName(t *testing.T) {
 		"kind":       "Event",
 	}}
 
-	if _, _, err := renderEventRow(obj); !errors.Is(err, errWatchEventMissingName) {
+	if _, _, err := renderEventRow(context.Background(), obj); !errors.Is(err, errWatchEventMissingName) {
 		t.Errorf("renderEventRow(no name) = %v, want errWatchEventMissingName", err)
 	}
 }
@@ -89,7 +89,7 @@ func TestRenderEventRowProducesStableID(t *testing.T) {
 		"count":   int64(3),
 	}}
 
-	name, html, err := renderEventRow(obj)
+	name, html, err := renderEventRow(context.Background(), obj)
 	if err != nil {
 		t.Fatalf("renderEventRow: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestForwardEventSkipsBookmark(t *testing.T) {
 	wsh := newForwardTestHandler(t)
 	fake := &fakeFlusher{}
 
-	ok := wsh.forwardEvent(fake, fake, eventReq(""), watch.Event{Type: watch.Bookmark})
+	ok := wsh.forwardEvent(context.Background(), fake, fake, eventReq(""), watch.Event{Type: watch.Bookmark})
 
 	if !ok {
 		t.Error("forwardEvent(Bookmark) = false, want true (stream stays open)")
@@ -281,7 +281,7 @@ func TestForwardEventSkipsNonUnstructured(t *testing.T) {
 
 	// A typed object (e.g. *metav1.Status) has nothing to do with
 	// the row renderer — drop it, keep the stream.
-	ok := wsh.forwardEvent(fake, fake, eventReq(""), watch.Event{
+	ok := wsh.forwardEvent(context.Background(), fake, fake, eventReq(""), watch.Event{
 		Type:   watch.Added,
 		Object: &unstructured.UnstructuredList{},
 	})
@@ -308,7 +308,7 @@ func TestForwardEventSkipsFilteredOut(t *testing.T) {
 
 	foreign := unstructuredEvent("otherapp.1811ab", "otherapp")
 
-	ok := wsh.forwardEvent(fake, fake, eventReq("myvm"), watch.Event{
+	ok := wsh.forwardEvent(context.Background(), fake, fake, eventReq("myvm"), watch.Event{
 		Type:   watch.Added,
 		Object: foreign,
 	})
@@ -335,7 +335,7 @@ func TestForwardEventAbortsOnWriteFailure(t *testing.T) {
 
 	evt := unstructuredEvent("myvm.1811ab", "myvm")
 
-	ok := wsh.forwardEvent(fake, fake, eventReq(""), watch.Event{
+	ok := wsh.forwardEvent(context.Background(), fake, fake, eventReq(""), watch.Event{
 		Type:   watch.Added,
 		Object: evt,
 	})
@@ -357,7 +357,7 @@ func TestForwardEventWritesSSEFrame(t *testing.T) {
 
 	evt := unstructuredEvent("myvm.1811ab", "myvm")
 
-	ok := wsh.forwardEvent(fake, fake, eventReq(""), watch.Event{
+	ok := wsh.forwardEvent(context.Background(), fake, fake, eventReq(""), watch.Event{
 		Type:   watch.Added,
 		Object: evt,
 	})

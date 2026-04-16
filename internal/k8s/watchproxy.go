@@ -93,10 +93,26 @@ func (wp *WatchProxy) Authorize(
 // the same flash twice, functionally harmless. If a future
 // consumer needs strictly-once delivery, thread the LIST's
 // metadata.resourceVersion in here.
+//
+// CRITICAL: Stream copies userCfg and zeroes Timeout before
+// building the dynamic client. BuildUserRESTConfig applies a 10 s
+// HTTP client timeout so control-plane wobbles on a LIST or GET
+// surface as a loud error rather than a hung goroutine. That same
+// timeout on a watch cancels the HTTP request after 10 s of
+// streaming — the watch closes normally (io.EOF) and the caller
+// reconnects, burning one SSAR + one watch re-open per cycle. With
+// ~12 cycles per minute per subscriber, a single Events tab open
+// for 30 min would fan out ~360 watch opens and ~360 SSAR probes
+// to the apiserver. Setting Timeout=0 here tells client-go "no
+// client-side deadline", letting ctx cancellation and the
+// caller-imposed watchStreamMaxAge drive the lifecycle instead.
 func (wp *WatchProxy) Stream(
 	ctx context.Context, userCfg *rest.Config, gvr schema.GroupVersionResource, namespace string,
 ) (watch.Interface, error) {
-	client, err := dynamic.NewForConfig(userCfg)
+	watchCfg := rest.CopyConfig(userCfg)
+	watchCfg.Timeout = 0
+
+	client, err := dynamic.NewForConfig(watchCfg)
 	if err != nil {
 		return nil, fmt.Errorf("building dynamic client for watch: %w", err)
 	}

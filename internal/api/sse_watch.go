@@ -63,10 +63,17 @@ func NewWatchSSEHandler(proxy *k8s.WatchProxy, baseCfg *rest.Config, mode config
 }
 
 // rowRenderer is the signature every per-resource row renderer
-// satisfies: unstructured watch object in, (element name, HTML,
-// error) out. Named so gocritic's unnamedResult stays happy with
-// the renderRow field in watchResourceConfig.
-type rowRenderer func(obj *unstructured.Unstructured) (string, string, error)
+// satisfies: request ctx + unstructured watch object in, (element
+// name, HTML, error) out. The ctx carries the i18n Localizer the
+// middleware attached to the incoming request — renderers MUST
+// pass it through to templ.Component.Render so any partial.Tc
+// calls downstream resolve against the caller's locale. Passing
+// context.Background() here would silently render English to
+// every user regardless of Accept-Language.
+//
+// Named so gocritic's unnamedResult stays happy with the renderRow
+// field in watchResourceConfig.
+type rowRenderer func(ctx context.Context, obj *unstructured.Unstructured) (string, string, error)
 
 // objectFilter decides whether an incoming watch event is relevant
 // to the current subscription. It receives the raw watch object
@@ -276,7 +283,7 @@ func (wsh *WatchSSEHandler) pump(
 				return
 			}
 
-			if !wsh.forwardEvent(writer, flusher, sreq, evt) {
+			if !wsh.forwardEvent(req.Context(), writer, flusher, sreq, evt) {
 				return
 			}
 		}
@@ -287,7 +294,13 @@ func (wsh *WatchSSEHandler) pump(
 // Returns false to signal the caller to abort the stream (write
 // error). Skipping a single malformed event is safer than aborting
 // the whole subscription, so recoverable problems return true.
+//
+// ctx MUST be the request context so the renderer's templ
+// templates resolve translations against the caller's Localizer.
+// Using context.Background() here silently renders English to
+// every user regardless of Accept-Language.
 func (wsh *WatchSSEHandler) forwardEvent(
+	ctx context.Context,
 	writer http.ResponseWriter,
 	flusher http.Flusher,
 	sreq *streamRequest,
@@ -319,7 +332,7 @@ func (wsh *WatchSSEHandler) forwardEvent(
 		return true
 	}
 
-	name, html, err := sreq.conf.renderRow(obj)
+	name, html, err := sreq.conf.renderRow(ctx, obj)
 	if err != nil {
 		wsh.log.Warn("rendering watch event row",
 			"name", obj.GetName(), "error", err)
@@ -327,12 +340,24 @@ func (wsh *WatchSSEHandler) forwardEvent(
 		return true
 	}
 
-	payload, err := json.Marshal(watchMessage{
+	return wsh.writeWatchFrame(writer, flusher, watchMessage{
 		Op:          operation,
 		Name:        name,
 		HTML:        html,
 		RowIDPrefix: sreq.conf.rowIDPrefix,
 	})
+}
+
+// writeWatchFrame marshals one watchMessage and writes it as a
+// single SSE `data:` frame. Split from forwardEvent to keep both
+// under the funlen budget and so the JSON/write pair can be
+// exercised independently. Returns false only on an actual write
+// failure — marshal failure is logged and treated as a skippable
+// per-event problem.
+func (wsh *WatchSSEHandler) writeWatchFrame(
+	writer http.ResponseWriter, flusher http.Flusher, msg watchMessage,
+) bool {
+	payload, err := json.Marshal(msg)
 	if err != nil {
 		wsh.log.Error("marshalling watch SSE payload", "error", err)
 
@@ -388,7 +413,7 @@ func sseOpFromWatchType(eventType watch.EventType) string {
 // unnamedResult preference for small files like this one.
 //
 //nolint:gocritic // unnamedResult: nonamedreturns forbids the alternative
-func renderEventRow(obj *unstructured.Unstructured) (string, string, error) {
+func renderEventRow(ctx context.Context, obj *unstructured.Unstructured) (string, string, error) {
 	name := obj.GetName()
 	if name == "" {
 		return "", "", errWatchEventMissingName
@@ -398,7 +423,7 @@ func renderEventRow(obj *unstructured.Unstructured) (string, string, error) {
 
 	var buf bytes.Buffer
 
-	renderErr := page.EventRow(evt).Render(context.Background(), &buf)
+	renderErr := page.EventRow(evt).Render(ctx, &buf)
 	if renderErr != nil {
 		return "", "", fmt.Errorf("rendering event row: %w", renderErr)
 	}

@@ -114,6 +114,7 @@ function handleMessage(raw: string): void {
 
   if (msg.op === "removed") {
     document.getElementById(rowId)?.remove();
+    refreshEmptyState();
     return;
   }
 
@@ -142,10 +143,24 @@ function handleMessage(raw: string): void {
   if (container) {
     container.prepend(nextRow);
     flashRow(nextRow);
-
-    const emptyState = document.getElementById("event-empty-state");
-    if (emptyState) emptyState.hidden = true;
+    refreshEmptyState();
   }
+}
+
+// refreshEmptyState toggles the "no events yet" copy based on
+// whether the watch container has any live rows. Called after
+// every add (to hide the state) and every remove (to restore it
+// when the last live row drops). Without the remove-side call the
+// user would stare at an empty tbody with no explanation after
+// Kubernetes GC sweeps the last Event entry.
+function refreshEmptyState(): void {
+  const container = document.querySelector<HTMLElement>(
+    "[data-watch-resource]",
+  );
+  const emptyState = document.getElementById("event-empty-state");
+  if (!container || !emptyState) return;
+
+  emptyState.hidden = container.children.length > 0;
 }
 
 function flashRow(row: HTMLElement): void {

@@ -79,6 +79,35 @@ rules:
 
 Yes, by design. cozytempl caps every SSE connection at 60 minutes. When the cap fires, the handler returns cleanly, the browser's `EventSource` sees the connection close and reconnects automatically with `Last-Event-ID`. The new request re-runs `RequireAuth`, which refreshes the OIDC ID token if it is close to expiring, and the watcher's ring buffer replays any events that fired during the momentary disconnect. You should not see any missed updates.
 
+## Live updates on the Events tab (`/api/watch/events`)
+
+The Events tab uses a separate endpoint (`/api/watch/{resource}`)
+that opens the watch with the subscribing user's own credentials,
+not the shared watcher ServiceAccount. That's why rows appear for
+events the user has RBAC to list/watch and no extra cluster roles
+are needed beyond what the user already has.
+
+- **Stream lifetime is 30 minutes**, not 60. Shorter than the
+  shared-SA stream because passthrough ID tokens expire roughly
+  once per 30 minutes on a default Keycloak config and we refresh
+  on reconnect.
+- **Pre-authorised via SelfSubjectAccessReview (`verb=watch`).** If
+  the SSAR fails with a transport error, the endpoint returns
+  `503` — apiserver unreachable. If the SSAR succeeds with
+  `allowed=false`, the endpoint returns `403` — real RBAC deny.
+  Tell these two apart by status code.
+- **Scoped to one app via `?object=`** on the Events tab so the
+  live stream does not inject neighbour-app events into the page.
+  The matching rule is the same "name derived from release" used
+  for the paginated list — exact match plus standard Helm-release
+  suffix / prefix patterns.
+- **Not reflected in `cozytempl_http_requests_inflight` or the
+  HTTP duration histogram.** Long-lived streams would pin the
+  `+Inf` bucket and leave the gauge permanently elevated; the
+  access log also skips the post-disconnect line for the same
+  reason. Use the apiserver audit log or pod slog for end-to-end
+  tracing.
+
 If the reconnect itself fails (browser stuck in "connecting" for more than a few seconds, UI live-updates stop), check:
 
 1. The pod logs for `SSE subscribe denied` — the user's RBAC changed.
