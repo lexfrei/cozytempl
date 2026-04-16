@@ -2,31 +2,6 @@ package fragment
 
 import "github.com/lexfrei/cozytempl/internal/view/partial"
 
-// AppFormTabs wraps the schema-driven form fields in a tab
-// widget that lets the user switch between "Form" (the
-// generated fields) and "YAML" (a raw textarea that submits as
-// spec_yaml). Server-side buildSpecFromRequest prefers
-// spec_yaml when it is non-empty, so a user who pastes YAML
-// bypasses the form fields entirely — and a user who never
-// touches the YAML tab sees the original UX unchanged.
-//
-// loadURL is where the "Load from Form" button POSTs the
-// current form values to get back YAML for the textarea;
-// applyURL is the reverse — "Apply to Form" parses the YAML
-// and re-renders the schema fields with the resulting values,
-// covering P3's "server-side parser back into form state".
-//
-// Tabs are implemented with radio inputs + :checked CSS
-// selectors so no JS is needed to toggle panes. The radios
-// carry the `_tabmode` name (prefixed with the formless
-// underscore reserved-field convention) so they never reach
-// extractSpecFromForm — see crud.go's reserved-field check.
-//
-// Accessibility: radios stay keyboard-focusable (no
-// pointer-events:none); the tab-bar applies a focus ring via
-// :has(:focus-visible) so a sighted keyboard user sees the
-// selection. Arrow keys cycle between radios (native browser
-// behaviour for same-name radio groups).
 // schemaFieldsID returns the DOM id of the schema-fields
 // container for a given form body id. Both the create and edit
 // modals render a container with this id inside
@@ -38,7 +13,38 @@ func schemaFieldsID(bodyID string) string {
 	return bodyID + "-schema-fields"
 }
 
-templ AppFormTabs(loadURL, applyURL, bodyID string, fields templ.Component) {
+// AppFormTabs wraps the schema-driven form fields in a tab
+// widget that lets the user switch between "Form" (the
+// generated fields) and "YAML" (a raw textarea that submits as
+// spec_yaml). The active tab at submit time (radio _tabmode)
+// is the source of truth: switching to Form discards the YAML
+// textarea on save; switching to YAML overrides the form.
+// A user who never touches the YAML tab sees the original UX.
+//
+// loadURL is where "Load from Form" POSTs form values to get
+// back YAML; applyURL is the reverse — "Apply to Form" parses
+// the YAML and re-renders the schema fields with values.
+//
+// initialYAML pre-populates the textarea so an edit-modal
+// user sees the full current spec (including deep / unknown
+// fields the schema walker does not surface in the Form
+// pane). Without this the textarea opens empty and a user
+// who edits YAML and saves with _tabmode=yaml (full replace)
+// would silently delete every deep field from cluster state
+// because "Load from Form" only dumps the top-2-level form
+// subset. The create modal passes initialYAML="" — there is
+// nothing to round-trip.
+//
+// Tabs are implemented with radio inputs + :checked CSS
+// selectors so no JS is needed to toggle panes. The radios
+// carry the `_tabmode` name so they never reach
+// extractSpecFromForm — isReservedFormField filters them out.
+//
+// Accessibility: radios stay keyboard-focusable; the focused
+// tab label gets a primary-colour outline via :focus-visible
+// so a sighted keyboard user sees the selection. Arrow keys
+// cycle between radios (native browser behaviour).
+templ AppFormTabs(loadURL, applyURL, bodyID, initialYAML string, fields templ.Component) {
 	<div class="app-form-tabs">
 		<input type="radio" name="_tabmode" id={ bodyID + "-mode-form" } value="form" class="app-form-tab-input" checked/>
 		<input type="radio" name="_tabmode" id={ bodyID + "-mode-yaml" } value="yaml" class="app-form-tab-input"/>
@@ -79,7 +85,7 @@ templ AppFormTabs(loadURL, applyURL, bodyID string, fields templ.Component) {
 				spellcheck="false"
 				autocomplete="off"
 				rows="14"
-				placeholder={ "replicas: 1\nstorage:\n  size: 10Gi" }></textarea>
+				placeholder={ "replicas: 1\nstorage:\n  size: 10Gi" }>{ initialYAML }</textarea>
 		</div>
 	</div>
 }

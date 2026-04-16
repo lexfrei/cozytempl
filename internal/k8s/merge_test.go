@@ -5,6 +5,91 @@ import (
 	"testing"
 )
 
+// TestPickNextSpecReplaceDeletesAbsentKeys pins the
+// kubectl-edit semantics for YAML-mode updates. A user who
+// deletes a key from the YAML textarea and saves with
+// _tabmode=yaml expects the cluster to lose that key;
+// deep-merge would quietly preserve it and the diff the
+// user saw locally would silently not apply.
+func TestPickNextSpecReplaceDeletesAbsentKeys(t *testing.T) {
+	t.Parallel()
+
+	existing := map[string]any{
+		"replicas": int64(3),
+		"backup": map[string]any{
+			"enabled":  true,
+			"schedule": "0 2 * * *",
+		},
+		"postgresql": map[string]any{
+			"parameters": map[string]any{
+				"max_connections": int64(200),
+			},
+		},
+	}
+
+	incoming := map[string]any{
+		"backup": map[string]any{
+			"enabled": false,
+		},
+	}
+
+	got := pickNextSpec(existing, incoming, true)
+
+	if !reflect.DeepEqual(got, incoming) {
+		t.Errorf("replace path did not return incoming verbatim: got %+v, want %+v", got, incoming)
+	}
+
+	if _, stillThere := got["replicas"]; stillThere {
+		t.Error("replicas survived replace; deep-merge semantics leaked through")
+	}
+
+	if _, stillThere := got["postgresql"]; stillThere {
+		t.Error("postgresql survived replace; deep fields must be deleted when absent from incoming")
+	}
+}
+
+// TestPickNextSpecMergePreservesExisting pins the form-mode
+// contract: a partial form submit must not drop fields the
+// user didn't touch. Pair with the test above so the two
+// modes are exercised as a unit — a future refactor that
+// hard-codes either branch would break one of the two.
+func TestPickNextSpecMergePreservesExisting(t *testing.T) {
+	t.Parallel()
+
+	existing := map[string]any{
+		"replicas": int64(3),
+		"backup": map[string]any{
+			"enabled":  true,
+			"schedule": "0 2 * * *",
+		},
+	}
+
+	incoming := map[string]any{
+		"backup": map[string]any{
+			"schedule": "*/30 * * * *",
+		},
+	}
+
+	got := pickNextSpec(existing, incoming, false)
+
+	if got["replicas"] != int64(3) {
+		t.Errorf("replicas = %v, want 3 preserved through merge", got["replicas"])
+	}
+
+	backup, ok := got["backup"].(map[string]any)
+	if !ok {
+		t.Fatalf("backup wrong type: %T", got["backup"])
+	}
+
+	if backup["enabled"] != true {
+		t.Errorf("backup.enabled = %v, want true preserved through merge", backup["enabled"])
+	}
+
+	if backup["schedule"] != "*/30 * * * *" {
+		t.Errorf("backup.schedule = %v, want new cron from incoming", backup["schedule"])
+	}
+}
+
 // TestDeepMergeSpecPreservesUnTouchedFields is the data-loss regression
 // guard: if the UI only edits spec.backup.schedule, the existing
 // spec.backup.s3SecretKey must survive. Shallow merge was the bug

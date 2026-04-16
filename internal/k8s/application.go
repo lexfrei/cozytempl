@@ -274,20 +274,8 @@ func (asv *ApplicationService) Update(
 		return nil, fmt.Errorf("getting %s for update: %w", kind, err)
 	}
 
-	var nextSpec map[string]any
-
-	if req.ReplaceSpec {
-		// Full replace: the caller (YAML editor) submitted a
-		// complete spec and expects kubectl-edit semantics
-		// where an absent key deletes the field from cluster
-		// state. Deep-merge would quietly preserve the old
-		// key, which reads as a bug to anyone who ran a
-		// YAML diff locally before hitting Save.
-		nextSpec = req.Spec
-	} else {
-		existing, _, _ := unstructured.NestedMap(obj.Object, "spec")
-		nextSpec = deepMergeSpec(existing, req.Spec)
-	}
+	existing, _, _ := unstructured.NestedMap(obj.Object, "spec")
+	nextSpec := pickNextSpec(existing, req.Spec, req.ReplaceSpec)
 
 	setErr := unstructured.SetNestedField(obj.Object, nextSpec, "spec")
 	if setErr != nil {

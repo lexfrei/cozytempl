@@ -215,6 +215,28 @@ func (pgh *PageHandler) SchemaFieldsFragment(writer http.ResponseWriter, req *ht
 	}
 }
 
+// marshalSpecForEdit converts a cluster-state spec to YAML for
+// the edit modal's YAML tab. An empty spec returns an empty
+// string (no "load from form" needed on a zero-spec app); a
+// marshal error is logged and also returns empty, because a
+// non-broken save path matters more than a populated preview.
+// Split from AppEditFragment so gocyclo stays happy.
+func (pgh *PageHandler) marshalSpecForEdit(tenant, appName string, spec map[string]any) string {
+	if len(spec) == 0 {
+		return ""
+	}
+
+	raw, err := yaml.Marshal(spec)
+	if err != nil {
+		pgh.log.Warn("marshalling spec for edit YAML preview",
+			"tenant", tenant, "name", appName, "error", err)
+
+		return ""
+	}
+
+	return string(raw)
+}
+
 // AppEditFragment renders the edit modal for a single application with
 // the form fields pre-populated from its current spec. Mirrors the
 // TenantEditFragment flow — schema + current spec are fetched via
@@ -260,10 +282,12 @@ func (pgh *PageHandler) AppEditFragment(writer http.ResponseWriter, req *http.Re
 		pgh.log.Debug("loading schema for app edit", "kind", app.Kind, "error", schemaErr)
 	}
 
+	specYAML := pgh.marshalSpecForEdit(tenant, app.Name, currentSpec)
+
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 	writer.Header().Set("Cache-Control", "no-store")
 
-	renderErr := fragment.AppEditModal(tenant, *app, schema, currentSpec, resourceVersion).Render(req.Context(), writer)
+	renderErr := fragment.AppEditModal(tenant, *app, schema, currentSpec, resourceVersion, specYAML).Render(req.Context(), writer)
 	if renderErr != nil {
 		pgh.log.Error("rendering app edit modal", "error", renderErr)
 	}

@@ -25,7 +25,14 @@ templ editFormFields(schema *k8s.AppSchema, spec map[string]any) {
 	}
 }
 
-templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, spec map[string]any, resourceVersion string) {
+// AppEditModal renders the edit form. specYAML is the
+// pre-marshalled current spec as YAML — the edit handler
+// computes it from the snapshot so the YAML textarea opens
+// with the full cluster-state spec (including deep /
+// unknown fields that never made it into the schema-driven
+// form). Without this round-trip seed, YAML-mode saves
+// (ReplaceSpec=true) silently delete every deep key.
+templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, spec map[string]any, resourceVersion, specYAML string) {
 	<div id="app-edit-modal" class="modal-backdrop" style="display: flex;">
 		<div class="modal">
 			<div class="modal-header">
@@ -54,7 +61,7 @@ templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, sp
 						{ partial.Tc(ctx, "form.app.nameHint") }
 					</div>
 				</div>
-				@AppFormTabs("/fragments/app-yaml", "/fragments/app-yaml-to-form", "app-edit-form", editFormFields(schema, spec))
+				@AppFormTabs("/fragments/app-yaml", "/fragments/app-yaml-to-form", "app-edit-form", specYAML, editFormFields(schema, spec))
 				<div class="modal-footer">
 					<button type="button" class="btn"
 						data-action="modal-dismiss" data-modal="app-edit-modal">{ partial.Tc(ctx, "action.cancel") }</button>

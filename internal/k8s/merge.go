@@ -1,5 +1,25 @@
 package k8s
 
+// pickNextSpec decides how a new spec replaces the existing
+// one on Update. Extracted from ApplicationService.Update so
+// the dispatch is exercisable by a pure-function test without
+// the whole fake-dynamic-client stack.
+//
+//   - replace == true  → incoming wins verbatim, keys absent
+//     from incoming are deleted from cluster state. This is
+//     what a YAML-editor user expects after running
+//     `kubectl edit` (deleted line = deleted field).
+//   - replace == false → deep-merge so a partial form submit
+//     that only set a couple of fields does not silently
+//     drop the rest of the existing spec.
+func pickNextSpec(existing, incoming map[string]any, replace bool) map[string]any {
+	if replace {
+		return incoming
+	}
+
+	return deepMergeSpec(existing, incoming)
+}
+
 // deepMergeSpec merges incoming into base in place and returns base.
 // Nested maps are merged recursively so a partial update that only
 // touches spec.backup.schedule does not clobber the sibling keys

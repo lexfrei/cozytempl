@@ -709,7 +709,7 @@ other = "Form"
 other = "YAML"
 
 [page.appForm.yamlHint]
-other = "Paste or edit the raw spec YAML. When this textarea is non-empty, it overrides any values in the Form tab."
+other = "Edit the raw spec YAML. The active tab decides what is saved — switching to Form discards this textarea on Save; switching to YAML overrides the Form values. On edit, the full current spec is pre-populated so removing a line deletes that field from the cluster (kubectl-edit semantics)."
 
 [page.appForm.yamlLoadFromForm]
 other = "Load from Form"
