@@ -102,6 +102,42 @@ func TestLiveAgeRendersDataAttribute(t *testing.T) {
 	if !containsSubstring(got, `class="live-age"`) {
 		t.Errorf("output missing live-age class — ticker selector would miss this element:\n%s", got)
 	}
+
+	// The server-now attribute is how the TS ticker computes
+	// the clock-skew offset. Its absence would leave the
+	// ticker using the raw browser clock, which can differ
+	// from the server's by seconds-to-minutes on laptops
+	// that were asleep or phones on cellular.
+	if !containsSubstring(got, `data-server-now="`) {
+		t.Errorf("output missing data-server-now for clock-skew correction:\n%s", got)
+	}
+}
+
+// TestLiveAgeDoesNotLeakServerTimezoneIntoTitle pins the
+// timezone regression: the absolute tooltip is NOT rendered
+// server-side because the server does not know the user's
+// timezone (container is usually UTC, sometimes whatever the
+// Go binary was built with). A user in Berlin seeing a
+// US-format UTC timestamp on hover was the specific UX
+// regression the previous formatTime() path carried forward
+// by accident. The TypeScript ticker now populates title= on
+// init using toLocaleString so the tooltip respects the
+// user's browser locale + system timezone. Guard against a
+// future revision accidentally re-adding title= on the
+// server side.
+func TestLiveAgeDoesNotLeakServerTimezoneIntoTitle(t *testing.T) {
+	t.Parallel()
+
+	created := time.Date(2026, 1, 15, 10, 30, 0, 0, time.UTC)
+
+	got, err := renderTemplToString(LiveAge(created))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+
+	if containsSubstring(got, `title="`) {
+		t.Errorf("server emitted title=; timezone belongs to client locale, not server:\n%s", got)
+	}
 }
 
 // TestLiveAgeZeroTimestampRendersNothing pins the empty-cell

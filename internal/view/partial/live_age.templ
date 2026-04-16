@@ -1,6 +1,7 @@
 package partial
 
 import (
+	"strconv"
 	"time"
 )
 
@@ -11,20 +12,32 @@ import (
 // TypeScript module (static/ts/liveAge.ts) re-reads the data
 // attribute on a 1-second interval and rewrites the text.
 //
+// A per-element `data-server-now` attribute carries the
+// server's wall clock at render time so the ticker can
+// compute a clock-skew offset against the browser's clock on
+// init. Without it, a user whose laptop clock drifted by 40
+// seconds would see the column "jump" from the server's
+// value to the client's on the first tick; the offset makes
+// the first tick agree with the first paint regardless of
+// whose clock is right.
+//
 // Rendered as a <time> element so the datetime= attribute is
-// available to assistive tech and screen readers that prefer an
-// absolute reference point. The absolute formatted value also
-// appears in title= so a mouse-hover tooltip gives the user the
-// full date on demand. On zero timestamps the component renders
-// nothing — an empty table cell reads better than a literal
-// "0s" for rows the apiserver has not yet populated.
+// available to assistive tech and screen readers that prefer
+// an absolute reference point. The human tooltip (title=) is
+// NOT populated here — the TypeScript ticker sets it on init
+// using Intl.DateTimeFormat so the user sees their locale's
+// format in their own timezone, not whatever timezone the
+// server binary happens to be running in. On zero timestamps
+// the component renders nothing — an empty table cell reads
+// better than a literal "0s" for rows the apiserver has not
+// yet populated.
 templ LiveAge(t time.Time) {
 	if !t.IsZero() {
 		<time
 			class="live-age"
 			datetime={ t.UTC().Format(time.RFC3339) }
 			data-age-start={ t.UTC().Format(time.RFC3339) }
-			title={ t.Local().Format("Jan 2, 2006, 03:04:05 PM MST") }>
+			data-server-now={ time.Now().UTC().Format(time.RFC3339) }>
 			{ HumanizeAge(time.Since(t)) }
 		</time>
 	}
@@ -37,14 +50,19 @@ templ LiveAge(t time.Time) {
 //	<60s                   → "Ns"    (e.g. "42s")
 //	<60m                   → "Nm"    (e.g. "3m")
 //	<24h                   → "Nh"    (e.g. "5h")
-//	<30d                   → "Nd"    (e.g. "12d")
-//	otherwise              → "Ndy"   (e.g. "3y")
+//	<365d                  → "Nd"    (e.g. "12d")
+//	otherwise              → "Ny"    (e.g. "3y")
 //
 // Kept simple on purpose: kubectl's own formatter drops the
 // secondary unit after the first non-zero component ("2m", not
 // "2m15s"), and so does this — the value churns every second
 // anyway so extra precision is noise. Exported so tests can
 // pin the boundary cases without spinning up a templ render.
+//
+// The TypeScript mirror in static/ts/liveAge.ts must follow
+// the same boundary table byte-for-byte: the server paints
+// the initial value, the client ticks from there, and a
+// divergence would make the column jump on interval zero.
 func HumanizeAge(d time.Duration) string {
 	if d < time.Second {
 		return "0s"
@@ -52,48 +70,25 @@ func HumanizeAge(d time.Duration) string {
 
 	seconds := int64(d.Seconds())
 	if seconds < 60 {
-		return itoa(seconds) + "s"
+		return strconv.FormatInt(seconds, 10) + "s"
 	}
 
 	minutes := seconds / 60
 	if minutes < 60 {
-		return itoa(minutes) + "m"
+		return strconv.FormatInt(minutes, 10) + "m"
 	}
 
 	hours := minutes / 60
 	if hours < 24 {
-		return itoa(hours) + "h"
+		return strconv.FormatInt(hours, 10) + "h"
 	}
 
 	days := hours / 24
 	if days < 365 {
-		return itoa(days) + "d"
+		return strconv.FormatInt(days, 10) + "d"
 	}
 
 	years := days / 365
 
-	return itoa(years) + "y"
-}
-
-// itoa is a tiny strconv-free int64→string so humanizeAge
-// stays allocation-light on hot paths (tables that re-render
-// dozens of rows on every htmx swap). Only handles
-// non-negative inputs — the caller already rounded away the
-// negative-duration case.
-func itoa(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-
-	var buf [20]byte
-
-	i := len(buf)
-
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-
-	return string(buf[i:])
+	return strconv.FormatInt(years, 10) + "y"
 }

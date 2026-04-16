@@ -10,7 +10,8 @@
     "exactOptionalPropertyTypes": false,
     "sourceMap": true,
     "outDir": "static/dist",
-    "rootDir": "static/ts"
+    "rootDir": "static/ts",
+    "types": ["bun-types"]
   },
   "include": ["static/ts/**/*.ts"]
 }

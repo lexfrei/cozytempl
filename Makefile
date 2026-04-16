@@ -1,4 +1,4 @@
-.PHONY: generate build test dev lint clean install-tools ts helm-test
+.PHONY: generate build test test-ts dev lint clean install-tools ts helm-test
 
 # Generate templ output
 generate:
@@ -18,9 +18,23 @@ ts:
 # Go file that Go tooling would otherwise pick up. Also runs the Helm chart
 # unit tests if the helm-unittest plugin is installed — silently skipped
 # otherwise so CI that doesn't have it yet stays green.
-test: generate
+test: generate test-ts
 	go test ./cmd/... ./internal/... ./static/... -count=1 -race
 	@helm plugin list 2>/dev/null | grep -q unittest && helm unittest deploy/helm/cozytempl || echo "helm-unittest plugin not installed; skipping chart tests"
+
+# TypeScript tests run under bun. Bun is the stated preferred
+# runtime for TS work in this repo; it requires zero setup and
+# reads bun:test out of the imports. Kept as its own target so
+# contributors without bun can run `go test` alone without
+# tripping over the TS side, but `make test` runs both so CI
+# catches divergence between the Go and TS humanisers in the
+# live-age column.
+test-ts:
+	@if command -v bun >/dev/null 2>&1; then \
+		bun test static/ts/; \
+	else \
+		echo "bun not found on PATH; skipping TypeScript tests"; \
+	fi
 
 # Run just the Helm chart unit tests.
 helm-test:
