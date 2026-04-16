@@ -101,7 +101,9 @@ templ overviewGroup(group view.KindGroup) {
 							<td>
 								@partial.StatusBadge(string(app.Status))
 							</td>
-							<td class="text-sm text-muted">{ formatTime(app.CreatedAt) }</td>
+							<td class="text-sm text-muted">
+								@partial.LiveAge(app.CreatedAt)
+							</td>
 						</tr>
 					}
 				</tbody>

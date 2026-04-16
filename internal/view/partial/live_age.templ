@@ -1,0 +1,99 @@
+package partial
+
+import (
+	"time"
+)
+
+// LiveAge renders a Kubernetes-style relative age that updates
+// client-side every second. The server emits the absolute
+// timestamp in a `data-age-start` attribute (RFC 3339) and a
+// first-paint humanised value as the text content; a small
+// TypeScript module (static/ts/liveAge.ts) re-reads the data
+// attribute on a 1-second interval and rewrites the text.
+//
+// Rendered as a <time> element so the datetime= attribute is
+// available to assistive tech and screen readers that prefer an
+// absolute reference point. The absolute formatted value also
+// appears in title= so a mouse-hover tooltip gives the user the
+// full date on demand. On zero timestamps the component renders
+// nothing — an empty table cell reads better than a literal
+// "0s" for rows the apiserver has not yet populated.
+templ LiveAge(t time.Time) {
+	if !t.IsZero() {
+		<time
+			class="live-age"
+			datetime={ t.UTC().Format(time.RFC3339) }
+			data-age-start={ t.UTC().Format(time.RFC3339) }
+			title={ t.Local().Format("Jan 2, 2006, 03:04:05 PM MST") }>
+			{ HumanizeAge(time.Since(t)) }
+		</time>
+	}
+}
+
+// HumanizeAge turns a duration into the short k8s-style age
+// string users already expect from `kubectl get`:
+//
+//	negative / zero / <1s → "0s"
+//	<60s                   → "Ns"    (e.g. "42s")
+//	<60m                   → "Nm"    (e.g. "3m")
+//	<24h                   → "Nh"    (e.g. "5h")
+//	<30d                   → "Nd"    (e.g. "12d")
+//	otherwise              → "Ndy"   (e.g. "3y")
+//
+// Kept simple on purpose: kubectl's own formatter drops the
+// secondary unit after the first non-zero component ("2m", not
+// "2m15s"), and so does this — the value churns every second
+// anyway so extra precision is noise. Exported so tests can
+// pin the boundary cases without spinning up a templ render.
+func HumanizeAge(d time.Duration) string {
+	if d < time.Second {
+		return "0s"
+	}
+
+	seconds := int64(d.Seconds())
+	if seconds < 60 {
+		return itoa(seconds) + "s"
+	}
+
+	minutes := seconds / 60
+	if minutes < 60 {
+		return itoa(minutes) + "m"
+	}
+
+	hours := minutes / 60
+	if hours < 24 {
+		return itoa(hours) + "h"
+	}
+
+	days := hours / 24
+	if days < 365 {
+		return itoa(days) + "d"
+	}
+
+	years := days / 365
+
+	return itoa(years) + "y"
+}
+
+// itoa is a tiny strconv-free int64→string so humanizeAge
+// stays allocation-light on hot paths (tables that re-render
+// dozens of rows on every htmx swap). Only handles
+// non-negative inputs — the caller already rounded away the
+// negative-duration case.
+func itoa(n int64) string {
+	if n == 0 {
+		return "0"
+	}
+
+	var buf [20]byte
+
+	i := len(buf)
+
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+
+	return string(buf[i:])
+}

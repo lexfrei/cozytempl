@@ -637,6 +637,20 @@ tr.row-flash td {
   animation: row-flash 1.5s ease-out;
 }
 
+/* LiveAge — server emits a <time class="live-age"> element; a
+   1-second ticker (static/ts/liveAge.ts) rewrites its text in
+   place. Styled with a dotted underline + help cursor so users
+   discover that hovering shows the absolute timestamp via
+   title=. Using a tabular-numbers variant keeps widths stable
+   when the value churns ("59s" → "1m") so the column does not
+   flicker every second. */
+.live-age {
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1px dotted var(--color-border);
+  cursor: help;
+  text-decoration: none;
+}
+
 /* Status badges */
 .badge {
   display: inline-flex;

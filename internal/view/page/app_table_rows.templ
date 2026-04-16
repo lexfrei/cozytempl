@@ -1,7 +1,6 @@
 package page
 
 import (
-	"time"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
@@ -30,7 +29,9 @@ templ AppTableRow(tenant string, app k8s.Application) {
 		<td>
 			@partial.StatusBadgeWithID(string(app.Status), "status-"+app.Name)
 		</td>
-		<td class="text-sm text-muted">{ formatTime(app.CreatedAt) }</td>
+		<td class="text-sm text-muted">
+			@partial.LiveAge(app.CreatedAt)
+		</td>
 		<td>
 			<div class="flex items-center gap-2">
 				<button class="btn btn-sm"
@@ -51,9 +52,3 @@ templ AppTableRow(tenant string, app k8s.Application) {
 	</tr>
 }
 
-func formatTime(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.Format("Jan 2, 2006, 03:04 PM")
-}
