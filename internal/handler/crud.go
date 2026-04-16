@@ -258,8 +258,24 @@ func (pgh *PageHandler) doUpdateApp(
 	// already called ParseForm, so the body size cap is in effect.
 	resourceVersion := req.FormValue(formFieldResourceVersion) //nolint:gosec // body already capped by caller
 
+	// YAML mode = full replace so a deleted key in the textarea
+	// actually deletes the field from cluster state. Form mode
+	// deep-merges so a partial submission doesn't drop fields
+	// the user never touched. buildSpecFromRequest keyed on
+	// _tabmode, so the same signal drives the merge policy
+	// here.
+	// Safe to call FormValue without MaxBytesReader here: the
+	// outer UpdateApp handler wrapped req.Body and called
+	// ParseForm, same contract as the ResourceVersion read
+	// below.
+	replaceSpec := req.FormValue(formFieldTabMode) == tabModeYAML //nolint:gosec // body already capped by caller
+
 	_, err := pgh.appSvc.Update(req.Context(), usr, tenantNS, appName,
-		k8s.UpdateApplicationRequest{Spec: newSpec, ResourceVersion: resourceVersion})
+		k8s.UpdateApplicationRequest{
+			Spec:            newSpec,
+			ResourceVersion: resourceVersion,
+			ReplaceSpec:     replaceSpec,
+		})
 	if err != nil {
 		if errors.Is(err, k8s.ErrConflict) {
 			pgh.log.Info("conflict updating app", "tenant", tenantNS, "name", appName)
@@ -357,10 +373,14 @@ const formFieldSpecYAML = "spec_yaml"
 
 // formFieldTabMode is the radio group name that drives the
 // Form / YAML tab switch in the UI. Sent by the browser with
-// every submit; server-side it is always ignored — the
-// decision of which source wins is made by buildSpecFromRequest
-// (non-empty spec_yaml overrides).
+// every submit; server-side it is the primary signal that
+// chooses between form-mode and yaml-mode spec extraction.
 const formFieldTabMode = "_tabmode"
+
+// tabModeYAML is the _tabmode value the YAML tab emits.
+// Centralised so the spec-source selection and the
+// merge-vs-replace selection cannot drift.
+const tabModeYAML = "yaml"
 
 // ErrInvalidYAMLSpec is returned by buildSpecFromRequest when
 // the user-supplied YAML in spec_yaml fails to parse. Exposed
@@ -368,6 +388,14 @@ const formFieldTabMode = "_tabmode"
 // without misclassifying unrelated schema-fetch errors (which
 // have their own error.schema.load copy).
 var ErrInvalidYAMLSpec = errors.New("invalid yaml spec")
+
+// ErrEmptyYAMLSpec is returned when the user is explicitly on
+// the YAML tab (_tabmode=yaml) but left the textarea empty.
+// Falling through to the form pane in that case would apply
+// hidden form-field values the user never saw on screen —
+// classic silent-data-loss trap, so the handler prefers a
+// loud error over a surprise write.
+var ErrEmptyYAMLSpec = errors.New("empty yaml spec on yaml tab")
 
 // isReservedFormField returns true for form fields the spec
 // extractor must never lift into the CRD spec map. The
@@ -399,10 +427,15 @@ func (pgh *PageHandler) reportSpecBuildError(
 	pgh.log.Warn("building spec for mutation",
 		"action", action, "tenant", tenantNS, "name", appName, "kind", kind, "error", err)
 
-	if errors.Is(err, ErrInvalidYAMLSpec) {
+	if errors.Is(err, ErrInvalidYAMLSpec) || errors.Is(err, ErrEmptyYAMLSpec) {
+		reason := "invalid_yaml"
+		if errors.Is(err, ErrEmptyYAMLSpec) {
+			reason = "empty_yaml"
+		}
+
 		pgh.recordAudit(req, usr, action, appName, tenantNS,
 			audit.OutcomeDenied,
-			map[string]any{"kind": kind, "reason": "invalid_yaml", "error": err.Error()})
+			map[string]any{"kind": kind, "reason": reason, "error": err.Error()})
 		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.invalidSpec"))
 
 		return
@@ -433,8 +466,20 @@ func (pgh *PageHandler) buildSpecFromRequest(
 	tabMode := req.FormValue(formFieldTabMode)
 	yamlRaw := strings.TrimSpace(req.FormValue(formFieldSpecYAML))
 
-	useYAML := tabMode == "yaml" || (tabMode == "" && yamlRaw != "")
-	if useYAML && yamlRaw != "" {
+	if tabMode == tabModeYAML {
+		if yamlRaw == "" {
+			return nil, ErrEmptyYAMLSpec
+		}
+
+		return parseSpecYAML(yamlRaw)
+	}
+
+	// Legacy fallback for API clients / older browsers that
+	// don't send _tabmode but do paste into spec_yaml: a
+	// non-empty textarea still wins. A user submitting the
+	// modal with _tabmode=form will skip this branch even if
+	// yamlRaw is stale from a prior Apply-to-Form.
+	if tabMode == "" && yamlRaw != "" {
 		return parseSpecYAML(yamlRaw)
 	}
 

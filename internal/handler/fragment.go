@@ -100,8 +100,15 @@ func (pgh *PageHandler) AppFormYAMLFragment(writer http.ResponseWriter, req *htt
 		return
 	}
 
-	writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = writer.Write(raw)
+	// htmx swaps the response body into <textarea>.innerHTML. A
+	// user-supplied value that contains "</textarea>" would
+	// otherwise close the element and inject arbitrary HTML into
+	// the modal DOM (CSP blocks script execution, but broken
+	// layout + phishing content still cost). Entity-encode so the
+	// browser renders the characters verbatim and decodes them
+	// back when the textarea value is submitted.
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = writer.Write([]byte(html.EscapeString(string(raw))))
 }
 
 // AppFormYAMLToFormFragment is the reverse of
@@ -162,10 +169,19 @@ func (pgh *PageHandler) AppFormYAMLToFormFragment(writer http.ResponseWriter, re
 
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 
+	// Wrap in the same <div id="schema-fields"> the create
+	// modal's kind-select targets via hx-target="#schema-fields"
+	// (internal/view/page/tenant.templ). Without the wrapper,
+	// Apply-to-Form would destroy the target element and the
+	// next kind change would silently no-op.
+	_, _ = writer.Write([]byte(`<div id="schema-fields">`))
+
 	renderErr := fragment.SchemaFieldsWithValues(*schema, spec).Render(req.Context(), writer)
 	if renderErr != nil {
 		pgh.log.Error("rendering yaml-to-form fields", "error", renderErr)
 	}
+
+	_, _ = writer.Write([]byte(`</div>`))
 }
 
 // SchemaFieldsFragment renders schema-driven form fields for the create app modal.

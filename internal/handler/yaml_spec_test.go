@@ -149,6 +149,39 @@ func TestBuildSpecFromRequestSurfacesYAMLError(t *testing.T) {
 	}
 }
 
+// TestBuildSpecFromRequestEmptyYAMLOnYAMLTab pins the
+// defensive error path: the user is explicitly on the YAML
+// tab but the textarea is empty. The server MUST refuse
+// rather than silently fall through to the form pane and
+// apply hidden form values. Without this check a user who
+// cleared the YAML before pressing Save would see the create
+// succeed with stale / default form values they never saw on
+// screen.
+func TestBuildSpecFromRequestEmptyYAMLOnYAMLTab(t *testing.T) {
+	t.Parallel()
+
+	form := strings.NewReader("_tabmode=yaml&name=pg&kind=Postgres&replicas=99&spec_yaml=")
+
+	req := httptest.NewRequestWithContext(
+		t.Context(), http.MethodPost, "/tenants/ns/apps", form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	if parseErr := req.ParseForm(); parseErr != nil {
+		t.Fatalf("ParseForm: %v", parseErr)
+	}
+
+	pgh := &PageHandler{}
+
+	_, err := pgh.buildSpecFromRequest(req, nil, "Postgres")
+	if err == nil {
+		t.Fatal("expected ErrEmptyYAMLSpec on empty YAML while _tabmode=yaml")
+	}
+
+	if !errors.Is(err, ErrEmptyYAMLSpec) {
+		t.Errorf("err = %v, want wraps ErrEmptyYAMLSpec", err)
+	}
+}
+
 // TestExtractSpecFromFormSkipsTabMode pins the reserved-field
 // contract: the _tabmode radio that drives the Form/YAML tab
 // switch is UI state, not part of the CRD spec. Without this

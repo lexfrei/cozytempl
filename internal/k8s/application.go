@@ -274,10 +274,22 @@ func (asv *ApplicationService) Update(
 		return nil, fmt.Errorf("getting %s for update: %w", kind, err)
 	}
 
-	existing, _, _ := unstructured.NestedMap(obj.Object, "spec")
-	merged := deepMergeSpec(existing, req.Spec)
+	var nextSpec map[string]any
 
-	setErr := unstructured.SetNestedField(obj.Object, merged, "spec")
+	if req.ReplaceSpec {
+		// Full replace: the caller (YAML editor) submitted a
+		// complete spec and expects kubectl-edit semantics
+		// where an absent key deletes the field from cluster
+		// state. Deep-merge would quietly preserve the old
+		// key, which reads as a bug to anyone who ran a
+		// YAML diff locally before hitting Save.
+		nextSpec = req.Spec
+	} else {
+		existing, _, _ := unstructured.NestedMap(obj.Object, "spec")
+		nextSpec = deepMergeSpec(existing, req.Spec)
+	}
+
+	setErr := unstructured.SetNestedField(obj.Object, nextSpec, "spec")
 	if setErr != nil {
 		return nil, fmt.Errorf("setting spec: %w", setErr)
 	}

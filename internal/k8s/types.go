@@ -87,6 +87,14 @@ type UpdateApplicationRequest struct {
 	// silent overwrite. An empty string disables optimistic
 	// locking and keeps the historic last-write-wins behaviour.
 	ResourceVersion string `json:"-"`
+	// ReplaceSpec switches Update from deep-merge (the default,
+	// right for partial form submissions) to full replace
+	// (right for raw YAML edits where a deleted line must
+	// actually delete the field from cluster state). A user
+	// on the YAML tab expects kubectl-edit semantics; a user
+	// on the schema-driven form expects "fields I didn't touch
+	// stay where they were".
+	ReplaceSpec bool `json:"-"`
 }
 
 // CreateTenantRequest is the payload for creating a new tenant.
