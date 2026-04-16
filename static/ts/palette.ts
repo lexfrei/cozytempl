@@ -59,6 +59,7 @@ const PALETTE_STRINGS: Record<string, Record<string, string>> = {
     "app.open-logs": "Open Logs tab",
     "app.open-connection": "Open Connection tab",
     "app.open-overview": "Open Overview tab",
+    "palette.open-app": "Open application",
     "hint.headerButton": "Header button",
     "hint.opensModal": "Opens a modal",
     "hint.newTab": "Opens in a new tab",
@@ -89,6 +90,7 @@ const PALETTE_STRINGS: Record<string, Record<string, string>> = {
     "app.open-logs": "Открыть вкладку Логи",
     "app.open-connection": "Открыть вкладку Подключение",
     "app.open-overview": "Открыть вкладку Обзор",
+    "palette.open-app": "Открыть приложение",
     "hint.headerButton": "Кнопка в шапке",
     "hint.opensModal": "Открывает модальное окно",
     "hint.newTab": "Откроется в новой вкладке",
@@ -119,6 +121,7 @@ const PALETTE_STRINGS: Record<string, Record<string, string>> = {
     "app.open-logs": "Логтар қойындысын ашу",
     "app.open-connection": "Қосылу қойындысын ашу",
     "app.open-overview": "Шолу қойындысын ашу",
+    "palette.open-app": "Қолданбаны ашу",
     "hint.headerButton": "Жоғарғы жолақтағы түйме",
     "hint.opensModal": "Модальді ашады",
     "hint.newTab": "Жаңа қойындыда ашылады",
@@ -149,6 +152,7 @@ const PALETTE_STRINGS: Record<string, Record<string, string>> = {
     "app.open-logs": "打开日志标签页",
     "app.open-connection": "打开连接标签页",
     "app.open-overview": "打开概览标签页",
+    "palette.open-app": "打开应用",
     "hint.headerButton": "顶栏按钮",
     "hint.opensModal": "打开一个弹窗",
     "hint.newTab": "在新标签页打开",
@@ -322,7 +326,90 @@ function buildCatalog(): PaletteAction[] {
     );
   }
 
+  // Instance search — merge the server-fetched index (see
+  // fetchPaletteIndex). Skipped on the first open() before the
+  // fetch resolves; the second render() call after the fetch
+  // settles picks them up.
+  if (indexCache) {
+    const currentTenantNS = currentTenantNamespace();
+    for (const tenantEntry of indexCache.tenants) {
+      // Avoid duplicating the context-aware "tenant.view" entry
+      // for the tenant the user is already on — the above block
+      // already pushed it with a hint.
+      if (tenantEntry.namespace === currentTenantNS) continue;
+      actions.push({
+        id: `palette.tenant.${tenantEntry.namespace}`,
+        labelKey: "tenant.view",
+        labelSuffix: ` — ${tenantEntry.displayName}`,
+        hint: `/tenants/${tenantEntry.namespace}`,
+        handler: () => navigate(`/tenants/${tenantEntry.namespace}`),
+      });
+    }
+
+    for (const appEntry of indexCache.apps) {
+      actions.push({
+        id: `palette.app.${appEntry.tenant}.${appEntry.name}`,
+        labelKey: "palette.open-app",
+        labelSuffix: ` — ${appEntry.name}`,
+        hint: `${appEntry.kind} · ${appEntry.tenant}`,
+        handler: () => navigate(`/tenants/${appEntry.tenant}/apps/${appEntry.name}`),
+      });
+    }
+  }
+
   return actions;
+}
+
+// --- Instance index ----------------------------------------------------
+
+// PaletteIndex mirrors internal/api/palette.go's PaletteIndex. Any
+// field rename on the server must be mirrored here.
+interface PaletteIndex {
+  tenants: Array<{ namespace: string; displayName: string }>;
+  apps: Array<{ name: string; tenant: string; kind: string }>;
+  // Tenants whose app list hit the server-side 500-entry cap
+  // (k8s.AppListLimit). Reserved for a future UI hint; today
+  // just kept in the cache so it survives a payload roundtrip.
+  truncatedTenants?: string[];
+}
+
+// indexCache stores the last successful /api/palette-index
+// response. Fetched on first open() and refreshed on every
+// subsequent open() so a palette still works instantly while the
+// index is rebuilding. Also means a newly-created app becomes
+// searchable on the next Cmd+K — no full page reload required.
+let indexCache: PaletteIndex | null = null;
+let indexFetchInFlight: Promise<void> | null = null;
+
+function fetchPaletteIndex(): Promise<void> {
+  if (indexFetchInFlight) return indexFetchInFlight;
+
+  indexFetchInFlight = fetch("/api/palette-index", {
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+  })
+    .then(async (response): Promise<void> => {
+      if (!response.ok) {
+        // Any non-2xx means we can't trust the body: 3xx hits
+        // when RequireAuth redirects an expired session to
+        // /auth/login (auto-follow lands on HTML, not JSON),
+        // 5xx on apiserver wobbles. Either way, silently keep
+        // the last known index so the user can still navigate
+        // from the static catalogue until the next open().
+        return;
+      }
+
+      indexCache = (await response.json()) as PaletteIndex;
+    })
+    .catch((): void => {
+      // Network blip — keep whatever we had before. The next
+      // palette open() will try again.
+    })
+    .finally((): void => {
+      indexFetchInFlight = null;
+    });
+
+  return indexFetchInFlight;
 }
 
 // --- Action helpers ----------------------------------------------------
@@ -407,6 +494,7 @@ function openModalById(id: string): void {
 let overlay: HTMLDivElement | null = null;
 let searchInput: HTMLInputElement | null = null;
 let listEl: HTMLUListElement | null = null;
+let noticeEl: HTMLDivElement | null = null;
 let items: PaletteAction[] = [];
 let filtered: PaletteAction[] = [];
 let activeIndex = 0;
@@ -431,6 +519,7 @@ function ensureOverlay(): HTMLDivElement {
              spellcheck="false"
              aria-label="Filter commands" />
       <ul class="command-palette-list" role="listbox"></ul>
+      <div class="command-palette-notice" role="status" aria-live="polite" hidden></div>
       <div class="command-palette-footer">
         <span><kbd>↑↓</kbd> navigate</span>
         <span><kbd>⏎</kbd> run</span>
@@ -444,6 +533,7 @@ function ensureOverlay(): HTMLDivElement {
   overlay = root;
   searchInput = root.querySelector<HTMLInputElement>(".command-palette-input");
   listEl = root.querySelector<HTMLUListElement>(".command-palette-list");
+  noticeEl = root.querySelector<HTMLDivElement>(".command-palette-notice");
 
   root.addEventListener("click", (evt) => {
     const target = evt.target as HTMLElement | null;
@@ -491,6 +581,19 @@ function open(): void {
   root.hidden = false;
   document.body.classList.add("command-palette-open");
   requestAnimationFrame(() => searchInput?.focus());
+
+  // Fire-and-forget index refresh. The palette renders instantly
+  // from the static catalogue; dynamic instance entries appear
+  // when the fetch resolves, without blocking the first paint. A
+  // stale cache from a previous open() keeps instance search
+  // working between fetches.
+  void fetchPaletteIndex().then((): void => {
+    if (overlay?.hidden === false) {
+      items = buildCatalog();
+      updateFiltered();
+      render();
+    }
+  });
 }
 
 function close(): void {
@@ -504,6 +607,34 @@ function close(): void {
 function labelFor(item: PaletteAction): string {
   const base = t(item.labelKey);
   return item.labelSuffix ? base + item.labelSuffix : base;
+}
+
+// renderTruncationNotice shows a muted footer line when the
+// server capped at least one tenant's app list at AppListLimit
+// (500). Without it an operator with 501 apps in one namespace
+// types app #501's name, sees "No matching commands", and has
+// no way to know the index is incomplete. The aria-live on the
+// container announces the change so screen readers pick it up.
+function renderTruncationNotice(): void {
+  if (!noticeEl) return;
+
+  const truncated = indexCache?.truncatedTenants ?? [];
+  if (truncated.length === 0) {
+    noticeEl.hidden = true;
+    noticeEl.textContent = "";
+
+    return;
+  }
+
+  // Only the first few namespaces are inlined to keep the line
+  // readable when an entire cluster is over the cap. The count
+  // is what the operator actually needs to act on.
+  const preview = truncated.slice(0, 3).join(", ");
+  const extra = truncated.length > 3 ? `, +${truncated.length - 3} more` : "";
+
+  noticeEl.textContent =
+    `Showing first 500 apps per tenant — ${preview}${extra} capped. Use kubectl for the full list.`;
+  noticeEl.hidden = false;
 }
 
 function updateFiltered(): void {
@@ -522,6 +653,8 @@ function updateFiltered(): void {
 
 function render(): void {
   if (!listEl) return;
+
+  renderTruncationNotice();
 
   if (filtered.length === 0) {
     listEl.innerHTML = `<li class="command-palette-empty">No matching commands.</li>`;

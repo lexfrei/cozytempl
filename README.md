@@ -117,7 +117,7 @@ KUBECONFIG=~/.kube/config COZYTEMPL_AUTH_MODE=dev ./bin/cozytempl
 - Marketplace catalog with category pills, tag filtering, and live search.
 - Dashboard with stats + recent applications.
 - Profile page showing the impersonated username and groups.
-- **Command palette**: `Cmd/Ctrl-K` (or `/`) opens an overlay with the top-level actions — Go to Dashboard, Go to Tenants, Go to Marketplace, Go to Profile, Toggle theme, Create tenant, plus per-tenant actions when you're on a tenant-scoped page. Arrow keys navigate, Enter runs, Esc closes.
+- **Command palette**: `Cmd/Ctrl-K` (or `/`) opens an overlay with the top-level actions — Go to Dashboard, Go to Tenants, Go to Marketplace, Go to Profile, Toggle theme, Create tenant, plus per-tenant actions when you're on a tenant-scoped page. On open the palette fetches `/api/palette-index` and merges in every tenant and application the caller has RBAC to see, so typing `my-postgres` jumps straight to the app detail page instead of drilling through the sidebar. Arrow keys navigate, Enter runs, Esc closes.
 - Dark theme, responsive layout, mobile burger menu, branded 404 error pages.
 - Dev-mode banner — a loud red strip at the top of every page whenever `COZYTEMPL_AUTH_MODE=dev` (or the legacy `COZYTEMPL_DEV_MODE=true`) so an accidentally-exposed dev instance is impossible to miss.
 

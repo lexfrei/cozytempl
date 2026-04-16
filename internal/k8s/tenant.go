@@ -104,6 +104,34 @@ func (tsv *TenantService) List(ctx context.Context, usr *auth.UserContext) ([]Te
 	return tenants, nil
 }
 
+// ListMinimal returns the visible tenants with namespace +
+// display name + parent only, skipping the per-tenant AppCount
+// and ChildCount fan-out List does. One apiserver round-trip
+// vs 1+N — meant for callers like the command palette that
+// render tenants as navigation rows and never read the counters.
+// Writing a separate method instead of a flag keeps the happy
+// path of List untouched for existing callers (sidebar,
+// dashboard) that do depend on the counters.
+func (tsv *TenantService) ListMinimal(ctx context.Context, usr *auth.UserContext) ([]Tenant, error) {
+	client, err := NewUserClient(tsv.baseCfg, usr, tsv.mode)
+	if err != nil {
+		return nil, err
+	}
+
+	tenantList, err := client.Resource(TenantCRDGVR()).Namespace("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("listing tenants: %w", err)
+	}
+
+	tenants := make([]Tenant, 0, len(tenantList.Items))
+
+	for idx := range tenantList.Items {
+		tenants = append(tenants, crdToTenant(&tenantList.Items[idx]))
+	}
+
+	return tenants, nil
+}
+
 // Get returns a single tenant with details.
 func (tsv *TenantService) Get(ctx context.Context, usr *auth.UserContext, name string) (*Tenant, error) {
 	client, err := NewUserClient(tsv.baseCfg, usr, tsv.mode)
