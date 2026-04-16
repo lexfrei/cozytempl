@@ -153,7 +153,9 @@ templ overviewTab(data view.AppDetailData) {
 			</div>
 			<div class="flex justify-between">
 				<dt class="text-muted">{ partial.Tc(ctx, "label.created") }</dt>
-				<dd>{ formatTime(data.App.CreatedAt) }</dd>
+				<dd>
+					@partial.LiveAge(data.App.CreatedAt)
+				</dd>
 			</div>
 		</dl>
 	</div>
@@ -364,7 +366,9 @@ templ EventRow(evt k8s.Event) {
 		<td class="text-sm">{ evt.Message }</td>
 		<td class="text-sm text-muted">{ evt.Source }</td>
 		<td class="text-sm">{ fmt.Sprint(evt.Count) }</td>
-		<td class="text-sm text-muted">{ formatTime(evt.LastSeen) }</td>
+		<td class="text-sm text-muted">
+			@partial.LiveAge(evt.LastSeen)
+		</td>
 	</tr>
 }
 

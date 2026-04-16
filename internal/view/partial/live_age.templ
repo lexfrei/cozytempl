@@ -1,0 +1,96 @@
+package partial
+
+import (
+	"strconv"
+	"time"
+)
+
+// LiveAge renders a Kubernetes-style relative age that updates
+// client-side every second. The server emits the absolute
+// timestamp in a `data-age-start` attribute (RFC 3339) and a
+// first-paint humanised value as the text content; a small
+// TypeScript module (static/ts/liveAge.ts) re-reads the data
+// attribute on a 1-second interval and rewrites the text.
+//
+// Clock-skew correction lives in the layout, not here. The
+// base layout (internal/view/layout/base.templ) stamps the
+// server wall-clock into a single data-server-now attribute
+// on <body>, which the ticker reads exactly once to compute
+// its offset. Emitting the server-now marker per element
+// would bloat the wire on pages with hundreds of age columns
+// and, worse, would create a moving target: SSE-injected
+// rows would carry a fresher server-now that the ticker
+// would ignore anyway, until the anchor row it *did* read
+// got removed and the next visibility-resume picked up an
+// arbitrary later row's value — a silent offset jump.
+//
+// Rendered as a <time> element so the datetime= attribute is
+// available to assistive tech and screen readers that prefer
+// an absolute reference point. The human tooltip (title=) is
+// NOT populated here — the TypeScript ticker sets it on init
+// using Intl.DateTimeFormat so the user sees their locale's
+// format in their own timezone, not whatever timezone the
+// server binary happens to be running in. On zero timestamps
+// the component renders nothing — an empty table cell reads
+// better than a literal "0s" for rows the apiserver has not
+// yet populated.
+templ LiveAge(t time.Time) {
+	if !t.IsZero() {
+		<time
+			class="live-age"
+			datetime={ t.UTC().Format(time.RFC3339) }
+			data-age-start={ t.UTC().Format(time.RFC3339) }>
+			{ HumanizeAge(time.Since(t)) }
+		</time>
+	}
+}
+
+// HumanizeAge turns a duration into the short k8s-style age
+// string users already expect from `kubectl get`:
+//
+//	negative / zero / <1s → "0s"
+//	<60s                   → "Ns"    (e.g. "42s")
+//	<60m                   → "Nm"    (e.g. "3m")
+//	<24h                   → "Nh"    (e.g. "5h")
+//	<365d                  → "Nd"    (e.g. "12d")
+//	otherwise              → "Ny"    (e.g. "3y")
+//
+// Kept simple on purpose: kubectl's own formatter drops the
+// secondary unit after the first non-zero component ("2m", not
+// "2m15s"), and so does this — the value churns every second
+// anyway so extra precision is noise. Exported so tests can
+// pin the boundary cases without spinning up a templ render.
+//
+// The TypeScript mirror in static/ts/liveAge.ts must follow
+// the same boundary table byte-for-byte: the server paints
+// the initial value, the client ticks from there, and a
+// divergence would make the column jump on interval zero.
+func HumanizeAge(d time.Duration) string {
+	if d < time.Second {
+		return "0s"
+	}
+
+	seconds := int64(d.Seconds())
+	if seconds < 60 {
+		return strconv.FormatInt(seconds, 10) + "s"
+	}
+
+	minutes := seconds / 60
+	if minutes < 60 {
+		return strconv.FormatInt(minutes, 10) + "m"
+	}
+
+	hours := minutes / 60
+	if hours < 24 {
+		return strconv.FormatInt(hours, 10) + "h"
+	}
+
+	days := hours / 24
+	if days < 365 {
+		return strconv.FormatInt(days, 10) + "d"
+	}
+
+	years := days / 365
+
+	return strconv.FormatInt(years, 10) + "y"
+}

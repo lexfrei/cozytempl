@@ -17,7 +17,7 @@ Web UI for [Cozystack](https://cozystack.io/) platform management.
 > be read as representing the views of the Cozystack maintainers or the
 > Aenix company. All trademarks belong to their respective owners.
 
-Go + [templ](https://templ.guide/) + [htmx](https://htmx.org/) + ~25 KB of bundled TypeScript. No SPA framework — every page is server-rendered, htmx handles navigation and mutations, TypeScript only covers genuine client-only concerns (modals, clipboard, progress bar, SSE reducer, click-to-reveal timer, Cmd/Ctrl-K command palette).
+Go + [templ](https://templ.guide/) + [htmx](https://htmx.org/) + ~25 KB of bundled TypeScript. No SPA framework — every page is server-rendered, htmx handles navigation and mutations, TypeScript only covers genuine client-only concerns (modals, clipboard, progress bar, SSE reducer, resource-watch reducer, click-to-reveal timer, live-age ticker, pod log streaming, overview filter, theme toggle, Cmd/Ctrl-K command palette).
 
 ## Quick start
 
@@ -64,7 +64,7 @@ KUBECONFIG=~/.kube/config COZYTEMPL_AUTH_MODE=dev ./bin/cozytempl
 ## Architecture
 
 - **Backend**: thin credential forwarder to the Kubernetes API. In the recommended `passthrough` mode the user's OIDC ID token is used as a Bearer credential on every k8s call, and the cozytempl pod's ServiceAccount has zero cluster permissions — a compromise of the cozytempl process cannot impersonate anyone. See [`docs/auth-architecture.md`](docs/auth-architecture.md) for the per-mode threat model.
-- **Frontend**: server-rendered templ pages. htmx wires navigation and mutations. A small TypeScript bundle drives the top progress bar, modal lifecycle, clipboard copy, toast dismissal, the unified SSE resource-change reducer, and the click-to-reveal auto-hide timer.
+- **Frontend**: server-rendered templ pages. htmx wires navigation and mutations. A small TypeScript bundle drives the top progress bar, modal lifecycle, clipboard copy, toast dismissal, the unified SSE resource-change reducer, the click-to-reveal auto-hide timer, the live-age column ticker (1-second refresh, clock-skew corrected against a server-rendered anchor), pod log streaming, overview filter, theme toggle, and the Cmd/Ctrl-K command palette.
 - **Auth**: five modes selected via `COZYTEMPL_AUTH_MODE`. `passthrough` (default) forwards the OIDC ID token as a Bearer; `byok` lets the user upload a kubeconfig stored encrypted in the session cookie; `token` accepts a pasted Bearer token, stored encrypted the same way; `impersonation-legacy` keeps the old Impersonate-headers model (deprecated); `dev` disables auth entirely and prints a loud banner. OIDC ID tokens are refreshed automatically shortly before they expire.
 - **Real-time**: Server-Sent Events for HelmRelease changes. The server emits a unified `{op, name, html}` message; the client runs one upsert/delete reducer keyed by a stable `row-{name}` id, so create / update / delete go through the same DOM path regardless of whether htmx or SSE triggers the change.
 - **Deployment**: single static binary, `FROM scratch` container (ca-certificates + hand-built `/etc/passwd` for UID 65534, nothing else), all CSS + TS bundle + fonts embedded via `go:embed` with a SHA-256 cache-busting query string. Released on every `v*` git tag as a multi-arch image at `ghcr.io/lexfrei/cozytempl` and an OCI chart at `ghcr.io/lexfrei/charts/cozytempl`, both cosign-signed through GitHub OIDC. The Helm chart is the canonical install path.

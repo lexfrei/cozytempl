@@ -242,7 +242,9 @@ templ Tenant(data view.TenantPageData) {
 								<td class="text-mono text-sm">{ evt.Reason }</td>
 								<td class="text-sm text-muted">{ evt.Object }</td>
 								<td class="text-sm">{ evt.Message }</td>
-								<td class="text-sm text-muted">{ formatTime(evt.LastSeen) }</td>
+								<td class="text-sm text-muted">
+									@partial.LiveAge(evt.LastSeen)
+								</td>
 							</tr>
 						}
 					</tbody>

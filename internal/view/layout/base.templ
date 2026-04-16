@@ -1,6 +1,8 @@
 package layout
 
 import (
+	"time"
+
 	"github.com/lexfrei/cozytempl/internal/i18n"
 	"github.com/lexfrei/cozytempl/static"
 )
@@ -35,7 +37,18 @@ templ Base(title string, loc *i18n.Localizer) {
 		<link rel="stylesheet" href={ "/static/css/styles.css?v=" + static.AssetVersion() }/>
 		<script defer src={ "/static/dist/bundle.js?v=" + static.AssetVersion() }></script>
 	</head>
-	<body>
+	<!--
+	     data-server-now carries the server's wall clock at
+	     render time so the LiveAge ticker
+	     (static/ts/liveAge.ts) can compute a clock-skew
+	     offset on init. Emitting it once on <body> (not on
+	     every <time class="live-age"> element) keeps the
+	     wire size bounded on pages with hundreds of age
+	     columns, and sidesteps a footgun where SSE-injected
+	     rows would carry a fresher server-now attribute the
+	     ticker would ignore anyway.
+	-->
+	<body data-server-now={ time.Now().UTC().Format(time.RFC3339) }>
 		<!-- Skip link uses English-only text by design: it is only
 		     visible to keyboard users mid-tab, and the alternative
 		     (threading the Localizer through every template that

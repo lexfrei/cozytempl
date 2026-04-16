@@ -12,5 +12,6 @@
     "outDir": "static/dist",
     "rootDir": "static/ts"
   },
-  "include": ["static/ts/**/*.ts"]
+  "include": ["static/ts/**/*.ts"],
+  "exclude": ["static/ts/**/*.test.ts"]
 }
