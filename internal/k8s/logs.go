@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"io"
 	"strconv"
 
 	"github.com/lexfrei/cozytempl/internal/auth"
@@ -11,6 +12,11 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/rest"
 )
+
+// logAPIPath is the legacy /api root that serves core/v1 pod
+// subresources. Shared by TailLogs and StreamLogs so the two
+// paths cannot drift.
+const logAPIPath = "/api"
 
 // LogService streams pod logs for UI consumption. The user identity is
 // passed on every call so read permission follows normal Kubernetes RBAC —
@@ -115,7 +121,7 @@ func (lsv *LogService) TailLogs(
 		return "", fmt.Errorf("building user rest config: %w", err)
 	}
 
-	cfg.APIPath = "/api"
+	cfg.APIPath = logAPIPath
 	cfg.GroupVersion = &corev1GV
 	cfg.NegotiatedSerializer = basicSerializer{}
 
@@ -141,4 +147,64 @@ func (lsv *LogService) TailLogs(
 	}
 
 	return string(raw), nil
+}
+
+// StreamLogs opens a follow=true pod log stream under the caller's
+// credentials and returns the raw io.ReadCloser so the HTTP
+// handler can pump bytes into a WebSocket. The caller MUST Close
+// the reader when the subscriber disconnects; the underlying
+// HTTP response body remains open until ctx is cancelled OR the
+// apiserver closes its side.
+//
+// CRITICAL: zeroes cfg.Timeout before the stream opens.
+// buildUserRESTConfig applies a 10 s HTTP-client deadline so
+// LIST/GET wobbles fail loudly — on a follow stream that same
+// timeout would kill the log tail after 10 s regardless of
+// client activity. Matching the WatchProxy pattern keeps the
+// lifecycle driven by ctx + apiserver signals only.
+func (lsv *LogService) StreamLogs(
+	ctx context.Context, usr *auth.UserContext,
+	namespace, pod, container string, tailLines int64,
+) (io.ReadCloser, error) {
+	if namespace == "" || pod == "" {
+		return nil, ErrNamespaceRequired
+	}
+
+	if !isValidLabelValue(pod) {
+		return nil, fmt.Errorf("%w: invalid pod name %q", ErrAppNotFound, pod)
+	}
+
+	cfg, err := buildUserRESTConfig(lsv.baseCfg, usr, lsv.mode)
+	if err != nil {
+		return nil, fmt.Errorf("building user rest config: %w", err)
+	}
+
+	cfg.APIPath = logAPIPath
+	cfg.GroupVersion = &corev1GV
+	cfg.NegotiatedSerializer = basicSerializer{}
+	cfg.Timeout = 0
+
+	restClient, err := rest.RESTClientFor(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("building rest client: %w", err)
+	}
+
+	request := restClient.Get().
+		Namespace(namespace).
+		Resource("pods").
+		Name(pod).
+		SubResource("log").
+		Param("follow", "true").
+		Param("tailLines", strconv.FormatInt(tailLines, 10))
+
+	if container != "" {
+		request = request.Param("container", container)
+	}
+
+	stream, streamErr := request.Stream(ctx)
+	if streamErr != nil {
+		return nil, fmt.Errorf("opening pod log stream %s/%s: %w", namespace, pod, streamErr)
+	}
+
+	return stream, nil
 }

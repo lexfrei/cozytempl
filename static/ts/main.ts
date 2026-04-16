@@ -16,6 +16,7 @@ import { initThemeToggle } from "./theme";
 import { initCommandPalette } from "./palette";
 import { initOverviewFilter } from "./overview";
 import { initWatchSSE } from "./watch";
+import { initLogStream } from "./logs";
 
 declare global {
   interface Window {
@@ -244,6 +245,7 @@ function initAll(): void {
   initCommandPalette();
   initOverviewFilter();
   initWatchSSE();
+  initLogStream();
   initSubmitOnChange();
   window.__cozytemplInitialized = true;
 }

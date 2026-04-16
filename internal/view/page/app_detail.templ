@@ -434,7 +434,22 @@ templ logsTab(data view.AppDetailData) {
 					</a>
 				</div>
 			}
-			<pre class="connection-info" style="white-space: pre-wrap; max-height: 600px; overflow-y: auto;">
+			<!--
+			  data-log-stream on the <pre> is what static/ts/logs.ts
+			  keys on to auto-attach the WebSocket. The attribute
+			  values carry the URL query params; the TS module
+			  assembles the /api/logs/stream?... URL from them and
+			  pumps text into this same element. Without the attribute
+			  the page stays static (the server-rendered tail above is
+			  still readable, just not live).
+			-->
+			<pre class="connection-info"
+				style="white-space: pre-wrap; max-height: 600px; overflow-y: auto;"
+				id="log-stream-view"
+				data-log-stream
+				data-log-tenant={ data.Tenant }
+				data-log-pod={ data.SelectedPod }
+				data-log-container={ data.SelectedContainer }>
 				if data.LogTail == "" {
 					<span class="text-muted">{ partial.Tc(ctx, "page.appDetail.noLogs") }</span>
 				} else {
