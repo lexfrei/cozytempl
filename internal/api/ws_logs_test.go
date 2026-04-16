@@ -107,6 +107,45 @@ func TestWSLogHandlerRequiresTenantAndPod(t *testing.T) {
 	}
 }
 
+// TestWSLogHandlerAuditsMalformedRequestAsDenied pins the
+// contract the cycle-3 review called out: an authenticated
+// user whose 400 request landed (missing tenant / pod) must
+// produce an audit event with outcome=denied, matching the
+// SecretReveal / ConnectionView precedent on other handlers.
+// Without this, a probing pattern (hit /api/logs/stream
+// without params) leaves no trail.
+func TestWSLogHandlerAuditsMalformedRequestAsDenied(t *testing.T) {
+	t.Parallel()
+
+	rec := &recordingAudit{}
+	handler := NewWSLogHandler(nil, rec, "dev", slog.New(slog.DiscardHandler))
+
+	req := httptest.NewRequestWithContext(
+		withTestUser(context.Background()),
+		http.MethodGet, "/api/logs/stream", nil)
+
+	w := httptest.NewRecorder()
+	handler.Stream(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", w.Code)
+	}
+
+	events := rec.snapshot()
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1 denied audit event; events = %+v", len(events), events)
+	}
+
+	got := events[0]
+	if got.Action != audit.ActionPodLogView {
+		t.Errorf("Action = %q, want %q", got.Action, audit.ActionPodLogView)
+	}
+
+	if got.Outcome != audit.OutcomeDenied {
+		t.Errorf("Outcome = %q, want Denied", got.Outcome)
+	}
+}
+
 // TestSameOriginOnlyAcceptsMatch confirms the WebSocket
 // CheckOrigin path accepts same-origin handshakes. The full set
 // of possible schemes is matched: a vanilla HTTP dev install

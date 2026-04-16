@@ -106,12 +106,9 @@ func (lsv *LogService) TailLogs(
 	ctx context.Context, usr *auth.UserContext,
 	namespace, pod, container string, tailLines int64,
 ) (string, error) {
-	if namespace == "" || pod == "" {
-		return "", ErrNamespaceRequired
-	}
-
-	if !isValidLabelValue(pod) {
-		return "", fmt.Errorf("%w: invalid pod name %q", ErrAppNotFound, pod)
+	validateErr := validateLogsParams(namespace, pod, container)
+	if validateErr != nil {
+		return "", validateErr
 	}
 
 	// Build a user-scoped REST config using the same auth logic as
@@ -170,7 +167,7 @@ func (lsv *LogService) StreamLogs(
 	ctx context.Context, usr *auth.UserContext,
 	namespace, pod, container string, tailLines int64,
 ) (io.ReadCloser, error) {
-	validateErr := validateStreamLogsParams(namespace, pod, container)
+	validateErr := validateLogsParams(namespace, pod, container)
 	if validateErr != nil {
 		return nil, validateErr
 	}
@@ -210,12 +207,12 @@ func (lsv *LogService) StreamLogs(
 	return stream, nil
 }
 
-// validateStreamLogsParams centralises the defensive checks so
+// validateLogsParams centralises the defensive checks so
 // both TailLogs and StreamLogs apply them consistently. namespace
 // and container join pod on the isValidLabelValue fence — an
 // upstream apiserver error on a malformed name is ugly and
 // hides the actual misuse from the caller, so fail locally.
-func validateStreamLogsParams(namespace, pod, container string) error {
+func validateLogsParams(namespace, pod, container string) error {
 	if namespace == "" || pod == "" {
 		return ErrNamespaceRequired
 	}

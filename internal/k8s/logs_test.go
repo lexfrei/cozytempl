@@ -12,7 +12,12 @@ import (
 // reject-set or an attacker-controlled namespace / container
 // value would reach the apiserver URL / error-string
 // interpolation unchanged.
-func TestValidateStreamLogsParams(t *testing.T) {
+// TestValidateLogsParams pins the shared defensive fence used
+// by both TailLogs and StreamLogs — the two paths must agree
+// on what's accepted so a user switching between the paginated
+// tail and the live stream doesn't see one succeed while the
+// other 400s for the same container name.
+func TestValidateLogsParams(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -35,10 +40,10 @@ func TestValidateStreamLogsParams(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := validateStreamLogsParams(tc.namespace, tc.pod, tc.container)
+			err := validateLogsParams(tc.namespace, tc.pod, tc.container)
 			gotErr := err != nil
 			if gotErr != tc.wantErr {
-				t.Errorf("validateStreamLogsParams(%q, %q, %q) err=%v, wantErr=%v",
+				t.Errorf("validateLogsParams(%q, %q, %q) err=%v, wantErr=%v",
 					tc.namespace, tc.pod, tc.container, err, tc.wantErr)
 			}
 		})

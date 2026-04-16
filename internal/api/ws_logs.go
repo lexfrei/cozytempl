@@ -179,15 +179,20 @@ func (wlh *WSLogHandler) Stream(writer http.ResponseWriter, req *http.Request) {
 
 	tenant := req.URL.Query().Get("tenant")
 	pod := req.URL.Query().Get("pod")
+	container := req.URL.Query().Get("container") // optional
+	tailLines := parseTailParam(req.URL.Query().Get("tail"))
 
 	if tenant == "" || pod == "" {
+		// Authenticated user asked for logs but the request was
+		// malformed. Audit the denial so operators grepping
+		// outcome=denied see the probe; matches the
+		// SecretReveal / ConnectionView precedent.
+		wlh.recordAudit(req.Context(), usr, tenant, pod, container, tailLines,
+			audit.OutcomeDenied, "tenant and pod parameters required")
 		Error(writer, http.StatusBadRequest, "tenant and pod parameters required")
 
 		return
 	}
-
-	container := req.URL.Query().Get("container") // optional
-	tailLines := parseTailParam(req.URL.Query().Get("tail"))
 
 	conn, err := wsLogUpgrader.Upgrade(writer, req, nil)
 	if err != nil {
@@ -213,9 +218,11 @@ func (wlh *WSLogHandler) Stream(writer http.ResponseWriter, req *http.Request) {
 }
 
 // recordAudit emits the pod.log.view event with the outcome
-// observed by pump. Split from Stream so the 401/400 guard
-// paths can also record denials without threading the same
-// fields through the early returns.
+// observed by pump or by the 400 bad-request guard. Split from
+// Stream so the malformed-param branch can record a denial
+// without threading the same fields through the early return.
+// The 401 path does not audit because usr is nil there; the
+// middleware logs the anonymous attempt separately.
 func (wlh *WSLogHandler) recordAudit(
 	ctx context.Context, usr *auth.UserContext,
 	tenant, pod, container string, tailLines int64,
