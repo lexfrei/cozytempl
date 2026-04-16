@@ -30,10 +30,21 @@ func schemaFieldsID(bodyID string) string {
 // fields the schema walker does not surface in the Form
 // pane). Without this the textarea opens empty and a user
 // who edits YAML and saves with _tabmode=yaml (full replace)
-// would silently delete every deep field from cluster state
-// because "Load from Form" only dumps the top-2-level form
-// subset. The create modal passes initialYAML="" — there is
-// nothing to round-trip.
+// would silently delete every deep field from cluster state.
+// The create modal passes initialYAML="" — there is nothing
+// to round-trip.
+//
+// allowLoadFromForm controls whether the "Load from Form"
+// button is rendered. It is SAFE on the create modal (the
+// textarea starts empty so a round-trip has nothing to
+// destroy) but UNSAFE on the edit modal: the form pane only
+// renders the top-2-level schema-driven subset, so dumping
+// form → textarea, then saving with _tabmode=yaml (full
+// replace), would silently delete every deep or unknown key
+// the cluster state originally carried. Edit modals pass
+// false; the user can still type YAML directly and save
+// with replace semantics, but the lossy round-trip is
+// removed from the UI entirely.
 //
 // Tabs are implemented with radio inputs + :checked CSS
 // selectors so no JS is needed to toggle panes. The radios
@@ -44,7 +55,7 @@ func schemaFieldsID(bodyID string) string {
 // tab label gets a primary-colour outline via :focus-visible
 // so a sighted keyboard user sees the selection. Arrow keys
 // cycle between radios (native browser behaviour).
-templ AppFormTabs(loadURL, applyURL, bodyID, initialYAML string, fields templ.Component) {
+templ AppFormTabs(loadURL, applyURL, bodyID, initialYAML string, allowLoadFromForm bool, fields templ.Component) {
 	<div class="app-form-tabs">
 		<input type="radio" name="_tabmode" id={ bodyID + "-mode-form" } value="form" class="app-form-tab-input" checked/>
 		<input type="radio" name="_tabmode" id={ bodyID + "-mode-yaml" } value="yaml" class="app-form-tab-input"/>
@@ -64,13 +75,15 @@ templ AppFormTabs(loadURL, applyURL, bodyID, initialYAML string, fields templ.Co
 				{ partial.Tc(ctx, "page.appForm.yamlHint") }
 			</label>
 			<div class="app-form-yaml-actions">
-				<button type="button" class="btn btn-sm"
-					hx-post={ loadURL }
-					hx-include={ "#" + bodyID + " .app-form-tab-body-form input, #" + bodyID + " .app-form-tab-body-form select, #" + bodyID + " .app-form-tab-body-form textarea, #" + bodyID + " [name='name'], #" + bodyID + " [name='kind']" }
-					hx-target={ "#" + bodyID + "-yaml-text" }
-					hx-swap="innerHTML">
-					{ partial.Tc(ctx, "page.appForm.yamlLoadFromForm") }
-				</button>
+				if allowLoadFromForm {
+					<button type="button" class="btn btn-sm"
+						hx-post={ loadURL }
+						hx-include={ "#" + bodyID + " .app-form-tab-body-form input, #" + bodyID + " .app-form-tab-body-form select, #" + bodyID + " .app-form-tab-body-form textarea, #" + bodyID + " [name='name'], #" + bodyID + " [name='kind']" }
+						hx-target={ "#" + bodyID + "-yaml-text" }
+						hx-swap="innerHTML">
+						{ partial.Tc(ctx, "page.appForm.yamlLoadFromForm") }
+					</button>
+				}
 				<button type="button" class="btn btn-sm"
 					hx-post={ applyURL }
 					hx-include={ "#" + bodyID + "-yaml-text, #" + bodyID + " [name='kind']" }

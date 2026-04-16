@@ -122,14 +122,46 @@ func TestTenantAutoOpensCreateModalWithCreateKind(t *testing.T) {
 	// schema-fields fragment replaces the entire tenant page on first
 	// paint — user lands on /tenants/{ns}?createKind=… and sees only
 	// the raw schema rows with no chrome. The fix pins hx-target="this"
-	// (i.e. #schema-fields) so the swap stays inside the modal.
-	autoLoaderTag := findTagWithAttribute(got, "div", `id="schema-fields"`)
+	// so the swap stays inside the modal. Matched by hx-trigger="load"
+	// now that the div is anonymous: its id used to be "schema-fields",
+	// but that bare id collided with the edit modal's equivalent
+	// container after Apply-to-Form, so ids are now scoped per-bodyID
+	// one level up at AppFormTabs (#create-app-form-schema-fields).
+	autoLoaderTag := findTagWithAttribute(got, "div", `hx-trigger="load"`)
 	if autoLoaderTag == "" {
-		t.Fatalf(`#schema-fields div not found; output:\n%s`, got)
+		t.Fatalf(`schema-fields auto-loader div not found; output:\n%s`, got)
 	}
 
 	if !strings.Contains(autoLoaderTag, `hx-target="this"`) {
-		t.Errorf(`#schema-fields div must set hx-target="this" to opt out of inherited #main-content target; tag was:\n%s`, autoLoaderTag)
+		t.Errorf(`schema-fields auto-loader must set hx-target="this" to opt out of inherited #main-content target; tag was:\n%s`, autoLoaderTag)
+	}
+
+	// REGRESSION: the auto-loader must NOT carry id="schema-fields".
+	// Both the create and edit modals can coexist in the DOM once the
+	// user has opened one and then the other; a bare id would land
+	// htmx selectors on the wrong modal (first document-order match).
+	// The scoped outer container (id="create-app-form-schema-fields",
+	// rendered by AppFormTabs) is the one-and-only container any
+	// htmx attribute should target.
+	if strings.Contains(autoLoaderTag, `id="schema-fields"`) {
+		t.Errorf(
+			"auto-loader must not declare bare id=\"schema-fields\""+
+				" (would collide with edit modal after Apply-to-Form); tag was:\n%s",
+			autoLoaderTag)
+	}
+
+	if !strings.Contains(got, `id="create-app-form-schema-fields"`) {
+		t.Errorf(
+			"create modal must carry scoped id=\"create-app-form-schema-fields\""+
+				" on the form pane container; output:\n%s", got)
+	}
+
+	// REGRESSION: the kind-select must target the scoped container,
+	// not the bare #schema-fields — a bare target picks up the first
+	// matching element in document order, which can be the edit
+	// modal when both modals are in the DOM at once.
+	if !strings.Contains(got, `hx-target="#create-app-form-schema-fields"`) {
+		t.Errorf(`kind-select must hx-target="#create-app-form-schema-fields"; output:\n%s`, got)
 	}
 }
 

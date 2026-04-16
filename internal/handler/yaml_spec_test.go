@@ -90,12 +90,16 @@ func TestBuildSpecFromRequestPrefersYAMLWhenTabModeYAML(t *testing.T) {
 
 	pgh := &PageHandler{}
 
-	spec, err := pgh.buildSpecFromRequest(req, nil, "Postgres")
+	spec, replace, err := pgh.buildSpecFromRequest(req, nil, "Postgres")
 	if err != nil {
 		t.Fatalf("buildSpecFromRequest: %v", err)
 	}
 
 	assertReplicas(t, spec, 3, "YAML should win when _tabmode=yaml")
+
+	if !replace {
+		t.Error("replace = false on YAML tab; want true so _tabmode=yaml drives full-replace semantics")
+	}
 }
 
 // assertReplicas extracts the replicas key tolerantly of
@@ -139,7 +143,7 @@ func TestBuildSpecFromRequestSurfacesYAMLError(t *testing.T) {
 
 	pgh := &PageHandler{}
 
-	_, err := pgh.buildSpecFromRequest(req, nil, "Postgres")
+	_, _, err := pgh.buildSpecFromRequest(req, nil, "Postgres")
 	if err == nil {
 		t.Fatal("expected error from buildSpecFromRequest on malformed YAML")
 	}
@@ -172,13 +176,49 @@ func TestBuildSpecFromRequestEmptyYAMLOnYAMLTab(t *testing.T) {
 
 	pgh := &PageHandler{}
 
-	_, err := pgh.buildSpecFromRequest(req, nil, "Postgres")
+	_, _, err := pgh.buildSpecFromRequest(req, nil, "Postgres")
 	if err == nil {
 		t.Fatal("expected ErrEmptyYAMLSpec on empty YAML while _tabmode=yaml")
 	}
 
 	if !errors.Is(err, ErrEmptyYAMLSpec) {
 		t.Errorf("err = %v, want wraps ErrEmptyYAMLSpec", err)
+	}
+}
+
+// TestBuildSpecFromRequestLegacyYAMLFallbackIsReplace pins the
+// rule that a caller who pastes raw YAML without the _tabmode
+// radio still gets full-replace semantics on Update. The older
+// code read the radio at the caller and defaulted to deep-merge
+// when it was absent, which silently disagreed with the
+// source-selection branch. Regression would look like
+// `kubectl get -o yaml | edit | put` quietly preserving the
+// keys the user just deleted — exactly the surprise the radio
+// was introduced to prevent.
+func TestBuildSpecFromRequestLegacyYAMLFallbackIsReplace(t *testing.T) {
+	t.Parallel()
+
+	form := strings.NewReader("name=pg&kind=Postgres&spec_yaml=replicas%3A+3")
+
+	req := httptest.NewRequestWithContext(
+		t.Context(), http.MethodPost, "/tenants/ns/apps", form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	if parseErr := req.ParseForm(); parseErr != nil {
+		t.Fatalf("ParseForm: %v", parseErr)
+	}
+
+	pgh := &PageHandler{}
+
+	spec, replace, err := pgh.buildSpecFromRequest(req, nil, "Postgres")
+	if err != nil {
+		t.Fatalf("buildSpecFromRequest: %v", err)
+	}
+
+	assertReplicas(t, spec, 3, "legacy YAML fallback picks YAML")
+
+	if !replace {
+		t.Error("replace = false on legacy YAML fallback; want true — raw YAML always carries replace semantics")
 	}
 }
 

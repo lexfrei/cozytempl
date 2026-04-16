@@ -155,8 +155,8 @@ func (pgh *PageHandler) AppFormYAMLToFormFragment(writer http.ResponseWriter, re
 	// Parse the YAML but swallow a parse error here — the UI
 	// should still show the schema fields (just un-populated)
 	// so the user is not stuck on a dead modal. The YAML tab
-	// itself keeps the user's draft because we only target
-	// #schema-fields on the form pane.
+	// itself keeps the user's draft because Apply-to-Form only
+	// targets the form pane container (schemaFieldsID(bodyID)).
 	if raw := strings.TrimSpace(req.FormValue(formFieldSpecYAML)); raw != "" {
 		parsed, err := parseSpecYAML(raw)
 		if err != nil {
@@ -169,19 +169,18 @@ func (pgh *PageHandler) AppFormYAMLToFormFragment(writer http.ResponseWriter, re
 
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	// Wrap in the same <div id="schema-fields"> the create
-	// modal's kind-select targets via hx-target="#schema-fields"
-	// (internal/view/page/tenant.templ). Without the wrapper,
-	// Apply-to-Form would destroy the target element and the
-	// next kind change would silently no-op.
-	_, _ = writer.Write([]byte(`<div id="schema-fields">`))
-
+	// Bare fields, no wrapper. The hx-target on the Apply-to-Form
+	// button is a per-modal scoped container (schemaFieldsID(bodyID))
+	// with hx-swap="innerHTML", so the response replaces the
+	// container's children while the container itself stays put.
+	// Writing our own <div id="schema-fields"> here would create
+	// two elements with that id (one in each open modal) and htmx
+	// selectors that still referenced the bare id would silently
+	// target the wrong modal.
 	renderErr := fragment.SchemaFieldsWithValues(*schema, spec).Render(req.Context(), writer)
 	if renderErr != nil {
 		pgh.log.Error("rendering yaml-to-form fields", "error", renderErr)
 	}
-
-	_, _ = writer.Write([]byte(`</div>`))
 }
 
 // SchemaFieldsFragment renders schema-driven form fields for the create app modal.

@@ -94,7 +94,7 @@ func (pgh *PageHandler) doCreateApp(
 	usr *auth.UserContext,
 	tenantNS, appName, appKind string,
 ) {
-	spec, specErr := pgh.buildSpecFromRequest(req, usr, appKind)
+	spec, _, specErr := pgh.buildSpecFromRequest(req, usr, appKind)
 	if specErr != nil {
 		pgh.reportSpecBuildError(writer, req, usr, audit.ActionAppCreate, appName, appKind, tenantNS, specErr)
 
@@ -243,7 +243,12 @@ func (pgh *PageHandler) doUpdateApp(
 
 	kind := snap.Kind
 
-	newSpec, specBuildErr := pgh.buildSpecFromRequest(req, usr, kind)
+	// buildSpecFromRequest returns (spec, replace, err) as a
+	// single unit so the spec source and the merge-vs-replace
+	// policy can never disagree. Every branch inside sets the
+	// replace bool explicitly: yaml tab → true, legacy
+	// non-empty yaml fallback → true, form → false.
+	newSpec, replaceSpec, specBuildErr := pgh.buildSpecFromRequest(req, usr, kind)
 	if specBuildErr != nil {
 		pgh.reportSpecBuildError(writer, req, usr, audit.ActionAppUpdate, appName, kind, tenantNS, specBuildErr)
 
@@ -257,18 +262,6 @@ func (pgh *PageHandler) doUpdateApp(
 	// check here: the outer UpdateApp handler wrapped req.Body and
 	// already called ParseForm, so the body size cap is in effect.
 	resourceVersion := req.FormValue(formFieldResourceVersion) //nolint:gosec // body already capped by caller
-
-	// YAML mode = full replace so a deleted key in the textarea
-	// actually deletes the field from cluster state. Form mode
-	// deep-merges so a partial submission doesn't drop fields
-	// the user never touched. buildSpecFromRequest keyed on
-	// _tabmode, so the same signal drives the merge policy
-	// here.
-	// Safe to call FormValue without MaxBytesReader here: the
-	// outer UpdateApp handler wrapped req.Body and called
-	// ParseForm, same contract as the ResourceVersion read
-	// below.
-	replaceSpec := req.FormValue(formFieldTabMode) == tabModeYAML //nolint:gosec // body already capped by caller
 
 	_, err := pgh.appSvc.Update(req.Context(), usr, tenantNS, appName,
 		k8s.UpdateApplicationRequest{
@@ -448,47 +441,73 @@ func (pgh *PageHandler) reportSpecBuildError(
 }
 
 // buildSpecFromRequest picks a spec source — form fields or a
-// YAML payload — and returns the resulting map. Fetches the
-// schema on the form-mode branch so the kind-specific type
-// coercion (booleans, integers) in extractSpecFromForm stays
-// accurate; the YAML branch skips schema entirely because
-// sigs.k8s.io/yaml already decodes native types.
+// YAML payload — and returns the resulting map plus the
+// merge-vs-replace policy that matches that source. Folding the
+// two into a single return value keeps them from drifting: a
+// spec parsed from YAML always travels with replace=true, a
+// spec extracted from the form fields always with replace=false.
+// Earlier revisions computed replace off a second read of
+// _tabmode at the caller, which silently disagreed with the
+// source-selection branch in the legacy fallback path.
+//
+// Fetches the schema on the form-mode branch so the
+// kind-specific type coercion (booleans, integers) in
+// extractSpecFromForm stays accurate; the YAML branches skip
+// schema entirely because sigs.k8s.io/yaml already decodes
+// native types.
 //
 // The UI radio _tabmode is the source of truth: the user
 // explicitly chose YAML if the value is "yaml", otherwise the
 // form pane wins. Older clients or direct API consumers that
 // never set _tabmode fall back to "yaml wins if non-empty" so
 // cozytempl's /api/.../apps POST with a raw spec_yaml still
-// works without the radio in the payload.
+// works without the radio in the payload. That fallback path
+// also maps to replace=true — a user or API client sending raw
+// YAML has kubectl-edit expectations, never deep-merge.
+// bool is "replace vs deep-merge" instead of a blank `bool` in the doc.
+//
+//nolint:nonamedreturns // three-return signature; names document which
 func (pgh *PageHandler) buildSpecFromRequest(
 	req *http.Request, usr *auth.UserContext, appKind string,
-) (map[string]any, error) {
+) (spec map[string]any, replace bool, err error) {
 	tabMode := req.FormValue(formFieldTabMode)
 	yamlRaw := strings.TrimSpace(req.FormValue(formFieldSpecYAML))
 
 	if tabMode == tabModeYAML {
 		if yamlRaw == "" {
-			return nil, ErrEmptyYAMLSpec
+			return nil, false, ErrEmptyYAMLSpec
 		}
 
-		return parseSpecYAML(yamlRaw)
+		spec, err := parseSpecYAML(yamlRaw)
+		if err != nil {
+			return nil, false, err
+		}
+
+		return spec, true, nil
 	}
 
 	// Legacy fallback for API clients / older browsers that
 	// don't send _tabmode but do paste into spec_yaml: a
-	// non-empty textarea still wins. A user submitting the
-	// modal with _tabmode=form will skip this branch even if
-	// yamlRaw is stale from a prior Apply-to-Form.
+	// non-empty textarea still wins AND carries replace
+	// semantics — a caller who pastes raw YAML expects
+	// kubectl-edit behaviour, and silently deep-merging that
+	// into the existing spec is the exact UX trap the radio
+	// was introduced to avoid.
 	if tabMode == "" && yamlRaw != "" {
-		return parseSpecYAML(yamlRaw)
+		spec, err := parseSpecYAML(yamlRaw)
+		if err != nil {
+			return nil, false, err
+		}
+
+		return spec, true, nil
 	}
 
 	schema, err := pgh.schemaSvc.Get(req.Context(), usr, appKind)
 	if err != nil {
-		return nil, fmt.Errorf("fetching schema: %w", err)
+		return nil, false, fmt.Errorf("fetching schema: %w", err)
 	}
 
-	return extractSpecFromForm(req, extractFieldTypes(schema)), nil
+	return extractSpecFromForm(req, extractFieldTypes(schema)), false, nil
 }
 
 // parseSpecYAML unmarshals the textarea content into the

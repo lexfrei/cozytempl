@@ -270,7 +270,7 @@ templ Tenant(data view.TenantPageData) {
 					<select class="form-select" name="kind" required
 						hx-get="/fragments/schema-fields"
 						hx-trigger="change"
-						hx-target="#schema-fields"
+						hx-target="#create-app-form-schema-fields"
 						hx-include="this">
 						<option value="">{ partial.Tc(ctx, "page.tenant.selectType") }</option>
 						for _, schema := range data.Schemas {
@@ -287,7 +287,7 @@ templ Tenant(data view.TenantPageData) {
 						autofocus?={ data.CreateKind != "" }
 						title={ partial.Tc(ctx, "page.tenant.appNameTitle") }/>
 				</div>
-				@fragment.AppFormTabs("/fragments/app-yaml", "/fragments/app-yaml-to-form", "create-app-form", "", createFormFields(data.CreateKind))
+				@fragment.AppFormTabs("/fragments/app-yaml", "/fragments/app-yaml-to-form", "create-app-form", "", true, createFormFields(data.CreateKind))
 				<div class="modal-footer">
 					<button type="button" class="btn"
 						data-action="modal-close" data-modal="create-app-modal">{ partial.Tc(ctx, "action.cancel") }</button>
@@ -304,25 +304,27 @@ templ Tenant(data view.TenantPageData) {
 // the YAML pane without duplicating the hx-target="this" bait
 // below.
 //
-// hx-target="this" is REQUIRED here: the surrounding <form>
-// sets hx-target="#main-content" so its POST swaps the tenant
-// page on submit. Without an explicit override, the auto-load
-// below inherits that target and the schema-fields fragment
-// replaces the entire tenant page on first paint — user lands
-// on a /tenants/{name}?createKind= URL and sees only two raw
-// form rows, no chrome.
+// Intentionally does NOT declare id="schema-fields" on any child:
+// AppFormTabs already wraps this content in
+// id="create-app-form-schema-fields" (the scoped outer container
+// that both the kind-select and Apply-to-Form target). A bare
+// id would collide with the edit modal's DOM after Apply-to-Form
+// writes into it, so we keep ids fully scoped per bodyID.
+//
+// hx-target="this" is REQUIRED on the auto-load trigger: the
+// surrounding <form> sets hx-target="#main-content" so its POST
+// swaps the tenant page on submit. Without an explicit override,
+// the auto-load below inherits that target and the schema-fields
+// fragment replaces the entire tenant page on first paint.
 templ createFormFields(createKind string) {
 	if createKind != "" {
-		<div id="schema-fields"
-			hx-get={ schemaFieldsAutoLoadURL(createKind) }
+		<div hx-get={ schemaFieldsAutoLoadURL(createKind) }
 			hx-trigger="load"
 			hx-target="this">
 			<div class="text-muted text-sm">
 				{ partial.Tc(ctx, "page.tenant.loadingFields") }
 			</div>
 		</div>
-	} else {
-		<div id="schema-fields"></div>
 	}
 }
 
