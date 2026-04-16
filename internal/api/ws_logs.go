@@ -7,9 +7,17 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
+	// gorilla/websocket sits on a post-v1.5.3 pseudo-version
+	// because the tagged v1.5.3 conflicts with the k8s.io/client-go
+	// v0.35 line (downgrading client-go loses subresource packages
+	// we depend on). The pseudo-version is a published upstream
+	// commit with no behavioural divergence; pin the tag when the
+	// upstream ecosystem catches up.
 	"github.com/gorilla/websocket"
 
 	"github.com/lexfrei/cozytempl/internal/audit"
@@ -86,7 +94,17 @@ var wsLogUpgrader = websocket.Upgrader{
 // UI always opens the socket from its own origin; anything else
 // is either a misconfigured reverse proxy or a CSRF attempt.
 // Matches the CSP connect-src 'self' policy.
+//
+// Uses net/url to compare so a browser that sends the default
+// port explicitly (https://host:443, http://host:80) still
+// matches the bare-host Host header. A literal string compare
+// against "http://"+Host would reject those.
 func sameOriginOnly(req *http.Request) bool {
+	const (
+		schemeHTTP  = "http"
+		schemeHTTPS = "https"
+	)
+
 	origin := req.Header.Get("Origin")
 	if origin == "" {
 		// Non-browser client (curl with wscat). Safe to accept
@@ -95,7 +113,23 @@ func sameOriginOnly(req *http.Request) bool {
 		return true
 	}
 
-	return origin == "http://"+req.Host || origin == "https://"+req.Host
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	if parsed.Scheme != schemeHTTP && parsed.Scheme != schemeHTTPS {
+		return false
+	}
+
+	originHost := parsed.Host
+	// Strip the default port so https://host:443 matches host.
+	if (parsed.Scheme == schemeHTTP && strings.HasSuffix(originHost, ":80")) ||
+		(parsed.Scheme == schemeHTTPS && strings.HasSuffix(originHost, ":443")) {
+		originHost = parsed.Hostname()
+	}
+
+	return originHost == req.Host
 }
 
 // WSLogHandler streams pod logs from the apiserver to the
@@ -165,22 +199,47 @@ func (wlh *WSLogHandler) Stream(writer http.ResponseWriter, req *http.Request) {
 
 	defer conn.Close()
 
-	wlh.audit.Record(req.Context(), &audit.Event{
-		RequestID: audit.RequestIDFromContext(req.Context()),
+	// Read deadline + pong handler: a dead peer (router drop,
+	// unplug) goes undetected until the kernel's TCP keepalive
+	// fires, typically ~2 h. A refreshed read deadline bumped
+	// forward on every pong caps that at 2×wsPingInterval.
+	_ = conn.SetReadDeadline(time.Now().Add(2 * wsPingInterval))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(2 * wsPingInterval))
+	})
+
+	outcome, detail := wlh.pump(req.Context(), conn, usr, tenant, pod, container, tailLines)
+	wlh.recordAudit(req.Context(), usr, tenant, pod, container, tailLines, outcome, detail)
+}
+
+// recordAudit emits the pod.log.view event with the outcome
+// observed by pump. Split from Stream so the 401/400 guard
+// paths can also record denials without threading the same
+// fields through the early returns.
+func (wlh *WSLogHandler) recordAudit(
+	ctx context.Context, usr *auth.UserContext,
+	tenant, pod, container string, tailLines int64,
+	outcome audit.Outcome, detail string,
+) {
+	details := map[string]any{
+		"container": container,
+		"tail":      tailLines,
+	}
+	if detail != "" {
+		details["error"] = detail
+	}
+
+	wlh.audit.Record(ctx, &audit.Event{
+		RequestID: audit.RequestIDFromContext(ctx),
 		Actor:     usr.Username,
 		Groups:    usr.Groups,
 		Action:    audit.ActionPodLogView,
 		Resource:  pod,
 		Tenant:    tenant,
-		Outcome:   audit.OutcomeSuccess,
+		Outcome:   outcome,
 		AuthMode:  wlh.authMode,
-		Details: map[string]any{
-			"container": container,
-			"tail":      tailLines,
-		},
+		Details:   details,
 	})
-
-	wlh.pump(req.Context(), conn, usr, tenant, pod, container, tailLines)
 }
 
 // parseTailParam clamps the caller's ?tail= value to [0,
@@ -211,10 +270,26 @@ func parseTailParam(raw string) int64 {
 // WebSocket, and sends periodic pings to keep intermediate
 // proxies from closing the connection. Returns when ctx fires,
 // the log stream ends, or the peer disconnects.
+//
+// Returns (outcome, detail) so the caller can emit a matching
+// audit event:
+//   - OutcomeSuccess when StreamLogs opened and the stream
+//     terminated normally (EOF / ctx / peer close);
+//   - OutcomeDenied  when the apiserver refused (403/401) —
+//     the user asked but was not allowed;
+//   - OutcomeError   on any other failure (pod missing, apiserver
+//     unreachable, transport error). detail carries the upstream
+//     message for the audit trail.
+//
+// Naming the returns would read cleanest but the project's
+// nonamedreturns lint forbids it; the three lines of comment
+// above are the contract in place of named returns.
+//
+//nolint:gocritic // unnamedResult: nonamedreturns forbids the alternative
 func (wlh *WSLogHandler) pump(
 	ctx context.Context, conn *websocket.Conn,
 	usr *auth.UserContext, tenant, pod, container string, tailLines int64,
-) {
+) (audit.Outcome, string) {
 	streamCtx, cancel := context.WithDeadline(ctx, time.Now().Add(logTailStreamMaxAge))
 	defer cancel()
 
@@ -230,17 +305,30 @@ func (wlh *WSLogHandler) pump(
 			wlh.log.Debug("writing ws close frame", "error", closeErr)
 		}
 
-		return
+		return classifyStreamError(err), err.Error()
 	}
 
 	defer stream.Close()
 
-	// Peer-disconnect watcher: when the browser closes its
-	// side, NextReader returns an error and we cancel the
-	// context so StreamLogs tears down.
 	go watchPeerDisconnect(conn, cancel)
 
 	wlh.forwardBytes(streamCtx, conn, stream)
+
+	return audit.OutcomeSuccess, ""
+}
+
+// classifyStreamError maps a StreamLogs error to an audit
+// Outcome. The apiserver's "forbidden" text pattern is stable
+// across kubectl versions; we match on the rendered wrap's
+// body rather than unwrapping a typed error because client-go's
+// REST error comes through fmt.Errorf already.
+func classifyStreamError(err error) audit.Outcome {
+	msg := err.Error()
+	if strings.Contains(msg, "forbidden") || strings.Contains(msg, "Unauthorized") {
+		return audit.OutcomeDenied
+	}
+
+	return audit.OutcomeError
 }
 
 // watchPeerDisconnect exits as soon as the peer side of conn
@@ -380,7 +468,15 @@ func (wlh *WSLogHandler) sendChunk(conn *websocket.Conn, chunk []byte) bool {
 		return false
 	}
 
-	writeErr := conn.WriteMessage(websocket.TextMessage, chunk)
+	// BinaryMessage (not TextMessage) because pod stdout can
+	// legitimately carry invalid UTF-8 (crash dumps, binary
+	// protobuf log lines). TextMessage asserts UTF-8 per
+	// RFC 6455 §5.6; strict clients or inspecting proxies
+	// would drop a mis-typed frame. The TS client sets
+	// binaryType="arraybuffer" and decodes via TextDecoder
+	// with fatal:false so replacement characters are rendered
+	// instead of throwing.
+	writeErr := conn.WriteMessage(websocket.BinaryMessage, chunk)
 
 	return writeErr == nil
 }

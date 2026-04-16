@@ -89,15 +89,27 @@ function attach(target: LogTarget): void {
   if (!host) return;
 
   const socket = new WebSocket(streamURL(target));
+  // The server emits BinaryMessage so invalid UTF-8 in pod
+  // stdout (crash dumps, binary-encoded logs) does not trip
+  // strict proxies that enforce RFC 6455 §5.6 on TextMessage.
+  // TextDecoder with fatal:false renders replacement characters
+  // in place of the bad bytes rather than throwing.
+  socket.binaryType = "arraybuffer";
   activeSocket = socket;
+
+  const decoder = new TextDecoder("utf-8", { fatal: false });
 
   socket.addEventListener("open", () => {
     reconnectAttempts = 0;
     appendLine(host, "\n--- live stream attached ---\n", "log-marker");
   });
 
-  socket.addEventListener("message", (event: MessageEvent<string>) => {
-    appendText(host, event.data);
+  socket.addEventListener("message", (event: MessageEvent<ArrayBuffer | string>) => {
+    if (event.data instanceof ArrayBuffer) {
+      appendText(host, decoder.decode(event.data));
+    } else {
+      appendText(host, event.data);
+    }
   });
 
   socket.addEventListener("close", (event: CloseEvent) => {
