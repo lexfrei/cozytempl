@@ -44,9 +44,14 @@ type KindGroup struct {
 
 // TenantsPageData holds data for the tenants management page.
 type TenantsPageData struct {
-	Tenants        []TenantWithUsage
-	TenantSchema   *k8s.AppSchema
-	MetricsEnabled bool
+	Tenants      []TenantWithUsage
+	TenantSchema *k8s.AppSchema
+	// TenantOverrides is the FormDefinition overlay for the
+	// Tenant kind, applied to the create-tenant modal. Nil when
+	// no FormDefinition targets "Tenant" or when the CRD is not
+	// installed — render falls through to schema-only.
+	TenantOverrides map[string]k8s.FormFieldOverride
+	MetricsEnabled  bool
 	// PreselectedKind is non-empty when the user arrived on the
 	// tenants page from a marketplace card click. The template
 	// renders a hint banner telling them to pick a tenant to

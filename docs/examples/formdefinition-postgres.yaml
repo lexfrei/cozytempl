@@ -1,0 +1,38 @@
+# Example FormDefinition for Postgres ApplicationDefinition.
+#
+# Tunes the schema-driven form cozytempl generates from the
+# Postgres ApplicationDefinition. Apply with:
+#
+#   kubectl apply -f docs/examples/formdefinition-postgres.yaml
+#
+# Effect: the create / edit modals for Postgres apps render
+# with operator-chosen labels, hints, and ordering instead of
+# the raw schema-derived text, without any change to the
+# Postgres CRD itself. See docs/form-definition.md for the
+# complete feature reference.
+apiVersion: cozytempl.cozystack.io/v1alpha1
+kind: FormDefinition
+metadata:
+  name: postgres-production
+spec:
+  kind: Postgres
+  fields:
+    - path: replicas
+      label: Replicas
+      hint: >-
+        Number of Postgres pods. One is fine for development;
+        the production minimum is three for quorum.
+      placeholder: "3"
+      order: 0
+    - path: storage.size
+      label: Storage size
+      hint: Total persistent volume per replica.
+      placeholder: "20Gi"
+      order: 1
+    - path: backup.enabled
+      label: Backups
+      hint: Daily snapshot upload to the configured S3 bucket.
+    - path: backup.schedule
+      label: Backup schedule
+      hint: Cron expression; UTC.
+      placeholder: "0 2 * * *"

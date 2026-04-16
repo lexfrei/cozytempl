@@ -34,11 +34,27 @@ func appDefGVR() schema.GroupVersionResource {
 
 // SchemaService provides operations on Cozystack application schemas
 // by reading ApplicationDefinition resources.
+//
+// The cache is keyed on (user, kind), not kind alone, because every
+// lookup goes through a user-impersonated dynamic client — two
+// users with different RBAC must not share a cache entry, or the
+// first viewer's read would leak to anyone who asked later within
+// the TTL. Username is the identity component we scope on; in
+// passthrough mode it comes from the OIDC claim, in BYOK from the
+// kubeconfig user, in token mode it is the literal "token-user"
+// placeholder (every token paste shares a cache bucket, which is
+// the intended behaviour — one kubeconfig / token session ≈ one
+// user).
 type SchemaService struct {
 	baseCfg *rest.Config
-	cache   map[string]schemaCacheEntry
+	cache   map[schemaCacheKey]schemaCacheEntry
 	mu      sync.RWMutex
 	mode    config.AuthMode
+}
+
+type schemaCacheKey struct {
+	user string
+	kind string
 }
 
 type schemaCacheEntry struct {
@@ -50,9 +66,29 @@ type schemaCacheEntry struct {
 func NewSchemaService(baseCfg *rest.Config, mode config.AuthMode) *SchemaService {
 	return &SchemaService{
 		baseCfg: baseCfg,
-		cache:   make(map[string]schemaCacheEntry),
+		cache:   make(map[schemaCacheKey]schemaCacheEntry),
 		mode:    mode,
 	}
+}
+
+// anonymousCacheUser is the sentinel bucket nil UserContext
+// entries fall into. Distinct from the empty string (which
+// would collide with a real user whose Username was never
+// set) and from any legal Kubernetes username (colon is not
+// allowed in usernames that appear in impersonation headers).
+const anonymousCacheUser = "anonymous"
+
+// cacheUserKey turns a UserContext into a cache-bucket key.
+// A nil user (tests, bootstrap-only paths) lands in the
+// anonymousCacheUser bucket so cache entries are scoped to a
+// dedicated non-user bucket instead of colliding across test
+// fixtures and production code.
+func cacheUserKey(usr *auth.UserContext) string {
+	if usr == nil {
+		return anonymousCacheUser
+	}
+
+	return usr.Username
 }
 
 // List returns all available application schemas from ApplicationDefinitions.
@@ -88,8 +124,10 @@ func (ssv *SchemaService) List(ctx context.Context, usr *auth.UserContext) ([]Ap
 // back to listing every ApplicationDefinition and matching by
 // spec.application.kind. Results are cached either way.
 func (ssv *SchemaService) Get(ctx context.Context, usr *auth.UserContext, kind string) (*AppSchema, error) {
+	key := schemaCacheKey{user: cacheUserKey(usr), kind: kind}
+
 	ssv.mu.RLock()
-	entry, exists := ssv.cache[kind]
+	entry, exists := ssv.cache[key]
 	ssv.mu.RUnlock()
 
 	if exists && time.Since(entry.fetchedAt) < schemaCacheTTL {
@@ -108,7 +146,7 @@ func (ssv *SchemaService) Get(ctx context.Context, usr *auth.UserContext, kind s
 	obj, getErr := client.Resource(appDefGVR()).Get(ctx, defName, metav1.GetOptions{})
 	if getErr == nil {
 		if parsed := appDefToSchema(obj); parsed != nil {
-			ssv.cacheSet(kind, parsed)
+			ssv.cacheSet(key, parsed)
 
 			return parsed, nil
 		}
@@ -122,7 +160,7 @@ func (ssv *SchemaService) Get(ctx context.Context, usr *auth.UserContext, kind s
 		return nil, findErr
 	}
 
-	ssv.cacheSet(kind, parsed)
+	ssv.cacheSet(key, parsed)
 
 	return parsed, nil
 }
@@ -149,12 +187,12 @@ func (ssv *SchemaService) findByKind(
 	return nil, fmt.Errorf("%w: kind %s", ErrInvalidAppDef, kind)
 }
 
-// cacheSet stores a schema under its Cozystack kind key. Takes the write
-// lock so concurrent Get calls that resolve the same kind don't thrash
-// the cache entry.
-func (ssv *SchemaService) cacheSet(kind string, parsed *AppSchema) {
+// cacheSet stores a schema under its (user, kind) cache key. Takes
+// the write lock so concurrent Get calls that resolve the same key
+// don't thrash the cache entry.
+func (ssv *SchemaService) cacheSet(key schemaCacheKey, parsed *AppSchema) {
 	ssv.mu.Lock()
-	ssv.cache[kind] = schemaCacheEntry{schema: parsed, fetchedAt: time.Now()}
+	ssv.cache[key] = schemaCacheEntry{schema: parsed, fetchedAt: time.Now()}
 	ssv.mu.Unlock()
 }
 

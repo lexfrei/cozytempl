@@ -98,6 +98,7 @@ func run() error {
 
 	tenantSvc := k8s.NewTenantService(k8sCfg, cfg.AuthMode)
 	schemaSvc := k8s.NewSchemaService(k8sCfg, cfg.AuthMode)
+	formDefSvc := k8s.NewFormDefinitionService(k8sCfg, cfg.AuthMode)
 	appSvc := k8s.NewApplicationService(k8sCfg, schemaSvc, cfg.AuthMode)
 	usageSvc := k8s.NewUsageService(k8sCfg, cfg.AuthMode)
 	eventSvc := k8s.NewEventService(k8sCfg, cfg.AuthMode)
@@ -141,19 +142,20 @@ func run() error {
 	}
 
 	pageHandler := handler.NewPageHandler(handler.PageHandlerDeps{
-		TenantSvc: tenantSvc,
-		AppSvc:    appSvc,
-		SchemaSvc: schemaSvc,
-		UsageSvc:  usageSvc,
-		EventSvc:  eventSvc,
-		LogSvc:    logSvc,
-		CAPISvc:   capiSvc,
-		BaseCfg:   k8sCfg,
-		Audit:     auditLog,
-		I18n:      i18nBundle,
-		AuthMode:  cfg.AuthMode,
-		DevMode:   cfg.DevMode,
-		Log:       log,
+		TenantSvc:  tenantSvc,
+		AppSvc:     appSvc,
+		SchemaSvc:  schemaSvc,
+		FormDefSvc: formDefSvc,
+		UsageSvc:   usageSvc,
+		EventSvc:   eventSvc,
+		LogSvc:     logSvc,
+		CAPISvc:    capiSvc,
+		BaseCfg:    k8sCfg,
+		Audit:      auditLog,
+		I18n:       i18nBundle,
+		AuthMode:   cfg.AuthMode,
+		DevMode:    cfg.DevMode,
+		Log:        log,
 	})
 
 	routerCfg := &api.RouterConfig{

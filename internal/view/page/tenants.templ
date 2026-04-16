@@ -163,7 +163,7 @@ templ Tenants(data view.TenantsPageData) {
 					</div>
 				</div>
 				if data.TenantSchema != nil {
-					@fragment.SchemaFields(*data.TenantSchema)
+					@fragment.SchemaFieldsWithOverrides(*data.TenantSchema, nil, data.TenantOverrides)
 				}
 				<div class="modal-footer">
 					<button type="button" class="btn"

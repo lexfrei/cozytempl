@@ -7,10 +7,13 @@ import (
 
 // editFormFields renders the pre-populated schema-driven fields
 // so AppFormTabs can wrap them with the YAML pane uniformly.
-// Extracted for symmetry with the create path.
-templ editFormFields(schema *k8s.AppSchema, spec map[string]any) {
+// Extracted for symmetry with the create path. The overrides
+// map is the FormDefinition overlay for this kind; nil means
+// "no FormDefinition applies" and the renderer falls through
+// to schema-only behaviour.
+templ editFormFields(schema *k8s.AppSchema, spec map[string]any, overrides map[string]k8s.FormFieldOverride) {
 	if schema != nil {
-		@SchemaFieldsWithValues(*schema, spec)
+		@SchemaFieldsWithOverrides(*schema, spec, overrides)
 	} else {
 		<p class="text-muted text-sm">{ partial.Tc(ctx, "form.app.noFields") }</p>
 	}
@@ -38,7 +41,11 @@ templ editFormFields(schema *k8s.AppSchema, spec map[string]any) {
 // can pin optimistic-lock semantics. If two users have the
 // form open and one saves first, the second gets 409
 // Conflict instead of a silent clobber.
-templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, spec map[string]any, resourceVersion, specYAML string) {
+templ AppEditModal(
+	tenant string, app k8s.Application, schema *k8s.AppSchema,
+	spec map[string]any, resourceVersion, specYAML string,
+	overrides map[string]k8s.FormFieldOverride,
+) {
 	<div id="app-edit-modal" class="modal-backdrop" style="display: flex;">
 		<div class="modal">
 			<div class="modal-header">
@@ -67,7 +74,7 @@ templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, sp
 						{ partial.Tc(ctx, "form.app.nameHint") }
 					</div>
 				</div>
-				@AppFormTabs("/fragments/app-yaml", "/fragments/app-yaml-to-form", "app-edit-form", specYAML, false, editFormFields(schema, spec))
+				@AppFormTabs("/fragments/app-yaml", "/fragments/app-yaml-to-form", "app-edit-form", specYAML, false, editFormFields(schema, spec, overrides))
 				<div class="modal-footer">
 					<button type="button" class="btn"
 						data-action="modal-dismiss" data-modal="app-edit-modal">{ partial.Tc(ctx, "action.cancel") }</button>

@@ -82,6 +82,7 @@ KUBECONFIG=~/.kube/config COZYTEMPL_AUTH_MODE=dev ./bin/cozytempl
 ### Applications
 
 - Full CRUD for every Cozystack application type via schema-driven forms generated from each ApplicationDefinition's `openAPISchema`.
+- **FormDefinition CRD** — declarative per-kind overlays that override labels, hints, placeholders, field order, and hide fields without changing the downstream ApplicationDefinition. See [`docs/form-definition.md`](docs/form-definition.md) and an example at [`docs/examples/formdefinition-postgres.yaml`](docs/examples/formdefinition-postgres.yaml).
 - App edit modal with current values pre-loaded.
 - Tab-based detail view: Overview, Connection, Conditions, Events, Logs, Values.
 - **Click-to-reveal credentials** on the Connection tab: passwords, tokens and API keys render as placeholder dots until the user explicitly requests disclosure. The real value is fetched on demand, shown for 30 seconds, then auto-hidden. Every reveal emits an audit event.

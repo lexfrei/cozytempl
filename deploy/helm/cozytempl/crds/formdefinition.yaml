@@ -1,0 +1,137 @@
+# FormDefinition CRD — declarative overlays on top of the
+# schema-driven forms cozytempl generates from each
+# ApplicationDefinition's openAPISchema.
+#
+# Helm 3 installs everything under crds/ once per release at
+# pre-install time and does not upgrade the CRD on subsequent
+# helm upgrade invocations. That is by design: the chart's
+# templates/ emit instances that MUST NOT race ahead of the
+# CRD, and the CRD itself is a cluster-wide contract shared
+# across every release of cozytempl. Operators who want to
+# control CRD lifecycle out-of-band can remove this file and
+# apply the CRD manually.
+#
+# Cluster-scoped. FormDefinitions live above any one
+# namespace because ApplicationDefinitions do and the two are
+# rendered together — a per-kind overlay applies to every
+# instance of that kind in every tenant.
+#
+# Shape stability: v1alpha1 is the only version shipped today;
+# the spec.kind + spec.fields[] contract is the minimum
+# surface that is useful. Widget types, enum labelling,
+# conditional visibility, and default-value injection are
+# deliberately out of scope until real operator feedback
+# drives specific needs — adding them later would go through
+# a v1beta1 with conversion, not an in-place mutation of
+# v1alpha1.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: formdefinitions.cozytempl.cozystack.io
+  annotations:
+    cozytempl.cozystack.io/hand-written: "true"
+spec:
+  group: cozytempl.cozystack.io
+  scope: Cluster
+  names:
+    kind: FormDefinition
+    plural: formdefinitions
+    singular: formdefinition
+    shortNames:
+      - fdef
+    categories:
+      - cozytempl
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - kind
+              properties:
+                kind:
+                  type: string
+                  description: >-
+                    The ApplicationDefinition kind this
+                    FormDefinition overlays. Exact match,
+                    case-sensitive.
+                  minLength: 1
+                fields:
+                  type: array
+                  description: >-
+                    Per-field UI overrides. Each entry targets
+                    one dot-path in the schema-walked form tree.
+                    Multiple FormDefinitions that target the
+                    same kind are folded in metadata.name
+                    order, with a last-write-wins merge on
+                    path conflicts.
+                  items:
+                    type: object
+                    required:
+                      - path
+                    properties:
+                      path:
+                        type: string
+                        minLength: 1
+                        description: >-
+                          Dot-path that addresses a field in
+                          the schema-walked tree. Top-level
+                          scalars use a bare key ("replicas");
+                          nested fields use dots
+                          ("backup.enabled"). The form walker
+                          descends two levels; deeper paths
+                          in a FormDefinition have no effect.
+                      label:
+                        type: string
+                        description: >-
+                          Replaces the schema's title for this
+                          field. Empty leaves the schema title
+                          in place.
+                      hint:
+                        type: string
+                        description: >-
+                          Replaces the schema's description.
+                          Empty leaves the schema description
+                          in place.
+                      placeholder:
+                        type: string
+                        description: >-
+                          Sets the HTML placeholder attribute
+                          on the rendered input. Empty means no
+                          placeholder.
+                      order:
+                        type: integer
+                        description: >-
+                          Render order within the field's
+                          group (top-level or nested). Lower
+                          renders earlier. Fields without an
+                          order sort after ordered ones by
+                          alphabetical schema order. Zero is a
+                          valid explicit value.
+                      hidden:
+                        type: boolean
+                        description: >-
+                          Hides the field from the rendered
+                          form. Existing values survive edit
+                          because the raw spec snapshot is
+                          merged through the YAML path; the UI
+                          just stops exposing the knob.
+      additionalPrinterColumns:
+        - name: Kind
+          type: string
+          jsonPath: .spec.kind
+          description: ApplicationDefinition kind this FormDefinition overlays.
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

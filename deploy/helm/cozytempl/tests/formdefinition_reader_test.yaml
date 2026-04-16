@@ -1,0 +1,109 @@
+suite: FormDefinition reader binding
+templates:
+  - formdefinition-reader.yaml
+release:
+  name: cozytempl
+  namespace: cozy-system
+tests:
+  - it: renders ClusterRole + ClusterRoleBinding by default, bound to system:authenticated
+    set:
+      config.authMode: dev
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: ClusterRole
+        documentIndex: 0
+      - equal:
+          path: metadata.name
+          value: cozytempl-formdefinition-reader
+        documentIndex: 0
+      - isKind:
+          of: ClusterRoleBinding
+        documentIndex: 1
+      - equal:
+          path: metadata.name
+          value: cozytempl-formdefinition-reader
+        documentIndex: 1
+      - equal:
+          path: rules[0].apiGroups[0]
+          value: cozytempl.cozystack.io
+        documentIndex: 0
+      - equal:
+          path: rules[0].resources[0]
+          value: formdefinitions
+        documentIndex: 0
+      - equal:
+          path: subjects[0].kind
+          value: Group
+        documentIndex: 1
+      - equal:
+          path: subjects[0].name
+          value: system:authenticated
+        documentIndex: 1
+
+  - it: skips both documents when formDefinition.readerBinding.create is false
+    set:
+      config.authMode: dev
+      formDefinition.readerBinding.create: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: honours a custom subjects list
+    set:
+      config.authMode: dev
+      formDefinition.readerBinding.subjects:
+        - kind: Group
+          apiGroup: rbac.authorization.k8s.io
+          name: platform-users
+        - kind: ServiceAccount
+          name: ci-bot
+          namespace: ci
+    asserts:
+      - hasDocuments:
+          count: 2
+      - equal:
+          path: subjects[0].name
+          value: platform-users
+        documentIndex: 1
+      - equal:
+          path: subjects[1].name
+          value: ci-bot
+        documentIndex: 1
+      - notContains:
+          path: subjects
+          content:
+            kind: Group
+            apiGroup: rbac.authorization.k8s.io
+            name: system:authenticated
+        documentIndex: 1
+
+  - it: grants exactly the three read verbs required by the service
+    set:
+      config.authMode: dev
+    asserts:
+      - contains:
+          path: rules[0].verbs
+          content: get
+        documentIndex: 0
+      - contains:
+          path: rules[0].verbs
+          content: list
+        documentIndex: 0
+      - contains:
+          path: rules[0].verbs
+          content: watch
+        documentIndex: 0
+      - notContains:
+          path: rules[0].verbs
+          content: create
+        documentIndex: 0
+      - notContains:
+          path: rules[0].verbs
+          content: update
+        documentIndex: 0
+      - notContains:
+          path: rules[0].verbs
+          content: delete
+        documentIndex: 0

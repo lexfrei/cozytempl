@@ -235,6 +235,32 @@ rbac:
 watcher:
   enabled: true
 
+# FormDefinition CRD — operator-authored UI overlays for the
+# schema-driven forms cozytempl generates from each
+# ApplicationDefinition's openAPISchema. The CRD manifest itself
+# lives in deploy/helm/cozytempl/crds/formdefinition.yaml and
+# Helm 3 installs it once at pre-install (not upgraded by helm
+# upgrade — CRDs are a cluster-wide contract).
+#
+# readerBinding controls the ClusterRoleBinding that grants
+# get/list/watch on formdefinitions.cozytempl.cozystack.io to
+# ordinary cozytempl users. Every UI render fetches
+# FormDefinitions through the user's impersonated Kubernetes
+# identity, so without this RBAC the overlays are silently
+# ignored and the form falls back to schema-only rendering.
+# Safe to default-bind to system:authenticated because the
+# FormDefinition payload carries operator-authored UI strings,
+# not secrets.
+formDefinition:
+  readerBinding:
+    # Disable if you wire the read RBAC out-of-band or ship a
+    # stricter policy via an admission controller.
+    create: true
+    # Override to scope the audience tighter — e.g. a specific
+    # Group or a SubjectAccessReview-driven ClusterRole. Empty
+    # binds to system:authenticated.
+    subjects: []
+
 # Pod security context. Non-root by default — the container
 # image is built with USER 65532:65532 so fsGroup is not
 # required.
