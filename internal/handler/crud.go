@@ -464,9 +464,8 @@ func (pgh *PageHandler) reportSpecBuildError(
 // works without the radio in the payload. That fallback path
 // also maps to replace=true — a user or API client sending raw
 // YAML has kubectl-edit expectations, never deep-merge.
-// bool is "replace vs deep-merge" instead of a blank `bool` in the doc.
 //
-//nolint:nonamedreturns // three-return signature; names document which
+//nolint:nonamedreturns // three-return signature; the names document which bool means "replace vs deep-merge".
 func (pgh *PageHandler) buildSpecFromRequest(
 	req *http.Request, usr *auth.UserContext, appKind string,
 ) (spec map[string]any, replace bool, err error) {
@@ -474,16 +473,7 @@ func (pgh *PageHandler) buildSpecFromRequest(
 	yamlRaw := strings.TrimSpace(req.FormValue(formFieldSpecYAML))
 
 	if tabMode == tabModeYAML {
-		if yamlRaw == "" {
-			return nil, false, ErrEmptyYAMLSpec
-		}
-
-		spec, err := parseSpecYAML(yamlRaw)
-		if err != nil {
-			return nil, false, err
-		}
-
-		return spec, true, nil
+		return parseYAMLSpecOrEmptyError(yamlRaw)
 	}
 
 	// Legacy fallback for API clients / older browsers that
@@ -492,14 +482,12 @@ func (pgh *PageHandler) buildSpecFromRequest(
 	// semantics — a caller who pastes raw YAML expects
 	// kubectl-edit behaviour, and silently deep-merging that
 	// into the existing spec is the exact UX trap the radio
-	// was introduced to avoid.
+	// was introduced to avoid. The empty-parsed-spec guard
+	// runs on this path too: a legacy client that pastes
+	// "{}" or "null" must not wipe cluster state any more
+	// than a browser client on the YAML tab.
 	if tabMode == "" && yamlRaw != "" {
-		spec, err := parseSpecYAML(yamlRaw)
-		if err != nil {
-			return nil, false, err
-		}
-
-		return spec, true, nil
+		return parseYAMLSpecOrEmptyError(yamlRaw)
 	}
 
 	schema, err := pgh.schemaSvc.Get(req.Context(), usr, appKind)
@@ -508,6 +496,35 @@ func (pgh *PageHandler) buildSpecFromRequest(
 	}
 
 	return extractSpecFromForm(req, extractFieldTypes(schema)), false, nil
+}
+
+// parseYAMLSpecOrEmptyError is the shared guard for both YAML
+// code paths (explicit _tabmode=yaml and the legacy
+// non-empty-textarea fallback). It rejects an empty textarea
+// AND a textarea whose content parses to an empty map: "{}",
+// "null", "~", and comment-only inputs all parse cleanly to
+// a zero-key map[string]any under sigs.k8s.io/yaml. Without
+// this guard a user with replace semantics who accidentally
+// typed "{}" or a stray "# comment" would silently wipe every
+// key from the cluster spec — the exact surprise the YAML =
+// replace invariant was supposed to make impossible.
+//
+//nolint:nonamedreturns // shares the (spec, replace, err) shape with buildSpecFromRequest; names keep the three bools distinguishable.
+func parseYAMLSpecOrEmptyError(raw string) (spec map[string]any, replace bool, err error) {
+	if raw == "" {
+		return nil, false, ErrEmptyYAMLSpec
+	}
+
+	parsed, parseErr := parseSpecYAML(raw)
+	if parseErr != nil {
+		return nil, false, parseErr
+	}
+
+	if len(parsed) == 0 {
+		return nil, false, ErrEmptyYAMLSpec
+	}
+
+	return parsed, true, nil
 }
 
 // parseSpecYAML unmarshals the textarea content into the
@@ -553,9 +570,19 @@ func extractSpecFromForm(req *http.Request, fieldTypes map[string]string) map[st
 
 // setNestedSpec assigns a value at a dot-path inside a map, creating
 // intermediate sub-maps as needed. "backup.enabled" → spec["backup"]
-// ["enabled"]. A non-dotted key assigns at the top level. If an
-// intermediate key already holds a non-map value, setNestedSpec leaves
-// it alone — the form cannot silently overwrite a scalar with a map.
+// ["enabled"]. A non-dotted key assigns at the top level.
+//
+// If an intermediate key already holds a non-map value, the nested
+// assignment is silently skipped rather than overwriting the existing
+// scalar with a fresh map. Rationale: the two collision paths are
+// "overwrite the scalar with {new: val}" or "drop the nested write".
+// The former destroys data the form previously wrote; the latter
+// preserves it and the loss is limited to the one dotted key. Neither
+// is great, but silent-preserve beats silent-destroy because the
+// schema-driven form never generates colliding keys under normal
+// operation — a collision is either a malformed POST or a schema bug,
+// and keeping the earlier scalar leaves more of the original intent
+// intact.
 func setNestedSpec(spec map[string]any, key string, value any) {
 	parts := strings.Split(key, ".")
 
@@ -564,10 +591,22 @@ func setNestedSpec(spec map[string]any, key string, value any) {
 	for idx := range len(parts) - 1 {
 		part := parts[idx]
 
-		child, ok := cur[part].(map[string]any)
+		existing, present := cur[part]
+		if !present {
+			fresh := map[string]any{}
+			cur[part] = fresh
+			cur = fresh
+
+			continue
+		}
+
+		child, ok := existing.(map[string]any)
 		if !ok {
-			child = map[string]any{}
-			cur[part] = child
+			// Intermediate key is already a scalar; a form with a
+			// colliding nested key is either malformed input or a
+			// schema bug. Drop this dot-path write rather than
+			// silently discarding the scalar.
+			return
 		}
 
 		cur = child

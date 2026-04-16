@@ -186,6 +186,116 @@ func TestBuildSpecFromRequestEmptyYAMLOnYAMLTab(t *testing.T) {
 	}
 }
 
+// TestBuildSpecFromRequestRejectsParsedEmptyYAMLOnYAMLTab pins
+// the post-parse empty-map guard. Four YAML tokens — "{}",
+// "null", "~", and a comment-only input — all parse cleanly
+// through sigs.k8s.io/yaml to a zero-key map[string]any.
+// Without the len(spec)==0 check after parseSpecYAML the YAML
+// tab's replace semantics would silently wipe every field from
+// cluster state on an accidental select-all + type of any of
+// these tokens. The non-empty-string trim check alone is not
+// enough: "{}" is a non-empty string that parses to nothing.
+func TestBuildSpecFromRequestRejectsParsedEmptyYAMLOnYAMLTab(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"curly-braces":      "{}",
+		"null-literal":      "null",
+		"tilde":             "~",
+		"comment-only":      "# just a comment, no keys",
+		"multiline-comment": "# line one\n# line two\n",
+	}
+
+	for name, payload := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			form := strings.NewReader(
+				"_tabmode=yaml&name=pg&kind=Postgres&spec_yaml=" + urlEncode(payload))
+
+			req := httptest.NewRequestWithContext(
+				t.Context(), http.MethodPost, "/tenants/ns/apps", form)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			if parseErr := req.ParseForm(); parseErr != nil {
+				t.Fatalf("ParseForm: %v", parseErr)
+			}
+
+			pgh := &PageHandler{}
+
+			_, _, err := pgh.buildSpecFromRequest(req, nil, "Postgres")
+			if err == nil {
+				t.Fatalf("payload %q: expected ErrEmptyYAMLSpec; parsed-empty YAML must not wipe cluster state", payload)
+			}
+
+			if !errors.Is(err, ErrEmptyYAMLSpec) {
+				t.Errorf("payload %q: err = %v, want wraps ErrEmptyYAMLSpec", payload, err)
+			}
+		})
+	}
+}
+
+// TestBuildSpecFromRequestRejectsParsedEmptyYAMLLegacyFallback
+// mirrors the YAML-tab guard for the legacy fallback path (no
+// _tabmode radio, non-empty spec_yaml). Any client — API
+// consumer, older browser, script — that sends raw YAML also
+// rides the replace path; the guard must fire consistently or
+// a POST with spec_yaml="{}" wipes the spec without ever
+// involving the browser radio.
+func TestBuildSpecFromRequestRejectsParsedEmptyYAMLLegacyFallback(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"curly-braces": "{}",
+		"null-literal": "null",
+		"comment-only": "# no keys",
+	}
+
+	for name, payload := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			form := strings.NewReader(
+				"name=pg&kind=Postgres&spec_yaml=" + urlEncode(payload))
+
+			req := httptest.NewRequestWithContext(
+				t.Context(), http.MethodPost, "/tenants/ns/apps", form)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			if parseErr := req.ParseForm(); parseErr != nil {
+				t.Fatalf("ParseForm: %v", parseErr)
+			}
+
+			pgh := &PageHandler{}
+
+			_, _, err := pgh.buildSpecFromRequest(req, nil, "Postgres")
+			if err == nil {
+				t.Fatalf("payload %q: legacy fallback must also reject parsed-empty YAML", payload)
+			}
+
+			if !errors.Is(err, ErrEmptyYAMLSpec) {
+				t.Errorf("payload %q: err = %v, want wraps ErrEmptyYAMLSpec on legacy fallback", payload, err)
+			}
+		})
+	}
+}
+
+// urlEncode is a tiny test-only helper — url.QueryEscape via
+// net/url would pull another import into this file, so we
+// hand-roll the two special cases the test payloads use.
+func urlEncode(s string) string {
+	s = strings.ReplaceAll(s, "%", "%25")
+	s = strings.ReplaceAll(s, "{", "%7B")
+	s = strings.ReplaceAll(s, "}", "%7D")
+	s = strings.ReplaceAll(s, "~", "%7E")
+	s = strings.ReplaceAll(s, "#", "%23")
+	s = strings.ReplaceAll(s, " ", "+")
+	s = strings.ReplaceAll(s, "\n", "%0A")
+	s = strings.ReplaceAll(s, ",", "%2C")
+
+	return s
+}
+
 // TestBuildSpecFromRequestLegacyYAMLFallbackIsReplace pins the
 // rule that a caller who pastes raw YAML without the _tabmode
 // radio still gets full-replace semantics on Update. The older
@@ -219,6 +329,62 @@ func TestBuildSpecFromRequestLegacyYAMLFallbackIsReplace(t *testing.T) {
 
 	if !replace {
 		t.Error("replace = false on legacy YAML fallback; want true — raw YAML always carries replace semantics")
+	}
+}
+
+// TestSetNestedSpecScalarAtIntermediate pins the collision
+// policy: when a dot-path tries to descend through a
+// non-map scalar, the entire dot-path write is dropped.
+// The doc comment on setNestedSpec used to claim this
+// behaviour while the code did the opposite (silent
+// overwrite with a fresh map), so a regression to the old
+// code would look like the scalar disappearing from the
+// spec. Nothing in the schema-driven form should ever
+// trigger a collision, but a malformed POST can, and
+// silent-preserve beats silent-destroy.
+func TestSetNestedSpecScalarAtIntermediate(t *testing.T) {
+	t.Parallel()
+
+	spec := map[string]any{"backup": "disabled"}
+
+	setNestedSpec(spec, "backup.schedule", "*/30 * * * *")
+
+	// The pre-existing scalar must survive.
+	if spec["backup"] != "disabled" {
+		t.Errorf("scalar at intermediate was overwritten: spec = %+v", spec)
+	}
+
+	// The nested write must NOT leak into a sibling key.
+	if _, ok := spec["backup.schedule"]; ok {
+		t.Errorf("dot-path key leaked as literal string key: spec = %+v", spec)
+	}
+}
+
+// TestSetNestedSpecCreatesIntermediateMaps covers the
+// normal path: when the intermediate key is absent, a
+// fresh map is created and the leaf value lands there. A
+// regression that tightened the collision branch too far
+// would also break this path — the test anchors the
+// default behaviour.
+func TestSetNestedSpecCreatesIntermediateMaps(t *testing.T) {
+	t.Parallel()
+
+	spec := map[string]any{}
+
+	setNestedSpec(spec, "backup.schedule", "*/30 * * * *")
+	setNestedSpec(spec, "backup.enabled", true)
+
+	backup, ok := spec["backup"].(map[string]any)
+	if !ok {
+		t.Fatalf("spec.backup not a map: %T", spec["backup"])
+	}
+
+	if backup["schedule"] != "*/30 * * * *" {
+		t.Errorf("spec.backup.schedule = %v, want cron string", backup["schedule"])
+	}
+
+	if backup["enabled"] != true {
+		t.Errorf("spec.backup.enabled = %v, want true", backup["enabled"])
 	}
 }
 
