@@ -7,6 +7,10 @@ import "github.com/lexfrei/cozytempl/static"
 // their session yet. The form posts application/x-www-form-urlencoded
 // to the same /auth/token path so the handler can reuse the usual
 // POST-redirect-GET pattern.
+//
+// Stylesheet path contract: same as KubeconfigUpload — see its
+// doc comment. authpage_test.go pins both pages to the correct
+// /static/css/styles.css path.
 templ TokenUpload(errorMessage string) {
 	<!DOCTYPE html>
 	<html lang="en">
@@ -14,8 +18,6 @@ templ TokenUpload(errorMessage string) {
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>{ tc(ctx, "page.token.title") } &mdash; cozytempl</title>
-			<!-- See kubeconfig_upload.templ for why the path is
-			     /static/css/styles.css and not /static/dist/. -->
 			<link rel="stylesheet" href={ "/static/css/styles.css?v=" + static.AssetVersion() }/>
 		</head>
 		<body>
