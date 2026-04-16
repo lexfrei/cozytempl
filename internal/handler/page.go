@@ -37,15 +37,27 @@ type schemaService interface {
 	List(ctx context.Context, usr *auth.UserContext) ([]k8s.AppSchema, error)
 }
 
+// formDefinitionService is the narrow slice of
+// FormDefinitionService the handlers reach for. Same
+// test-friendliness rationale as schemaService above. Returns
+// nil (not an error) when no FormDefinition targets the kind
+// so the render path falls through to schema-only behaviour.
+type formDefinitionService interface {
+	GetOverridesForKind(
+		ctx context.Context, usr *auth.UserContext, kind string,
+	) ([]k8s.FormFieldOverride, error)
+}
+
 // PageHandler renders full HTML pages via templ.
 type PageHandler struct {
-	tenantSvc *k8s.TenantService
-	appSvc    *k8s.ApplicationService
-	schemaSvc schemaService
-	usageSvc  *k8s.UsageService
-	eventSvc  *k8s.EventService
-	logSvc    *k8s.LogService
-	capiSvc   *k8s.CAPIService
+	tenantSvc  *k8s.TenantService
+	appSvc     *k8s.ApplicationService
+	schemaSvc  schemaService
+	formDefSvc formDefinitionService
+	usageSvc   *k8s.UsageService
+	eventSvc   *k8s.EventService
+	logSvc     *k8s.LogService
+	capiSvc    *k8s.CAPIService
 	// appGetter is a narrow view of appSvc used by InvokeAction —
 	// split out so handler tests can inject a stub without dragging
 	// the whole ApplicationService concrete type in. Production
@@ -85,13 +97,14 @@ type PageHandler struct {
 // struct keeps the call site readable and future additions
 // non-breaking.
 type PageHandlerDeps struct {
-	TenantSvc *k8s.TenantService
-	AppSvc    *k8s.ApplicationService
-	SchemaSvc *k8s.SchemaService
-	UsageSvc  *k8s.UsageService
-	EventSvc  *k8s.EventService
-	LogSvc    *k8s.LogService
-	CAPISvc   *k8s.CAPIService
+	TenantSvc  *k8s.TenantService
+	AppSvc     *k8s.ApplicationService
+	SchemaSvc  *k8s.SchemaService
+	FormDefSvc *k8s.FormDefinitionService
+	UsageSvc   *k8s.UsageService
+	EventSvc   *k8s.EventService
+	LogSvc     *k8s.LogService
+	CAPISvc    *k8s.CAPIService
 	// BaseCfg is passed through to the handler for callers (like
 	// the per-resource action registry) that need to build a fresh
 	// user-credentialed rest.Config outside the concrete service
@@ -128,6 +141,7 @@ func NewPageHandler(deps PageHandlerDeps) *PageHandler {
 		appSvc:     deps.AppSvc,
 		appGetter:  deps.AppSvc,
 		schemaSvc:  deps.SchemaSvc,
+		formDefSvc: deps.FormDefSvc,
 		usageSvc:   deps.UsageSvc,
 		eventSvc:   deps.EventSvc,
 		logSvc:     deps.LogSvc,

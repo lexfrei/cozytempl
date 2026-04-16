@@ -289,6 +289,40 @@
         }
       }
     },
+    "formDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["readerBinding"],
+      "description": "FormDefinition CRD wiring — UI overlays that override the schema-driven form renderer per-kind.",
+      "properties": {
+        "readerBinding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["create", "subjects"],
+          "properties": {
+            "create": {
+              "type": "boolean",
+              "description": "Render the ClusterRoleBinding that grants get/list/watch on FormDefinitions to ordinary users. Required for FormDefinition overlays to take effect — users fetch FormDefinitions through their own impersonated identity."
+            },
+            "subjects": {
+              "type": "array",
+              "description": "Binding subjects. Empty defaults to Group system:authenticated. Override to scope to a specific group or SAs.",
+              "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "required": ["kind", "name"],
+                "properties": {
+                  "kind": { "type": "string" },
+                  "name": { "type": "string" },
+                  "apiGroup": { "type": "string" },
+                  "namespace": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "podSecurityContext": {
       "type": "object",
       "description": "Pod-level securityContext, passed through verbatim."

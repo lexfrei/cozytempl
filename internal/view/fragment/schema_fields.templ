@@ -61,7 +61,7 @@ func looksLikeSecret(key string) bool {
 // SchemaFields renders form fields dynamically from a JSON Schema.
 // For edit flows use SchemaFieldsWithValues to pre-populate the form.
 templ SchemaFields(schema k8s.AppSchema) {
-	@SchemaFieldsWithValues(schema, nil)
+	@SchemaFieldsWithOverrides(schema, nil, nil)
 }
 
 // SchemaFieldsWithValues is the variant used by edit flows: the values
@@ -72,7 +72,23 @@ templ SchemaFields(schema k8s.AppSchema) {
 // up to maxNestedDepth, and grouped by their top-level key so the user
 // sees a visual hierarchy.
 templ SchemaFieldsWithValues(schema k8s.AppSchema, values map[string]any) {
-	for _, group := range groupFields(extractPropertiesWithValues(schema, values)) {
+	@SchemaFieldsWithOverrides(schema, values, nil)
+}
+
+// SchemaFieldsWithOverrides is the FormDefinition-aware variant. The
+// overrides map is keyed by field dot-path and layers label, hint,
+// placeholder, order, and hidden on top of the schema-derived values.
+// A nil overrides map is equivalent to SchemaFieldsWithValues; every
+// code path must survive "no FormDefinition applies to this kind"
+// without changing behaviour.
+//
+// Rendering stays a single pass: walkProperties already applies the
+// Hidden flag (so a skipped field is absent from the flat list),
+// buildField substitutes label/hint/placeholder when the override
+// set one, and groupFields sorts on Order so explicitly-ordered
+// fields render before the alphabetically-natural ones.
+templ SchemaFieldsWithOverrides(schema k8s.AppSchema, values map[string]any, overrides map[string]k8s.FormFieldOverride) {
+	for _, group := range groupFields(extractPropertiesWithValues(schema, values, overrides)) {
 		if group.Label != "" {
 			<div class="form-hint" style="margin-top: 16px; font-weight: 600; color: var(--color-text);">
 				{ group.Label }
@@ -109,12 +125,15 @@ templ renderField(field SchemaField) {
 				<option value="true" selected?={ field.Default == "true" }>true</option>
 			</select>
 		case field.Type == "integer" || field.Type == "number":
-			<input class="form-input" type="number" name={ field.Key } value={ field.Default }/>
+			<input class="form-input" type="number" name={ field.Key } value={ field.Default }
+				placeholder={ field.Placeholder }/>
 		case looksLikeSecret(field.Key):
 			<input class="form-input" type="password" name={ field.Key } value={ field.Default }
+				placeholder={ field.Placeholder }
 				autocomplete="new-password" spellcheck="false"/>
 		default:
-			<input class="form-input" type="text" name={ field.Key } value={ field.Default }/>
+			<input class="form-input" type="text" name={ field.Key } value={ field.Default }
+				placeholder={ field.Placeholder }/>
 	}
 }
 
@@ -127,8 +146,14 @@ type SchemaField struct {
 	Type        string
 	Description string
 	Default     string
+	Placeholder string
 	Enum        []string
 	Required    bool
+	// Order is the FormDefinition-supplied render order. nil
+	// means "unordered"; unordered fields sort after ordered
+	// ones in the same group, preserving schema-natural
+	// (alphabetical) order among themselves.
+	Order *int
 }
 
 // FieldGroup is a visual grouping of fields under a common nested
@@ -141,7 +166,10 @@ type FieldGroup struct {
 
 // groupFields clusters a flat field list by the first component of
 // its dot-path. Top-level scalars end up in an unnamed group at the
-// top; nested fields follow in alphabetical group order.
+// top; nested fields follow in alphabetical group order. Within each
+// group, fields with an explicit FormDefinition Order render first
+// (lowest → highest), then fields without an Order in their original
+// alphabetical schema order.
 func groupFields(fields []SchemaField) []FieldGroup {
 	var top FieldGroup
 
@@ -156,6 +184,8 @@ func groupFields(fields []SchemaField) []FieldGroup {
 		nested[parts[0]] = append(nested[parts[0]], f)
 	}
 
+	sortByOrder(top.Fields)
+
 	var keys []string
 	for k := range nested {
 		keys = append(keys, k)
@@ -167,18 +197,47 @@ func groupFields(fields []SchemaField) []FieldGroup {
 		out = append(out, top)
 	}
 	for _, k := range keys {
-		out = append(out, FieldGroup{Label: k, Fields: nested[k]})
+		group := FieldGroup{Label: k, Fields: nested[k]}
+		sortByOrder(group.Fields)
+		out = append(out, group)
 	}
 
 	return out
+}
+
+// sortByOrder stable-sorts a slice in place so fields with an
+// explicit FormDefinition Order land first (lowest number first) and
+// unordered fields keep the alphabetical sort walkProperties gave
+// them. Stable keeps the relative position of unordered siblings so
+// a regression in the FormDefinition layer does not randomise the
+// visible form.
+func sortByOrder(fields []SchemaField) {
+	sort.SliceStable(fields, func(i, j int) bool {
+		left, right := fields[i].Order, fields[j].Order
+
+		switch {
+		case left != nil && right != nil:
+			return *left < *right
+		case left != nil:
+			return true
+		case right != nil:
+			return false
+		}
+
+		return false
+	})
 }
 
 // extractPropertiesWithValues walks the JSON Schema and emits a flat
 // list of SchemaField entries. Object properties are recursed into up
 // to maxNestedDepth, producing dot-path names; arrays and deeper
 // objects are skipped. When values is non-nil, its keys override the
-// per-field schema default.
-func extractPropertiesWithValues(schema k8s.AppSchema, values map[string]any) []SchemaField {
+// per-field schema default. When overrides is non-nil, hidden paths
+// are skipped and label/hint/placeholder/order are applied in
+// buildField.
+func extractPropertiesWithValues(
+	schema k8s.AppSchema, values map[string]any, overrides map[string]k8s.FormFieldOverride,
+) []SchemaField {
 	if schema.JSONSchema == nil {
 		return nil
 	}
@@ -188,14 +247,17 @@ func extractPropertiesWithValues(schema k8s.AppSchema, values map[string]any) []
 		return nil
 	}
 
-	return walkProperties(obj, values, "", 0)
+	return walkProperties(obj, values, overrides, "", 0)
 }
 
 // walkProperties recursively flattens a JSON Schema `properties` map
 // into SchemaField entries, descending into `type: object` children
 // up to the depth cap. prefix is the dot-path accumulated so far
-// (empty at the root).
-func walkProperties(obj, values map[string]any, prefix string, depth int) []SchemaField {
+// (empty at the root). A non-nil overrides map drops fields flagged
+// Hidden and feeds buildField the remaining metadata.
+func walkProperties(
+	obj, values map[string]any, overrides map[string]k8s.FormFieldOverride, prefix string, depth int,
+) []SchemaField {
 	rawProps, ok := obj["properties"].(map[string]any)
 	if !ok {
 		return nil
@@ -222,6 +284,10 @@ func walkProperties(obj, values map[string]any, prefix string, depth int) []Sche
 			fullKey = prefix + "." + key
 		}
 
+		if k8s.IsHidden(overrides, fullKey) {
+			continue
+		}
+
 		fieldType, _ := prop["type"].(string)
 
 		// Recurse into nested objects up to the depth cap.
@@ -231,7 +297,7 @@ func walkProperties(obj, values map[string]any, prefix string, depth int) []Sche
 			}
 
 			childValues := nestedStringMap(values, key)
-			fields = append(fields, walkProperties(prop, childValues, fullKey, depth+1)...)
+			fields = append(fields, walkProperties(prop, childValues, overrides, fullKey, depth+1)...)
 
 			continue
 		}
@@ -241,15 +307,20 @@ func walkProperties(obj, values map[string]any, prefix string, depth int) []Sche
 			continue
 		}
 
-		fields = append(fields, buildField(prop, fullKey, key, fieldType, requiredSet[key], values))
+		fields = append(fields, buildField(prop, fullKey, key, fieldType, requiredSet[key], values, overrides))
 	}
 
 	return fields
 }
 
 // buildField turns one property definition + current value lookup
-// into a SchemaField ready for rendering.
-func buildField(prop map[string]any, fullKey, key, fieldType string, required bool, values map[string]any) SchemaField {
+// into a SchemaField ready for rendering. FormDefinition overrides,
+// when present, replace the schema's title/description and supply
+// the placeholder + order that the schema does not carry.
+func buildField(
+	prop map[string]any, fullKey, key, fieldType string, required bool,
+	values map[string]any, overrides map[string]k8s.FormFieldOverride,
+) SchemaField {
 	field := SchemaField{
 		Key:      fullKey,
 		Title:    key,
@@ -281,6 +352,17 @@ func buildField(prop map[string]any, fullKey, key, fieldType string, required bo
 				field.Enum = append(field.Enum, s)
 			}
 		}
+	}
+
+	// Overlay FormDefinition overrides. Empty / nil override
+	// values fall through to the schema-derived ones.
+	field.Title = k8s.ApplyLabelOverride(overrides, fullKey, field.Title)
+	field.Description = k8s.ApplyHintOverride(overrides, fullKey, field.Description)
+	field.Placeholder = k8s.ApplyPlaceholderOverride(overrides, fullKey, "")
+
+	if order, ok := k8s.OrderFor(overrides, fullKey); ok {
+		ordered := order
+		field.Order = &ordered
 	}
 
 	return field

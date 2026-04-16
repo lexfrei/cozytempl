@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"html"
 	"net/http"
 	"sort"
@@ -9,6 +10,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/lexfrei/cozytempl/internal/audit"
+	"github.com/lexfrei/cozytempl/internal/auth"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view/fragment"
 	"github.com/lexfrei/cozytempl/internal/view/page"
@@ -167,6 +169,8 @@ func (pgh *PageHandler) AppFormYAMLToFormFragment(writer http.ResponseWriter, re
 		}
 	}
 
+	overrides := pgh.resolveFormOverrides(req.Context(), usr, kind)
+
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	// Bare fields, no wrapper. The hx-target on the Apply-to-Form
@@ -177,7 +181,7 @@ func (pgh *PageHandler) AppFormYAMLToFormFragment(writer http.ResponseWriter, re
 	// two elements with that id (one in each open modal) and htmx
 	// selectors that still referenced the bare id would silently
 	// target the wrong modal.
-	renderErr := fragment.SchemaFieldsWithValues(*schema, spec).Render(req.Context(), writer)
+	renderErr := fragment.SchemaFieldsWithOverrides(*schema, spec, overrides).Render(req.Context(), writer)
 	if renderErr != nil {
 		pgh.log.Error("rendering yaml-to-form fields", "error", renderErr)
 	}
@@ -206,9 +210,11 @@ func (pgh *PageHandler) SchemaFieldsFragment(writer http.ResponseWriter, req *ht
 		return
 	}
 
+	overrides := pgh.resolveFormOverrides(req.Context(), usr, kind)
+
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 
-	renderErr := fragment.SchemaFields(*schema).Render(req.Context(), writer)
+	renderErr := fragment.SchemaFieldsWithOverrides(*schema, nil, overrides).Render(req.Context(), writer)
 	if renderErr != nil {
 		pgh.log.Error("rendering schema fields fragment", "error", renderErr)
 	}
@@ -282,11 +288,12 @@ func (pgh *PageHandler) AppEditFragment(writer http.ResponseWriter, req *http.Re
 	}
 
 	specYAML := pgh.marshalSpecForEdit(tenant, app.Name, currentSpec)
+	overrides := pgh.resolveFormOverrides(req.Context(), usr, app.Kind)
 
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 	writer.Header().Set("Cache-Control", "no-store")
 
-	renderErr := fragment.AppEditModal(tenant, *app, schema, currentSpec, resourceVersion, specYAML).Render(req.Context(), writer)
+	renderErr := fragment.AppEditModal(tenant, *app, schema, currentSpec, resourceVersion, specYAML, overrides).Render(req.Context(), writer)
 	if renderErr != nil {
 		pgh.log.Error("rendering app edit modal", "error", renderErr)
 	}
@@ -343,10 +350,12 @@ func (pgh *PageHandler) TenantEditFragment(writer http.ResponseWriter, req *http
 		pgh.log.Debug("loading tenant schema for edit", "error", schemaErr)
 	}
 
+	overrides := pgh.resolveFormOverrides(req.Context(), usr, tenantSchemaKind)
+
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 	writer.Header().Set("Cache-Control", "no-store")
 
-	renderErr := fragment.TenantEditModal(*tenant, schema, currentSpec, resourceVersion).Render(req.Context(), writer)
+	renderErr := fragment.TenantEditModal(*tenant, schema, currentSpec, resourceVersion, overrides).Render(req.Context(), writer)
 	if renderErr != nil {
 		pgh.log.Error("rendering tenant edit modal", "error", renderErr)
 	}
@@ -468,4 +477,29 @@ func (pgh *PageHandler) SecretRevealFragment(writer http.ResponseWriter, req *ht
 	writer.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
 	writer.Header().Set("Pragma", "no-cache")
 	_, _ = writer.Write([]byte(html.EscapeString(value)))
+}
+
+// resolveFormOverrides centralises the FormDefinition lookup
+// used by every schema-rendering handler. A nil formDefSvc
+// (tests, older deployments where the CRD was never
+// installed) returns nil. A service-level error is logged
+// and swallowed: the form still needs to render, just without
+// the overlay. OverridesByPath folds the slice into a path-
+// keyed map ready for the templ layer.
+func (pgh *PageHandler) resolveFormOverrides(
+	ctx context.Context, usr *auth.UserContext, kind string,
+) map[string]k8s.FormFieldOverride {
+	if pgh.formDefSvc == nil || kind == "" {
+		return nil
+	}
+
+	raw, err := pgh.formDefSvc.GetOverridesForKind(ctx, usr, kind)
+	if err != nil {
+		pgh.log.Debug("fetching form definition overrides",
+			"kind", kind, "error", err)
+
+		return nil
+	}
+
+	return k8s.OverridesByPath(raw)
 }

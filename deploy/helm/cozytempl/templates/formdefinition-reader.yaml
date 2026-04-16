@@ -1,0 +1,58 @@
+{{- if .Values.formDefinition.readerBinding.create -}}
+{{- /*
+  FormDefinition reader RBAC.
+
+  Every logged-in cozytempl user fetches FormDefinitions
+  under their own Kubernetes identity (same
+  user-impersonated dynamic client stack the schema service
+  uses for ApplicationDefinitions), so the cluster needs
+  RBAC that lets ordinary users list / get / watch
+  formdefinitions.cozytempl.cozystack.io.
+
+  Defaults to binding to system:authenticated, which is the
+  same trust level the UI strings in a FormDefinition
+  deserve — operator-authored hints, no secrets. Operators
+  who want a tighter audience can override
+  .Values.formDefinition.readerBinding.subjects to a
+  specific group or set .Values.formDefinition.readerBinding.create=false
+  and wire their own RBAC out-of-band.
+
+  ClusterRole + ClusterRoleBinding (not a plain Role): the
+  CRD is Cluster-scoped and the read audience cuts across
+  every tenant.
+*/ -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cozytempl.fullname" . }}-formdefinition-reader
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - cozytempl.cozystack.io
+    resources:
+      - formdefinitions
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cozytempl.fullname" . }}-formdefinition-reader
+  labels:
+    {{- include "cozytempl.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cozytempl.fullname" . }}-formdefinition-reader
+subjects:
+  {{- if .Values.formDefinition.readerBinding.subjects }}
+  {{- toYaml .Values.formDefinition.readerBinding.subjects | nindent 2 }}
+  {{- else }}
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: system:authenticated
+  {{- end }}
+{{- end }}

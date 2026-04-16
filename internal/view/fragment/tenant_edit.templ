@@ -14,7 +14,10 @@ import (
 // subsequent PUT can pin optimistic-lock semantics at the k8s API
 // server. Concurrent edits by two users now produce a visible 409
 // Conflict on the second save instead of a silent clobber.
-templ TenantEditModal(tenant k8s.Tenant, schema *k8s.AppSchema, spec map[string]any, resourceVersion string) {
+templ TenantEditModal(
+	tenant k8s.Tenant, schema *k8s.AppSchema, spec map[string]any,
+	resourceVersion string, overrides map[string]k8s.FormFieldOverride,
+) {
 	<div id="tenant-edit-modal" class="modal-backdrop" style="display: flex;">
 		<div class="modal">
 			<div class="modal-header">
@@ -33,7 +36,7 @@ templ TenantEditModal(tenant k8s.Tenant, schema *k8s.AppSchema, spec map[string]
 					<div class="form-hint">{ partial.Tc(ctx, "form.tenant.namespaceHint") }</div>
 				</div>
 				if schema != nil {
-					@SchemaFieldsWithValues(*schema, spec)
+					@SchemaFieldsWithOverrides(*schema, spec, overrides)
 				} else {
 					<p class="text-muted text-sm">{ partial.Tc(ctx, "form.tenant.noFields") }</p>
 				}
