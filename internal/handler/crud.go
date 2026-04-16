@@ -96,10 +96,7 @@ func (pgh *PageHandler) doCreateApp(
 ) {
 	spec, specErr := pgh.buildSpecFromRequest(req, usr, appKind)
 	if specErr != nil {
-		pgh.log.Warn("building spec for create", "tenant", tenantNS, "name", appName, "kind", appKind, "error", specErr)
-		pgh.recordAudit(req, usr, audit.ActionAppCreate, appName, tenantNS,
-			audit.OutcomeDenied, map[string]any{"kind": appKind, "reason": "invalid_spec", "error": specErr.Error()})
-		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.invalidSpec"))
+		pgh.reportSpecBuildError(writer, req, usr, audit.ActionAppCreate, appName, appKind, tenantNS, specErr)
 
 		return
 	}
@@ -248,9 +245,7 @@ func (pgh *PageHandler) doUpdateApp(
 
 	newSpec, specBuildErr := pgh.buildSpecFromRequest(req, usr, kind)
 	if specBuildErr != nil {
-		pgh.log.Warn("building spec for update",
-			"tenant", tenantNS, "name", appName, "error", specBuildErr)
-		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.invalidSpec"))
+		pgh.reportSpecBuildError(writer, req, usr, audit.ActionAppUpdate, appName, kind, tenantNS, specBuildErr)
 
 		return
 	}
@@ -360,6 +355,65 @@ func (pgh *PageHandler) emitSuccessToast(writer http.ResponseWriter, req *http.R
 // non-empty check on the server.
 const formFieldSpecYAML = "spec_yaml"
 
+// formFieldTabMode is the radio group name that drives the
+// Form / YAML tab switch in the UI. Sent by the browser with
+// every submit; server-side it is always ignored — the
+// decision of which source wins is made by buildSpecFromRequest
+// (non-empty spec_yaml overrides).
+const formFieldTabMode = "_tabmode"
+
+// ErrInvalidYAMLSpec is returned by buildSpecFromRequest when
+// the user-supplied YAML in spec_yaml fails to parse. Exposed
+// as a sentinel so handlers can show the "invalid spec" toast
+// without misclassifying unrelated schema-fetch errors (which
+// have their own error.schema.load copy).
+var ErrInvalidYAMLSpec = errors.New("invalid yaml spec")
+
+// isReservedFormField returns true for form fields the spec
+// extractor must never lift into the CRD spec map. The
+// reserved set includes the name/kind/resourceVersion
+// handshake fields, the YAML textarea (used as the spec source
+// in YAML mode), and the tab-switcher radio group (pure UI
+// state). Hidden from the spec writer so a future addition to
+// the form only has to add its name here, not go hunt every
+// call site.
+func isReservedFormField(key string) bool {
+	switch key {
+	case formFieldName, formFieldKind, formFieldResourceVersion,
+		formFieldSpecYAML, formFieldTabMode:
+		return true
+	}
+
+	return false
+}
+
+// reportSpecBuildError surfaces a buildSpecFromRequest failure
+// to the user with the right copy + audit shape. Invalid YAML
+// the user typed is distinguished from a schema-fetch error —
+// the first is "fix the YAML", the second is "cluster problem"
+// and the two should not share a toast string.
+func (pgh *PageHandler) reportSpecBuildError(
+	writer http.ResponseWriter, req *http.Request, usr *auth.UserContext,
+	action audit.Action, appName, kind, tenantNS string, err error,
+) {
+	pgh.log.Warn("building spec for mutation",
+		"action", action, "tenant", tenantNS, "name", appName, "kind", kind, "error", err)
+
+	if errors.Is(err, ErrInvalidYAMLSpec) {
+		pgh.recordAudit(req, usr, action, appName, tenantNS,
+			audit.OutcomeDenied,
+			map[string]any{"kind": kind, "reason": "invalid_yaml", "error": err.Error()})
+		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.invalidSpec"))
+
+		return
+	}
+
+	pgh.recordAudit(req, usr, action, appName, tenantNS,
+		audit.OutcomeError,
+		map[string]any{"kind": kind, "reason": "spec_build_failed", "error": err.Error()})
+	pgh.renderErrorToast(writer, req, pgh.t(req, "error.schema.load", map[string]any{"Kind": kind}))
+}
+
 // buildSpecFromRequest picks a spec source — form fields or a
 // YAML payload — and returns the resulting map. Fetches the
 // schema on the form-mode branch so the kind-specific type
@@ -398,7 +452,7 @@ func parseSpecYAML(raw string) (map[string]any, error) {
 
 	err := yaml.Unmarshal([]byte(raw), &spec)
 	if err != nil {
-		return nil, fmt.Errorf("parsing spec yaml: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidYAMLSpec, err)
 	}
 
 	return spec, nil
@@ -414,7 +468,7 @@ func extractSpecFromForm(req *http.Request, fieldTypes map[string]string) map[st
 	spec := map[string]any{}
 
 	for key, values := range req.Form {
-		if key == formFieldName || key == formFieldKind || key == formFieldResourceVersion {
+		if isReservedFormField(key) {
 			continue
 		}
 

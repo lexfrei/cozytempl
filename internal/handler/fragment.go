@@ -104,6 +104,70 @@ func (pgh *PageHandler) AppFormYAMLFragment(writer http.ResponseWriter, req *htt
 	_, _ = writer.Write(raw)
 }
 
+// AppFormYAMLToFormFragment is the reverse of
+// AppFormYAMLFragment: the user types YAML on the YAML tab,
+// clicks "Apply to Form", and this endpoint parses the YAML
+// and re-renders the schema-driven form fields with the
+// resulting values populated. Covers the tikcet's "server-
+// side parser back into form state" contract.
+//
+// On invalid YAML the schema fields are re-rendered without
+// values so the user can still fall back to the form — a
+// blanked form is the honest outcome of "parse failed".
+func (pgh *PageHandler) AppFormYAMLToFormFragment(writer http.ResponseWriter, req *http.Request) {
+	usr := pgh.requireUser(writer, req)
+	if usr == nil {
+		return
+	}
+
+	req.Body = http.MaxBytesReader(writer, req.Body, maxFormBytes)
+
+	parseErr := req.ParseForm()
+	if parseErr != nil {
+		http.Error(writer, "bad form", http.StatusBadRequest)
+
+		return
+	}
+
+	kind := req.FormValue(formFieldKind)
+	if kind == "" {
+		http.Error(writer, "kind required", http.StatusBadRequest)
+
+		return
+	}
+
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, kind)
+	if schemaErr != nil {
+		pgh.log.Error("fetching schema for yaml-to-form", "kind", kind, "error", schemaErr)
+		http.Error(writer, "schema not found", http.StatusNotFound)
+
+		return
+	}
+
+	spec := map[string]any{}
+	// Parse the YAML but swallow a parse error here — the UI
+	// should still show the schema fields (just un-populated)
+	// so the user is not stuck on a dead modal. The YAML tab
+	// itself keeps the user's draft because we only target
+	// #schema-fields on the form pane.
+	if raw := strings.TrimSpace(req.FormValue(formFieldSpecYAML)); raw != "" {
+		parsed, err := parseSpecYAML(raw)
+		if err != nil {
+			pgh.log.Info("yaml-to-form parse failed; rendering empty fields",
+				"kind", kind, "error", err)
+		} else {
+			spec = parsed
+		}
+	}
+
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	renderErr := fragment.SchemaFieldsWithValues(*schema, spec).Render(req.Context(), writer)
+	if renderErr != nil {
+		pgh.log.Error("rendering yaml-to-form fields", "error", renderErr)
+	}
+}
+
 // SchemaFieldsFragment renders schema-driven form fields for the create app modal.
 func (pgh *PageHandler) SchemaFieldsFragment(writer http.ResponseWriter, req *http.Request) {
 	usr := pgh.requireUser(writer, req)

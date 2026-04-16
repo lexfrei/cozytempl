@@ -60,8 +60,8 @@ func TestParseSpecYAMLRejectsGarbage(t *testing.T) {
 		t.Fatal("expected parse error on malformed YAML")
 	}
 
-	if !strings.Contains(err.Error(), "parsing spec yaml") {
-		t.Errorf("err = %v, want wrapped 'parsing spec yaml' prefix", err)
+	if !errors.Is(err, ErrInvalidYAMLSpec) {
+		t.Errorf("err = %v, want wraps ErrInvalidYAMLSpec", err)
 	}
 }
 
@@ -114,8 +114,10 @@ func TestBuildSpecFromRequestPrefersYAML(t *testing.T) {
 // TestBuildSpecFromRequestSurfacesYAMLError pins that a bad
 // spec_yaml does not silently fall through to the form branch.
 // A user on the YAML tab who submits broken YAML must see a
-// validation error, not a successful create with the
-// (possibly stale) form fields.
+// validation error (OutcomeDenied, invalidSpec toast copy),
+// not a successful create with the (possibly stale) form
+// fields — the handler differentiates based on the
+// ErrInvalidYAMLSpec sentinel.
 func TestBuildSpecFromRequestSurfacesYAMLError(t *testing.T) {
 	t.Parallel()
 
@@ -131,7 +133,46 @@ func TestBuildSpecFromRequestSurfacesYAMLError(t *testing.T) {
 
 	pgh := &PageHandler{}
 
-	if _, err := pgh.buildSpecFromRequest(req, nil, "Postgres"); !errors.Is(err, err) || err == nil {
+	_, err := pgh.buildSpecFromRequest(req, nil, "Postgres")
+	if err == nil {
 		t.Fatal("expected error from buildSpecFromRequest on malformed YAML")
+	}
+
+	if !errors.Is(err, ErrInvalidYAMLSpec) {
+		t.Errorf("err = %v, want wraps ErrInvalidYAMLSpec", err)
+	}
+}
+
+// TestExtractSpecFromFormSkipsTabMode pins the reserved-field
+// contract: the _tabmode radio that drives the Form/YAML tab
+// switch is UI state, not part of the CRD spec. Without this
+// check extractSpecFromForm would surface `_tabmode: "form"`
+// into the spec map — either rejected by the apiserver on a
+// strict CRD or silently persisted as garbage.
+func TestExtractSpecFromFormSkipsTabMode(t *testing.T) {
+	t.Parallel()
+
+	form := strings.NewReader("name=pg&kind=Postgres&_tabmode=form&replicas=3")
+
+	req := httptest.NewRequestWithContext(
+		t.Context(), http.MethodPost, "/tenants/ns/apps", form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	if parseErr := req.ParseForm(); parseErr != nil {
+		t.Fatalf("ParseForm: %v", parseErr)
+	}
+
+	spec := extractSpecFromForm(req, map[string]string{"replicas": "integer"})
+
+	if _, ok := spec["_tabmode"]; ok {
+		t.Errorf("_tabmode leaked into spec: %+v", spec)
+	}
+
+	if _, ok := spec["spec_yaml"]; ok {
+		t.Errorf("spec_yaml leaked into spec: %+v", spec)
+	}
+
+	if spec["replicas"] != int64(3) {
+		t.Errorf("replicas = %v, want 3", spec["replicas"])
 	}
 }

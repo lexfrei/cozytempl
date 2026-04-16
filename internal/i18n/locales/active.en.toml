@@ -714,8 +714,8 @@ other = "Paste or edit the raw spec YAML. When this textarea is non-empty, it ov
 [page.appForm.yamlLoadFromForm]
 other = "Load from Form"
 
-[page.appForm.yamlLoading]
-other = "Converting form values to YAML..."
+[page.appForm.yamlApplyToForm]
+other = "Apply to Form"
 
 [error.schema.load]
 other = "Failed to load schema for {{.Kind}}."

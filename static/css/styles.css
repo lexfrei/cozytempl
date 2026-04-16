@@ -1792,10 +1792,16 @@ tr[hx-get]:hover {
   margin-top: 16px;
 }
 
+/* Radios keep keyboard-focusability (no pointer-events:none)
+ * so a sighted keyboard user can Tab into the tab group and
+ * arrow between Form / YAML. The accompanying focus ring on
+ * the selected label (below) gives visible feedback. */
 .app-form-tab-input {
   position: absolute;
+  width: 1px;
+  height: 1px;
   opacity: 0;
-  pointer-events: none;
+  clip: rect(0 0 0 0);
 }
 
 .app-form-tab-bar {
@@ -1827,6 +1833,21 @@ tr[hx-get]:hover {
 .app-form-tabs .app-form-tab-input[value="yaml"]:checked ~ .app-form-tab-bar .app-form-tab-yaml {
   color: var(--color-text);
   border-bottom-color: var(--color-primary);
+}
+
+/* Keyboard focus indicator: when the hidden radio is
+   :focus-visible, decorate the label that selects it so a
+   sighted keyboard user sees where they are. */
+.app-form-tabs .app-form-tab-input[value="form"]:focus-visible ~ .app-form-tab-bar .app-form-tab-form,
+.app-form-tabs .app-form-tab-input[value="yaml"]:focus-visible ~ .app-form-tab-bar .app-form-tab-yaml {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.app-form-yaml-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .app-form-tabs .app-form-tab-input[value="form"]:checked ~ .app-form-tab-body-form,

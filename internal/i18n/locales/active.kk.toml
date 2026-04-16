@@ -709,8 +709,8 @@ other = "Spec YAML-ді қойыңыз немесе өзгертіңіз. Бос
 [page.appForm.yamlLoadFromForm]
 other = "Формадан жүктеу"
 
-[page.appForm.yamlLoading]
-other = "Форма мәндерін YAML-ге түрлендіру…"
+[page.appForm.yamlApplyToForm]
+other = "Формаға қолдану"
 
 [error.schema.load]
 other = "{{.Kind}} үшін схема жүктелмеді."

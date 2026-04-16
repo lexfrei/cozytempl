@@ -54,7 +54,7 @@ templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, sp
 						{ partial.Tc(ctx, "form.app.nameHint") }
 					</div>
 				</div>
-				@AppFormTabs("/fragments/app-yaml", "app-edit-form", editFormFields(schema, spec))
+				@AppFormTabs("/fragments/app-yaml", "/fragments/app-yaml-to-form", "app-edit-form", editFormFields(schema, spec))
 				<div class="modal-footer">
 					<button type="button" class="btn"
 						data-action="modal-dismiss" data-modal="app-edit-modal">{ partial.Tc(ctx, "action.cancel") }</button>

@@ -11,18 +11,26 @@ import "github.com/lexfrei/cozytempl/internal/view/partial"
 // touches the YAML tab sees the original UX unchanged.
 //
 // loadURL is where the "Load from Form" button POSTs the
-// current form values to get back YAML for the textarea. The
-// same target id wires both directions: hx-post populates
-// #app-form-yaml with the server-rendered YAML.
+// current form values to get back YAML for the textarea;
+// applyURL is the reverse — "Apply to Form" parses the YAML
+// and re-renders the schema fields with the resulting values,
+// covering P3's "server-side parser back into form state".
 //
-// The tab switch is CSS-only: a hidden radio input + :checked
-// selector toggles which pane is visible. No new JS; the
-// existing form submit wraps both panes and carries whichever
-// fields are populated.
-templ AppFormTabs(loadURL string, bodyID string, fields templ.Component) {
+// Tabs are implemented with radio inputs + :checked CSS
+// selectors so no JS is needed to toggle panes. The radios
+// carry the `_tabmode` name (prefixed with the formless
+// underscore reserved-field convention) so they never reach
+// extractSpecFromForm — see crud.go's reserved-field check.
+//
+// Accessibility: radios stay keyboard-focusable (no
+// pointer-events:none); the tab-bar applies a focus ring via
+// :has(:focus-visible) so a sighted keyboard user sees the
+// selection. Arrow keys cycle between radios (native browser
+// behaviour for same-name radio groups).
+templ AppFormTabs(loadURL, applyURL, bodyID string, fields templ.Component) {
 	<div class="app-form-tabs">
-		<input type="radio" name={ "mode-" + bodyID } id={ bodyID + "-mode-form" } value="form" class="app-form-tab-input" checked/>
-		<input type="radio" name={ "mode-" + bodyID } id={ bodyID + "-mode-yaml" } value="yaml" class="app-form-tab-input"/>
+		<input type="radio" name="_tabmode" id={ bodyID + "-mode-form" } value="form" class="app-form-tab-input" checked/>
+		<input type="radio" name="_tabmode" id={ bodyID + "-mode-yaml" } value="yaml" class="app-form-tab-input"/>
 		<div class="app-form-tab-bar" role="tablist">
 			<label class="app-form-tab app-form-tab-form" for={ bodyID + "-mode-form" } role="tab">
 				{ partial.Tc(ctx, "page.appForm.tabForm") }
@@ -36,20 +44,29 @@ templ AppFormTabs(loadURL string, bodyID string, fields templ.Component) {
 		</div>
 		<div class="app-form-tab-body app-form-tab-body-yaml">
 			<div class="form-hint">{ partial.Tc(ctx, "page.appForm.yamlHint") }</div>
-			<button type="button" class="btn btn-sm"
-				hx-post={ loadURL }
-				hx-include={ "#" + bodyID + " .app-form-tab-body-form :input, #" + bodyID + " [name='name'], #" + bodyID + " [name='kind']" }
-				hx-target={ "#" + bodyID + "-yaml-text" }
-				hx-swap="innerHTML">
-				{ partial.Tc(ctx, "page.appForm.yamlLoadFromForm") }
-			</button>
+			<div class="app-form-yaml-actions">
+				<button type="button" class="btn btn-sm"
+					hx-post={ loadURL }
+					hx-include={ "#" + bodyID + " .app-form-tab-body-form input, #" + bodyID + " .app-form-tab-body-form select, #" + bodyID + " .app-form-tab-body-form textarea, #" + bodyID + " > [name='name'], #" + bodyID + " > [name='kind']" }
+					hx-target={ "#" + bodyID + "-yaml-text" }
+					hx-swap="innerHTML">
+					{ partial.Tc(ctx, "page.appForm.yamlLoadFromForm") }
+				</button>
+				<button type="button" class="btn btn-sm"
+					hx-post={ applyURL }
+					hx-include={ "#" + bodyID + "-yaml-text, #" + bodyID + " > [name='kind']" }
+					hx-target="#schema-fields"
+					hx-swap="innerHTML">
+					{ partial.Tc(ctx, "page.appForm.yamlApplyToForm") }
+				</button>
+			</div>
 			<textarea class="form-textarea app-form-yaml-textarea"
 				id={ bodyID + "-yaml-text" }
 				name="spec_yaml"
 				spellcheck="false"
 				autocomplete="off"
 				rows="14"
-				placeholder="spec:\n  replicas: 1"></textarea>
+				placeholder={ "replicas: 1\nstorage:\n  size: 10Gi" }></textarea>
 		</div>
 	</div>
 }
