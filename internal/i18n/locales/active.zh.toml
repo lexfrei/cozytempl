@@ -693,6 +693,24 @@ other = "所选 Pod 在该应用中不存在。"
 [error.app.invalidName]
 other = "名称无效：仅限小写字母、数字和连字符，必须以字母或数字开头和结尾，最多 53 个字符。"
 
+[error.app.invalidSpec]
+other = "spec 无效：无法解析 YAML。请检查缩进和结构后重试。"
+
+[page.appForm.tabForm]
+other = "表单"
+
+[page.appForm.tabYAML]
+other = "YAML"
+
+[page.appForm.yamlHint]
+other = "编辑原始 spec YAML。保存时以当前激活的页签为准：切换到「表单」会丢弃此文本框，切换到 YAML 则覆盖表单值。编辑时会预先填入当前完整的 spec，删除某行即从集群中删除该字段（kubectl edit 语义）。"
+
+[page.appForm.yamlLoadFromForm]
+other = "从表单载入"
+
+[page.appForm.yamlApplyToForm]
+other = "应用到表单"
+
 [error.schema.load]
 other = "无法加载 {{.Kind}} 的 Schema。"
 

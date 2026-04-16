@@ -2,6 +2,7 @@
 package handler
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -24,11 +25,23 @@ import (
 	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
 
+// schemaService is the narrow slice of SchemaService the
+// handlers reach for. Kept local to the handler package so
+// tests can inject a stub that returns canned schemas without
+// spinning up the real cache-backed dynamic-client stack that
+// k8s.SchemaService requires. Production wiring in
+// NewPageHandler stores deps.SchemaSvc here — *k8s.SchemaService
+// satisfies this interface by construction.
+type schemaService interface {
+	Get(ctx context.Context, usr *auth.UserContext, kind string) (*k8s.AppSchema, error)
+	List(ctx context.Context, usr *auth.UserContext) ([]k8s.AppSchema, error)
+}
+
 // PageHandler renders full HTML pages via templ.
 type PageHandler struct {
 	tenantSvc *k8s.TenantService
 	appSvc    *k8s.ApplicationService
-	schemaSvc *k8s.SchemaService
+	schemaSvc schemaService
 	usageSvc  *k8s.UsageService
 	eventSvc  *k8s.EventService
 	logSvc    *k8s.LogService

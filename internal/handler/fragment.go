@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"sigs.k8s.io/yaml"
+
 	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/k8s"
 	"github.com/lexfrei/cozytempl/internal/view/fragment"
@@ -43,6 +45,144 @@ func (pgh *PageHandler) AppTableFragment(writer http.ResponseWriter, req *http.R
 	}
 }
 
+// AppFormYAMLFragment renders the current form values (whatever
+// is on the wire, form-mode fields only) as YAML, suitable for
+// pasting into the spec_yaml textarea. The endpoint is POST so
+// the client can send form-encoded state without cramming it
+// into a URL; the reply is the raw YAML text inside the same
+// textarea element so htmx can swap it verbatim.
+//
+// Used by the "Load from Form" button on the YAML tab of the
+// create / edit modal — the user fills the form visually,
+// switches to YAML, clicks Load, and gets a starting point they
+// can tweak by hand.
+func (pgh *PageHandler) AppFormYAMLFragment(writer http.ResponseWriter, req *http.Request) {
+	usr := pgh.requireUser(writer, req)
+	if usr == nil {
+		return
+	}
+
+	req.Body = http.MaxBytesReader(writer, req.Body, maxFormBytes)
+
+	parseErr := req.ParseForm()
+	if parseErr != nil {
+		http.Error(writer, "bad form", http.StatusBadRequest)
+
+		return
+	}
+
+	kind := req.FormValue(formFieldKind)
+	if kind == "" {
+		// No kind yet — return an empty textarea. The create
+		// modal only shows the YAML tab once the kind has been
+		// picked, so this branch is mostly defensive.
+		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = writer.Write([]byte(""))
+
+		return
+	}
+
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, kind)
+	if schemaErr != nil {
+		pgh.log.Error("fetching schema for yaml preview", "kind", kind, "error", schemaErr)
+		http.Error(writer, "schema not found", http.StatusNotFound)
+
+		return
+	}
+
+	spec := extractSpecFromForm(req, extractFieldTypes(schema))
+
+	raw, marshalErr := yaml.Marshal(spec)
+	if marshalErr != nil {
+		pgh.log.Error("marshalling spec to yaml", "kind", kind, "error", marshalErr)
+		http.Error(writer, "yaml marshal failed", http.StatusInternalServerError)
+
+		return
+	}
+
+	// htmx swaps the response body into <textarea>.innerHTML. A
+	// user-supplied value that contains "</textarea>" would
+	// otherwise close the element and inject arbitrary HTML into
+	// the modal DOM (CSP blocks script execution, but broken
+	// layout + phishing content still cost). Entity-encode so the
+	// browser renders the characters verbatim and decodes them
+	// back when the textarea value is submitted.
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = writer.Write([]byte(html.EscapeString(string(raw))))
+}
+
+// AppFormYAMLToFormFragment is the reverse of
+// AppFormYAMLFragment: the user types YAML on the YAML tab,
+// clicks "Apply to Form", and this endpoint parses the YAML
+// and re-renders the schema-driven form fields with the
+// resulting values populated — closing the round-trip between
+// raw YAML editing and the schema-driven UI.
+//
+// On invalid YAML the schema fields are re-rendered without
+// values so the user can still fall back to the form — a
+// blanked form is the honest outcome of "parse failed".
+func (pgh *PageHandler) AppFormYAMLToFormFragment(writer http.ResponseWriter, req *http.Request) {
+	usr := pgh.requireUser(writer, req)
+	if usr == nil {
+		return
+	}
+
+	req.Body = http.MaxBytesReader(writer, req.Body, maxFormBytes)
+
+	parseErr := req.ParseForm()
+	if parseErr != nil {
+		http.Error(writer, "bad form", http.StatusBadRequest)
+
+		return
+	}
+
+	kind := req.FormValue(formFieldKind)
+	if kind == "" {
+		http.Error(writer, "kind required", http.StatusBadRequest)
+
+		return
+	}
+
+	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, kind)
+	if schemaErr != nil {
+		pgh.log.Error("fetching schema for yaml-to-form", "kind", kind, "error", schemaErr)
+		http.Error(writer, "schema not found", http.StatusNotFound)
+
+		return
+	}
+
+	spec := map[string]any{}
+	// Parse the YAML but swallow a parse error here — the UI
+	// should still show the schema fields (just un-populated)
+	// so the user is not stuck on a dead modal. The YAML tab
+	// itself keeps the user's draft because Apply-to-Form only
+	// targets the form pane container (schemaFieldsID(bodyID)).
+	if raw := strings.TrimSpace(req.FormValue(formFieldSpecYAML)); raw != "" {
+		parsed, err := parseSpecYAML(raw)
+		if err != nil {
+			pgh.log.Info("yaml-to-form parse failed; rendering empty fields",
+				"kind", kind, "error", err)
+		} else {
+			spec = parsed
+		}
+	}
+
+	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	// Bare fields, no wrapper. The hx-target on the Apply-to-Form
+	// button is a per-modal scoped container (schemaFieldsID(bodyID))
+	// with hx-swap="innerHTML", so the response replaces the
+	// container's children while the container itself stays put.
+	// Writing our own <div id="schema-fields"> here would create
+	// two elements with that id (one in each open modal) and htmx
+	// selectors that still referenced the bare id would silently
+	// target the wrong modal.
+	renderErr := fragment.SchemaFieldsWithValues(*schema, spec).Render(req.Context(), writer)
+	if renderErr != nil {
+		pgh.log.Error("rendering yaml-to-form fields", "error", renderErr)
+	}
+}
+
 // SchemaFieldsFragment renders schema-driven form fields for the create app modal.
 func (pgh *PageHandler) SchemaFieldsFragment(writer http.ResponseWriter, req *http.Request) {
 	usr := pgh.requireUser(writer, req)
@@ -72,6 +212,28 @@ func (pgh *PageHandler) SchemaFieldsFragment(writer http.ResponseWriter, req *ht
 	if renderErr != nil {
 		pgh.log.Error("rendering schema fields fragment", "error", renderErr)
 	}
+}
+
+// marshalSpecForEdit converts a cluster-state spec to YAML for
+// the edit modal's YAML tab. An empty spec returns an empty
+// string (no "load from form" needed on a zero-spec app); a
+// marshal error is logged and also returns empty, because a
+// non-broken save path matters more than a populated preview.
+// Split from AppEditFragment so gocyclo stays happy.
+func (pgh *PageHandler) marshalSpecForEdit(tenant, appName string, spec map[string]any) string {
+	if len(spec) == 0 {
+		return ""
+	}
+
+	raw, err := yaml.Marshal(spec)
+	if err != nil {
+		pgh.log.Warn("marshalling spec for edit YAML preview",
+			"tenant", tenant, "name", appName, "error", err)
+
+		return ""
+	}
+
+	return string(raw)
 }
 
 // AppEditFragment renders the edit modal for a single application with
@@ -119,10 +281,12 @@ func (pgh *PageHandler) AppEditFragment(writer http.ResponseWriter, req *http.Re
 		pgh.log.Debug("loading schema for app edit", "kind", app.Kind, "error", schemaErr)
 	}
 
+	specYAML := pgh.marshalSpecForEdit(tenant, app.Name, currentSpec)
+
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 	writer.Header().Set("Cache-Control", "no-store")
 
-	renderErr := fragment.AppEditModal(tenant, *app, schema, currentSpec, resourceVersion).Render(req.Context(), writer)
+	renderErr := fragment.AppEditModal(tenant, *app, schema, currentSpec, resourceVersion, specYAML).Render(req.Context(), writer)
 	if renderErr != nil {
 		pgh.log.Error("rendering app edit modal", "error", renderErr)
 	}

@@ -699,6 +699,24 @@ other = "Selected pod not found in this application."
 [error.app.invalidName]
 other = "Invalid name: lowercase letters, digits and hyphens only, must start and end with a letter or digit, max 53 characters."
 
+[error.app.invalidSpec]
+other = "Invalid spec: could not parse the YAML payload. Check indentation and structure, then try again."
+
+[page.appForm.tabForm]
+other = "Form"
+
+[page.appForm.tabYAML]
+other = "YAML"
+
+[page.appForm.yamlHint]
+other = "Edit the raw spec YAML. The active tab decides what is saved — switching to Form discards this textarea on Save; switching to YAML overrides the Form values. On edit, the full current spec is pre-populated so removing a line deletes that field from the cluster (kubectl-edit semantics)."
+
+[page.appForm.yamlLoadFromForm]
+other = "Load from Form"
+
+[page.appForm.yamlApplyToForm]
+other = "Apply to Form"
+
 [error.schema.load]
 other = "Failed to load schema for {{.Kind}}."
 

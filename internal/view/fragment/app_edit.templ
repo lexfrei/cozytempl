@@ -5,16 +5,40 @@ import (
 	"github.com/lexfrei/cozytempl/internal/view/partial"
 )
 
-// AppEditModal renders the edit form for an existing application.
-// The schema-driven fields are pre-populated from the app's current
-// spec so the user edits in place instead of re-typing every value.
+// editFormFields renders the pre-populated schema-driven fields
+// so AppFormTabs can wrap them with the YAML pane uniformly.
+// Extracted for symmetry with the create path.
+templ editFormFields(schema *k8s.AppSchema, spec map[string]any) {
+	if schema != nil {
+		@SchemaFieldsWithValues(*schema, spec)
+	} else {
+		<p class="text-muted text-sm">{ partial.Tc(ctx, "form.app.noFields") }</p>
+	}
+}
+
+// AppEditModal renders the edit form for an existing
+// application. Schema-driven fields are pre-populated from
+// the app's current spec so the user edits in place.
 //
-// The resourceVersion argument is echoed into a hidden input so the
-// subsequent PUT can pin optimistic-lock semantics at the k8s API
-// server. If two users have the same form open and one hits Save
-// first, the second save returns 409 Conflict and the user sees a
-// "resource was modified" error instead of a silent clobber.
-templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, spec map[string]any, resourceVersion string) {
+// specYAML is the pre-marshalled current spec as YAML — the
+// edit handler computes it from the snapshot so the YAML
+// textarea opens with the full cluster-state spec (including
+// deep / unknown fields that never made it into the
+// schema-driven form). Without this round-trip seed,
+// YAML-mode saves (ReplaceSpec=true) silently delete every
+// deep key.
+//
+// The "Load from Form" button is NOT shown in edit mode
+// (allowLoadFromForm=false below): the form pane only
+// renders the top-2-level schema subset, so dumping it into
+// the textarea and saving with _tabmode=yaml would silently
+// replace the cluster state with a truncated copy.
+//
+// resourceVersion is echoed into a hidden input so the PUT
+// can pin optimistic-lock semantics. If two users have the
+// form open and one saves first, the second gets 409
+// Conflict instead of a silent clobber.
+templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, spec map[string]any, resourceVersion, specYAML string) {
 	<div id="app-edit-modal" class="modal-backdrop" style="display: flex;">
 		<div class="modal">
 			<div class="modal-header">
@@ -23,10 +47,12 @@ templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, sp
 					aria-label={ partial.Tc(ctx, "aria.closeEditApp") }
 					data-action="modal-dismiss" data-modal="app-edit-modal">&times;</button>
 			</div>
-			<form hx-put={ "/tenants/" + tenant + "/apps/" + app.Name }
+			<form id="app-edit-form"
+				hx-put={ "/tenants/" + tenant + "/apps/" + app.Name }
 				hx-target="#main-content"
 				hx-push-url="false">
 				<input type="hidden" name="_resource_version" value={ resourceVersion }/>
+				<input type="hidden" name="kind" value={ app.Kind }/>
 				<div class="form-group">
 					<label class="form-label">{ partial.Tc(ctx, "form.app.typeLabel") }</label>
 					<input class="form-input" type="text" value={ app.Kind } disabled/>
@@ -41,11 +67,7 @@ templ AppEditModal(tenant string, app k8s.Application, schema *k8s.AppSchema, sp
 						{ partial.Tc(ctx, "form.app.nameHint") }
 					</div>
 				</div>
-				if schema != nil {
-					@SchemaFieldsWithValues(*schema, spec)
-				} else {
-					<p class="text-muted text-sm">{ partial.Tc(ctx, "form.app.noFields") }</p>
-				}
+				@AppFormTabs("/fragments/app-yaml", "/fragments/app-yaml-to-form", "app-edit-form", specYAML, false, editFormFields(schema, spec))
 				<div class="modal-footer">
 					<button type="button" class="btn"
 						data-action="modal-dismiss" data-modal="app-edit-modal">{ partial.Tc(ctx, "action.cancel") }</button>

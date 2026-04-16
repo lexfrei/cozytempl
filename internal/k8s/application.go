@@ -275,9 +275,9 @@ func (asv *ApplicationService) Update(
 	}
 
 	existing, _, _ := unstructured.NestedMap(obj.Object, "spec")
-	merged := deepMergeSpec(existing, req.Spec)
+	nextSpec := pickNextSpec(existing, req.Spec, req.ReplaceSpec)
 
-	setErr := unstructured.SetNestedField(obj.Object, merged, "spec")
+	setErr := unstructured.SetNestedField(obj.Object, nextSpec, "spec")
 	if setErr != nil {
 		return nil, fmt.Errorf("setting spec: %w", setErr)
 	}

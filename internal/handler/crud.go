@@ -2,10 +2,13 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"sigs.k8s.io/yaml"
 
 	"github.com/lexfrei/cozytempl/internal/audit"
 	"github.com/lexfrei/cozytempl/internal/auth"
@@ -91,21 +94,17 @@ func (pgh *PageHandler) doCreateApp(
 	usr *auth.UserContext,
 	tenantNS, appName, appKind string,
 ) {
-	// Fetch schema to know field types for correct JSON encoding
-	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, appKind)
-	if schemaErr != nil {
-		pgh.log.Error("fetching schema for create", "kind", appKind, "error", schemaErr)
-		pgh.renderErrorToast(writer, req, pgh.t(req, "error.schema.load", map[string]any{"Kind": appKind}))
+	spec, _, specErr := pgh.buildSpecFromRequest(req, usr, appKind)
+	if specErr != nil {
+		pgh.reportSpecBuildError(writer, req, usr, audit.ActionAppCreate, appName, appKind, tenantNS, specErr)
 
 		return
 	}
 
-	fieldTypes := extractFieldTypes(schema)
-
 	createReq := k8s.CreateApplicationRequest{
 		Name: appName,
 		Kind: appKind,
-		Spec: extractSpecFromForm(req, fieldTypes),
+		Spec: spec,
 	}
 
 	_, err := pgh.appSvc.Create(req.Context(), usr, tenantNS, createReq)
@@ -244,15 +243,17 @@ func (pgh *PageHandler) doUpdateApp(
 
 	kind := snap.Kind
 
-	schema, schemaErr := pgh.schemaSvc.Get(req.Context(), usr, kind)
-	if schemaErr != nil {
-		pgh.log.Error("loading schema for update", "kind", kind, "error", schemaErr)
-		pgh.renderErrorToast(writer, req, pgh.t(req, "error.schema.load", map[string]any{"Kind": kind}))
+	// buildSpecFromRequest returns (spec, replace, err) as a
+	// single unit so the spec source and the merge-vs-replace
+	// policy can never disagree. Every branch inside sets the
+	// replace bool explicitly: yaml tab → true, legacy
+	// non-empty yaml fallback → true, form → false.
+	newSpec, replaceSpec, specBuildErr := pgh.buildSpecFromRequest(req, usr, kind)
+	if specBuildErr != nil {
+		pgh.reportSpecBuildError(writer, req, usr, audit.ActionAppUpdate, appName, kind, tenantNS, specBuildErr)
 
 		return
 	}
-
-	newSpec := extractSpecFromForm(req, extractFieldTypes(schema))
 	// The edit form echoes the resourceVersion it observed as a
 	// hidden input so the Update can pin optimistic-lock semantics.
 	// An empty value falls back to last-write-wins behaviour for
@@ -263,7 +264,11 @@ func (pgh *PageHandler) doUpdateApp(
 	resourceVersion := req.FormValue(formFieldResourceVersion) //nolint:gosec // body already capped by caller
 
 	_, err := pgh.appSvc.Update(req.Context(), usr, tenantNS, appName,
-		k8s.UpdateApplicationRequest{Spec: newSpec, ResourceVersion: resourceVersion})
+		k8s.UpdateApplicationRequest{
+			Spec:            newSpec,
+			ResourceVersion: resourceVersion,
+			ReplaceSpec:     replaceSpec,
+		})
 	if err != nil {
 		if errors.Is(err, k8s.ErrConflict) {
 			pgh.log.Info("conflict updating app", "tenant", tenantNS, "name", appName)
@@ -352,6 +357,193 @@ func (pgh *PageHandler) emitSuccessToast(writer http.ResponseWriter, req *http.R
 	}
 }
 
+// formFieldSpecYAML is the textarea name the create / update
+// modal submits when the user chose the YAML tab. The field is
+// always in the DOM (hidden when the form tab is active) so
+// request parsing is uniform; whether to use its value is a
+// non-empty check on the server.
+const formFieldSpecYAML = "spec_yaml"
+
+// formFieldTabMode is the radio group name that drives the
+// Form / YAML tab switch in the UI. Sent by the browser with
+// every submit; server-side it is the primary signal that
+// chooses between form-mode and yaml-mode spec extraction.
+const formFieldTabMode = "_tabmode"
+
+// tabModeYAML is the _tabmode value the YAML tab emits.
+// Centralised so the spec-source selection and the
+// merge-vs-replace selection cannot drift.
+const tabModeYAML = "yaml"
+
+// ErrInvalidYAMLSpec is returned by buildSpecFromRequest when
+// the user-supplied YAML in spec_yaml fails to parse. Exposed
+// as a sentinel so handlers can show the "invalid spec" toast
+// without misclassifying unrelated schema-fetch errors (which
+// have their own error.schema.load copy).
+var ErrInvalidYAMLSpec = errors.New("invalid yaml spec")
+
+// ErrEmptyYAMLSpec is returned when the user is explicitly on
+// the YAML tab (_tabmode=yaml) but left the textarea empty.
+// Falling through to the form pane in that case would apply
+// hidden form-field values the user never saw on screen —
+// classic silent-data-loss trap, so the handler prefers a
+// loud error over a surprise write.
+var ErrEmptyYAMLSpec = errors.New("empty yaml spec on yaml tab")
+
+// isReservedFormField returns true for form fields the spec
+// extractor must never lift into the CRD spec map. The
+// reserved set includes the name/kind/resourceVersion
+// handshake fields, the YAML textarea (used as the spec source
+// in YAML mode), and the tab-switcher radio group (pure UI
+// state). Hidden from the spec writer so a future addition to
+// the form only has to add its name here, not go hunt every
+// call site.
+func isReservedFormField(key string) bool {
+	switch key {
+	case formFieldName, formFieldKind, formFieldResourceVersion,
+		formFieldSpecYAML, formFieldTabMode:
+		return true
+	}
+
+	return false
+}
+
+// reportSpecBuildError surfaces a buildSpecFromRequest failure
+// to the user with the right copy + audit shape. Invalid YAML
+// the user typed is distinguished from a schema-fetch error —
+// the first is "fix the YAML", the second is "cluster problem"
+// and the two should not share a toast string.
+func (pgh *PageHandler) reportSpecBuildError(
+	writer http.ResponseWriter, req *http.Request, usr *auth.UserContext,
+	action audit.Action, appName, kind, tenantNS string, err error,
+) {
+	pgh.log.Warn("building spec for mutation",
+		"action", action, "tenant", tenantNS, "name", appName, "kind", kind, "error", err)
+
+	if errors.Is(err, ErrInvalidYAMLSpec) || errors.Is(err, ErrEmptyYAMLSpec) {
+		reason := "invalid_yaml"
+		if errors.Is(err, ErrEmptyYAMLSpec) {
+			reason = "empty_yaml"
+		}
+
+		pgh.recordAudit(req, usr, action, appName, tenantNS,
+			audit.OutcomeDenied,
+			map[string]any{"kind": kind, "reason": reason, "error": err.Error()})
+		pgh.renderErrorToast(writer, req, pgh.t(req, "error.app.invalidSpec"))
+
+		return
+	}
+
+	pgh.recordAudit(req, usr, action, appName, tenantNS,
+		audit.OutcomeError,
+		map[string]any{"kind": kind, "reason": "spec_build_failed", "error": err.Error()})
+	pgh.renderErrorToast(writer, req, pgh.t(req, "error.schema.load", map[string]any{"Kind": kind}))
+}
+
+// buildSpecFromRequest picks a spec source — form fields or a
+// YAML payload — and returns the resulting map plus the
+// merge-vs-replace policy that matches that source. Folding the
+// two into a single return value keeps them from drifting: a
+// spec parsed from YAML always travels with replace=true, a
+// spec extracted from the form fields always with replace=false.
+// Earlier revisions computed replace off a second read of
+// _tabmode at the caller, which silently disagreed with the
+// source-selection branch in the legacy fallback path.
+//
+// Fetches the schema on the form-mode branch so the
+// kind-specific type coercion (booleans, integers) in
+// extractSpecFromForm stays accurate; the YAML branches skip
+// schema entirely because sigs.k8s.io/yaml already decodes
+// native types.
+//
+// The UI radio _tabmode is the source of truth: the user
+// explicitly chose YAML if the value is "yaml", otherwise the
+// form pane wins. Older clients or direct API consumers that
+// never set _tabmode fall back to "yaml wins if non-empty" so
+// cozytempl's /api/.../apps POST with a raw spec_yaml still
+// works without the radio in the payload. That fallback path
+// also maps to replace=true — a user or API client sending raw
+// YAML has kubectl-edit expectations, never deep-merge.
+//
+//nolint:nonamedreturns // names document the (spec, replace, err) shape so callers read the policy alongside the value.
+func (pgh *PageHandler) buildSpecFromRequest(
+	req *http.Request, usr *auth.UserContext, appKind string,
+) (spec map[string]any, replace bool, err error) {
+	tabMode := req.FormValue(formFieldTabMode)
+	yamlRaw := strings.TrimSpace(req.FormValue(formFieldSpecYAML))
+
+	if tabMode == tabModeYAML {
+		return parseYAMLSpecOrEmptyError(yamlRaw)
+	}
+
+	// Legacy fallback for API clients / older browsers that
+	// don't send _tabmode but do paste into spec_yaml: a
+	// non-empty textarea still wins AND carries replace
+	// semantics — a caller who pastes raw YAML expects
+	// kubectl-edit behaviour, and silently deep-merging that
+	// into the existing spec is the exact UX trap the radio
+	// was introduced to avoid. The empty-parsed-spec guard
+	// runs on this path too: a legacy client that pastes
+	// "{}" or "null" must not wipe cluster state any more
+	// than a browser client on the YAML tab.
+	if tabMode == "" && yamlRaw != "" {
+		return parseYAMLSpecOrEmptyError(yamlRaw)
+	}
+
+	schema, err := pgh.schemaSvc.Get(req.Context(), usr, appKind)
+	if err != nil {
+		return nil, false, fmt.Errorf("fetching schema: %w", err)
+	}
+
+	return extractSpecFromForm(req, extractFieldTypes(schema)), false, nil
+}
+
+// parseYAMLSpecOrEmptyError is the shared guard for both YAML
+// code paths (explicit _tabmode=yaml and the legacy
+// non-empty-textarea fallback). It rejects an empty textarea
+// AND a textarea whose content parses to an empty map: "{}",
+// "null", "~", and comment-only inputs all parse cleanly to
+// a zero-key map[string]any under sigs.k8s.io/yaml. Without
+// this guard a user with replace semantics who accidentally
+// typed "{}" or a stray "# comment" would silently wipe every
+// key from the cluster spec — the exact surprise the YAML =
+// replace invariant was supposed to make impossible.
+//
+//nolint:nonamedreturns // names mirror buildSpecFromRequest so the shared (spec, replace, err) shape is obvious at call sites.
+func parseYAMLSpecOrEmptyError(raw string) (spec map[string]any, replace bool, err error) {
+	if raw == "" {
+		return nil, false, ErrEmptyYAMLSpec
+	}
+
+	parsed, parseErr := parseSpecYAML(raw)
+	if parseErr != nil {
+		return nil, false, parseErr
+	}
+
+	if len(parsed) == 0 {
+		return nil, false, ErrEmptyYAMLSpec
+	}
+
+	return parsed, true, nil
+}
+
+// parseSpecYAML unmarshals the textarea content into the
+// spec map. sigs.k8s.io/yaml is preferred over gopkg.in/yaml.v3
+// because the former already goes through encoding/json —
+// integers, floats, booleans end up as native types matching
+// what the Kubernetes apiserver accepts, without the
+// float64/int coercion dance yaml.v3 requires.
+func parseSpecYAML(raw string) (map[string]any, error) {
+	spec := map[string]any{}
+
+	err := yaml.Unmarshal([]byte(raw), &spec)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidYAMLSpec, err)
+	}
+
+	return spec, nil
+}
+
 // extractSpecFromForm pulls known schema fields out of the submitted form.
 // Dot-path keys ("backup.enabled", "backup.schedule") are un-flattened
 // into nested maps so the CRD sees {backup: {enabled: true, schedule:
@@ -362,7 +554,7 @@ func extractSpecFromForm(req *http.Request, fieldTypes map[string]string) map[st
 	spec := map[string]any{}
 
 	for key, values := range req.Form {
-		if key == formFieldName || key == formFieldKind || key == formFieldResourceVersion {
+		if isReservedFormField(key) {
 			continue
 		}
 
@@ -378,9 +570,19 @@ func extractSpecFromForm(req *http.Request, fieldTypes map[string]string) map[st
 
 // setNestedSpec assigns a value at a dot-path inside a map, creating
 // intermediate sub-maps as needed. "backup.enabled" → spec["backup"]
-// ["enabled"]. A non-dotted key assigns at the top level. If an
-// intermediate key already holds a non-map value, setNestedSpec leaves
-// it alone — the form cannot silently overwrite a scalar with a map.
+// ["enabled"]. A non-dotted key assigns at the top level.
+//
+// If an intermediate key already holds a non-map value, the nested
+// assignment is silently skipped rather than overwriting the existing
+// scalar with a fresh map. Rationale: the two collision paths are
+// "overwrite the scalar with {new: val}" or "drop the nested write".
+// The former destroys data the form previously wrote; the latter
+// preserves it and the loss is limited to the one dotted key. Neither
+// is great, but silent-preserve beats silent-destroy because the
+// schema-driven form never generates colliding keys under normal
+// operation — a collision is either a malformed POST or a schema bug,
+// and keeping the earlier scalar leaves more of the original intent
+// intact.
 func setNestedSpec(spec map[string]any, key string, value any) {
 	parts := strings.Split(key, ".")
 
@@ -389,10 +591,22 @@ func setNestedSpec(spec map[string]any, key string, value any) {
 	for idx := range len(parts) - 1 {
 		part := parts[idx]
 
-		child, ok := cur[part].(map[string]any)
+		existing, present := cur[part]
+		if !present {
+			fresh := map[string]any{}
+			cur[part] = fresh
+			cur = fresh
+
+			continue
+		}
+
+		child, ok := existing.(map[string]any)
 		if !ok {
-			child = map[string]any{}
-			cur[part] = child
+			// Intermediate key is already a scalar; a form with a
+			// colliding nested key is either malformed input or a
+			// schema bug. Drop this dot-path write rather than
+			// silently discarding the scalar.
+			return
 		}
 
 		cur = child
