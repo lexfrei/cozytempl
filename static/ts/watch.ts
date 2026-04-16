@@ -24,6 +24,7 @@ interface WatchSubscription {
   source: EventSource;
   resource: string;
   tenant: string;
+  object: string;
 }
 
 const RECONNECT_DELAY_MS = 5000;
@@ -46,10 +47,11 @@ function disconnect(): void {
 // findSubscriptionTarget looks for an element tagged with
 // data-watch-resource and data-watch-tenant attributes. These mark
 // the container whose rows the server will push updates into. The
-// template-rendered events tbody on the app detail page is the
-// canonical consumer; adding more pages is a one-line templ edit
-// plus a watchResourceConfig entry on the server.
-function findSubscriptionTarget(): { resource: string; tenant: string } | null {
+// optional data-watch-object attribute scopes the filter to a
+// specific owner (an app name, in the Events-tab case) — when
+// present the server drops events that do not belong to that
+// owner, preventing neighbour-app leakage into the tbody.
+function findSubscriptionTarget(): { resource: string; tenant: string; object: string } | null {
   const target = document.querySelector<HTMLElement>(
     "[data-watch-resource][data-watch-tenant]",
   );
@@ -59,14 +61,17 @@ function findSubscriptionTarget(): { resource: string; tenant: string } | null {
   const tenant = target.dataset.watchTenant ?? "";
   if (!resource || !tenant) return null;
 
-  return { resource, tenant };
+  const object = target.dataset.watchObject ?? "";
+
+  return { resource, tenant, object };
 }
 
-function connect(resource: string, tenant: string): void {
+function connect(resource: string, tenant: string, object: string): void {
   disconnect();
 
-  const url =
-    `/api/watch/${encodeURIComponent(resource)}?tenant=${encodeURIComponent(tenant)}`;
+  let url = `/api/watch/${encodeURIComponent(resource)}?tenant=${encodeURIComponent(tenant)}`;
+  if (object) url += `&object=${encodeURIComponent(object)}`;
+
   const source = new EventSource(url);
 
   source.onmessage = (event: MessageEvent<string>): void => {
@@ -81,13 +86,18 @@ function connect(resource: string, tenant: string): void {
     disconnect();
     reconnectTimer = window.setTimeout(() => {
       const nextTarget = findSubscriptionTarget();
-      if (nextTarget && nextTarget.resource === resource && nextTarget.tenant === tenant) {
-        connect(resource, tenant);
+      if (
+        nextTarget &&
+        nextTarget.resource === resource &&
+        nextTarget.tenant === tenant &&
+        nextTarget.object === object
+      ) {
+        connect(resource, tenant, object);
       }
     }, RECONNECT_DELAY_MS);
   };
 
-  current = { source, resource, tenant };
+  current = { source, resource, tenant, object };
 }
 
 function handleMessage(raw: string): void {
@@ -122,13 +132,19 @@ function handleMessage(raw: string): void {
   }
 
   // Insert at the top of the tbody (or wherever data-watch-resource
-  // lives) so new events appear in reverse-chronological order.
+  // lives) so new events appear in reverse-chronological order. The
+  // empty-state div (rendered alongside the tbody when the initial
+  // list was empty) gets hidden on first arrival so the "no events
+  // yet" copy stops competing with the live row for attention.
   const container = document.querySelector<HTMLElement>(
     "[data-watch-resource]",
   );
   if (container) {
     container.prepend(nextRow);
     flashRow(nextRow);
+
+    const emptyState = document.getElementById("event-empty-state");
+    if (emptyState) emptyState.hidden = true;
   }
 }
 
@@ -149,12 +165,13 @@ function syncFromDOM(): void {
   if (
     current &&
     current.resource === target.resource &&
-    current.tenant === target.tenant
+    current.tenant === target.tenant &&
+    current.object === target.object
   ) {
     return;
   }
 
-  connect(target.resource, target.tenant);
+  connect(target.resource, target.tenant, target.object);
 }
 
 export function initWatchSSE(): void {

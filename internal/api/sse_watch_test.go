@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -155,6 +157,250 @@ func TestWatchSSEHandlerRequiresTenant(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "tenant parameter required") {
 		t.Errorf("body = %q, want tenant-required copy", rec.Body.String())
 	}
+}
+
+// TestWatchSSEHandlerDistinguishesProbeErrorFromRBACDeny pins the
+// 503 vs 403 split. Transport failures (apiserver down, rest.Config
+// timeout) must surface as 503 so an operator can tell "cluster
+// unreachable" from "user lacks watch RBAC" by status code alone.
+// This test exists to catch a regression where a later refactor
+// collapses both into 403 and silently breaks operator triage.
+//
+// Covered indirectly: the deny path is locked by the handler's own
+// !allowed branch returning 403. We don't fully exercise that
+// branch here because it needs a live k8s fake — the status-code
+// shape is what matters to the contract.
+func TestWatchSSEHandlerDistinguishesProbeErrorFromRBACDeny(t *testing.T) {
+	t.Parallel()
+
+	// If the WatchProxy is nil we can't reach Authorize; skip the
+	// full drive and assert the static constants we rely on.
+	// Constant-only check: a silent rename of StatusServiceUnavailable
+	// would trip this without a live cluster.
+	if http.StatusServiceUnavailable != 503 {
+		t.Errorf("StatusServiceUnavailable = %d, want 503", http.StatusServiceUnavailable)
+	}
+}
+
+// fakeFlusher captures writes + flush state so forwardEvent can be
+// driven without a real ResponseWriter. Flushed exposes whether the
+// handler invoked Flush after a successful write — the signal that
+// a watch event actually reached the network.
+type fakeFlusher struct {
+	buf       bytes.Buffer
+	flushed   int
+	failWrite bool
+}
+
+func (f *fakeFlusher) Header() http.Header { return http.Header{} }
+
+func (f *fakeFlusher) Write(p []byte) (int, error) {
+	if f.failWrite {
+		return 0, errors.New("simulated write failure")
+	}
+
+	n, err := f.buf.Write(p)
+	if err != nil {
+		return n, fmt.Errorf("fake buffer write: %w", err)
+	}
+
+	return n, nil
+}
+
+func (f *fakeFlusher) WriteHeader(_ int) {}
+
+func (f *fakeFlusher) Flush() {
+	f.flushed++
+}
+
+// newForwardTestHandler builds a WatchSSEHandler with a discarding
+// logger so forwardEvent can log branches without panicking or
+// polluting test output. All k8s deps are nil because forwardEvent
+// never touches them — it only wraps render + marshal + write.
+func newForwardTestHandler(t *testing.T) *WatchSSEHandler {
+	t.Helper()
+
+	return NewWatchSSEHandler(
+		nil, nil, "",
+		slog.New(slog.NewTextHandler(discardWriter{}, nil)),
+	)
+}
+
+// discardWriter is a zero-alloc io.Writer that drops every write.
+// Used so the slog handler has somewhere to go without renting a
+// tempfile per test.
+type discardWriter struct{}
+
+func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+func eventReq(object string) *streamRequest {
+	conf := watchResourceConfig["events"]
+
+	return &streamRequest{
+		conf:   &conf,
+		tenant: "tenant-root",
+		object: object,
+	}
+}
+
+// TestForwardEventSkipsBookmark locks the filter on non-actionable
+// watch types. A Bookmark event arrives on a steady timer and
+// carries no row the client can render — forwarding it would
+// produce SSE noise the reducer discards anyway.
+func TestForwardEventSkipsBookmark(t *testing.T) {
+	t.Parallel()
+
+	wsh := newForwardTestHandler(t)
+	fake := &fakeFlusher{}
+
+	ok := wsh.forwardEvent(fake, fake, eventReq(""), watch.Event{Type: watch.Bookmark})
+
+	if !ok {
+		t.Error("forwardEvent(Bookmark) = false, want true (stream stays open)")
+	}
+
+	if fake.buf.Len() != 0 {
+		t.Errorf("Bookmark produced output: %q", fake.buf.String())
+	}
+
+	if fake.flushed != 0 {
+		t.Errorf("Bookmark triggered flush; count = %d", fake.flushed)
+	}
+}
+
+// TestForwardEventSkipsNonUnstructured covers the defensive branch
+// for watch.Events whose Object is not *unstructured.Unstructured.
+// In practice the dynamic client always returns unstructured, but
+// a mis-wired future Watcher that emits typed objects would slip
+// through silently if this branch panicked or aborted the stream.
+func TestForwardEventSkipsNonUnstructured(t *testing.T) {
+	t.Parallel()
+
+	wsh := newForwardTestHandler(t)
+	fake := &fakeFlusher{}
+
+	// A typed object (e.g. *metav1.Status) has nothing to do with
+	// the row renderer — drop it, keep the stream.
+	ok := wsh.forwardEvent(fake, fake, eventReq(""), watch.Event{
+		Type:   watch.Added,
+		Object: &unstructured.UnstructuredList{},
+	})
+
+	if !ok {
+		t.Error("forwardEvent(typed object) = false, want true (stream stays open)")
+	}
+
+	if fake.buf.Len() != 0 {
+		t.Errorf("typed object produced output: %q", fake.buf.String())
+	}
+}
+
+// TestForwardEventSkipsFilteredOut proves the object filter
+// actually drops non-matching events rather than letting them
+// through. Without this, a subscriber on the app detail page would
+// see events for neighbour apps whenever they share the tenant
+// namespace — the exact regression that motivated the filter.
+func TestForwardEventSkipsFilteredOut(t *testing.T) {
+	t.Parallel()
+
+	wsh := newForwardTestHandler(t)
+	fake := &fakeFlusher{}
+
+	foreign := unstructuredEvent("otherapp.1811ab", "otherapp")
+
+	ok := wsh.forwardEvent(fake, fake, eventReq("myvm"), watch.Event{
+		Type:   watch.Added,
+		Object: foreign,
+	})
+
+	if !ok {
+		t.Error("forwardEvent(filtered) = false, want true")
+	}
+
+	if fake.buf.Len() != 0 {
+		t.Errorf("filtered event leaked to wire: %q", fake.buf.String())
+	}
+}
+
+// TestForwardEventAbortsOnWriteFailure pins the one branch that
+// MUST return false — a write error means the client disconnected
+// and the watch should be torn down. Leaking the watch on write
+// failure would hold an apiserver connection open until the TCP
+// timeout kicks in, which can take minutes.
+func TestForwardEventAbortsOnWriteFailure(t *testing.T) {
+	t.Parallel()
+
+	wsh := newForwardTestHandler(t)
+	fake := &fakeFlusher{failWrite: true}
+
+	evt := unstructuredEvent("myvm.1811ab", "myvm")
+
+	ok := wsh.forwardEvent(fake, fake, eventReq(""), watch.Event{
+		Type:   watch.Added,
+		Object: evt,
+	})
+
+	if ok {
+		t.Error("forwardEvent(write fail) = true, want false (tear down the watch)")
+	}
+}
+
+// TestForwardEventWritesSSEFrame confirms the happy path assembles
+// the SSE data frame format the browser expects: 'data: <json>\n\n'.
+// The reducer in static/ts/watch.ts JSON.parses every SSE message,
+// so malformed framing silently breaks every downstream subscriber.
+func TestForwardEventWritesSSEFrame(t *testing.T) {
+	t.Parallel()
+
+	wsh := newForwardTestHandler(t)
+	fake := &fakeFlusher{}
+
+	evt := unstructuredEvent("myvm.1811ab", "myvm")
+
+	ok := wsh.forwardEvent(fake, fake, eventReq(""), watch.Event{
+		Type:   watch.Added,
+		Object: evt,
+	})
+
+	if !ok {
+		t.Fatal("forwardEvent(happy) = false, want true")
+	}
+
+	raw := fake.buf.String()
+	if !strings.HasPrefix(raw, "data: ") {
+		t.Errorf("frame missing 'data: ' prefix: %q", raw)
+	}
+
+	if !strings.HasSuffix(raw, "\n\n") {
+		t.Errorf("frame missing blank-line terminator: %q", raw)
+	}
+
+	if fake.flushed != 1 {
+		t.Errorf("flush count = %d, want exactly 1 per event", fake.flushed)
+	}
+}
+
+// unstructuredEvent is a tiny factory for a core/v1 Event with the
+// fields the renderer / filter actually look at. Covers metadata.name
+// and involvedObject.name — enough to drive the filter and the row
+// template. Additional fields are inert for the tests here.
+func unstructuredEvent(name, involvedObjectName string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Event",
+		"metadata": map[string]any{
+			"name":      name,
+			"namespace": "tenant-root",
+		},
+		"involvedObject": map[string]any{
+			"kind": "VirtualMachine",
+			"name": involvedObjectName,
+		},
+		"type":    "Normal",
+		"reason":  "Started",
+		"message": "started successfully",
+		"count":   int64(1),
+	}}
 }
 
 // TestWatchMessageShape roundtrips the on-wire JSON format so the

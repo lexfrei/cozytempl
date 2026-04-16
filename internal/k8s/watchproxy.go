@@ -84,23 +84,24 @@ func (wp *WatchProxy) Authorize(
 // when the subscription ends; leaking it leaves an apiserver watch
 // open until the TCP connection dies.
 //
-// resourceVersion is the cursor returned by the preceding LIST
-// response; pass "" to start at the current apiserver state. Using
-// the LIST response's RV avoids racing a recent mutation that would
-// otherwise appear as a phantom "first event" after the initial
-// page render.
+// The watch starts at the current apiserver state (ResourceVersion
+// empty). This does create a narrow race: an event that landed
+// between the preceding LIST and this Watch can appear twice in
+// the caller's UI (once via the paginated LIST, once via the live
+// stream). In practice the client-side reducer upserts by row id,
+// so a duplicate modifies the same row in place — cosmetically
+// the same flash twice, functionally harmless. If a future
+// consumer needs strictly-once delivery, thread the LIST's
+// metadata.resourceVersion in here.
 func (wp *WatchProxy) Stream(
-	ctx context.Context, userCfg *rest.Config, gvr schema.GroupVersionResource, namespace, resourceVersion string,
+	ctx context.Context, userCfg *rest.Config, gvr schema.GroupVersionResource, namespace string,
 ) (watch.Interface, error) {
 	client, err := dynamic.NewForConfig(userCfg)
 	if err != nil {
 		return nil, fmt.Errorf("building dynamic client for watch: %w", err)
 	}
 
-	opts := metav1.ListOptions{
-		Watch:           true,
-		ResourceVersion: resourceVersion,
-	}
+	opts := metav1.ListOptions{Watch: true}
 
 	w, err := client.Resource(gvr).Namespace(namespace).Watch(ctx, opts)
 	if err != nil {

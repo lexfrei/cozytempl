@@ -21,6 +21,12 @@ const (
 	pathTenants     = "/tenants"
 	pathMetrics     = "/metrics"
 	pathSSEEvents   = "/api/events"
+	// pathWatchPrefix matches every user-credentialed watch stream
+	// served by WatchSSEHandler. Stream lifetime is ~30 minutes, so
+	// including them in request-duration histograms and inflight
+	// gauges would pin the +Inf bucket and leave the gauge
+	// permanently elevated with no meaningful load signal.
+	pathWatchPrefix = "/api/watch/"
 )
 
 // Request histogram buckets tuned for an htmx UI fronting a k8s API.
@@ -98,7 +104,9 @@ func metricsHandler() http.Handler {
 // polluting its own series.
 func withMetrics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
-		if req.URL.Path == pathSSEEvents || req.URL.Path == pathMetrics {
+		if req.URL.Path == pathSSEEvents ||
+			req.URL.Path == pathMetrics ||
+			strings.HasPrefix(req.URL.Path, pathWatchPrefix) {
 			next.ServeHTTP(writer, req)
 
 			return

@@ -285,37 +285,44 @@ templ conditionsTab(data view.AppDetailData) {
 	</div>
 }
 
+// eventsTab always emits the <tbody data-watch-*> — even when the
+// initial render has zero events. Without that unconditional
+// container the client-side watch.ts finds no subscription target
+// on an empty Events tab, and the user never sees the first event
+// live; they have to reload before the live stream activates. The
+// empty state renders INSIDE the table so the user still sees the
+// "no events yet" copy while the live subscription is active.
 templ eventsTab(data view.AppDetailData) {
-	if len(data.Events) == 0 {
-		<div class="empty-state">
-			<div class="empty-state-title">{ partial.Tc(ctx, "empty.events.title") }</div>
-			<p class="text-muted">{ partial.Tc(ctx, "empty.events.body") }</p>
+	<div class="card">
+		<div class="table-container">
+			<table>
+				<thead>
+					<tr>
+						<th>{ partial.Tc(ctx, "label.type") }</th>
+						<th>{ partial.Tc(ctx, "label.reason") }</th>
+						<th>{ partial.Tc(ctx, "label.message") }</th>
+						<th>{ partial.Tc(ctx, "label.source") }</th>
+						<th>{ partial.Tc(ctx, "label.count") }</th>
+						<th>{ partial.Tc(ctx, "label.lastSeen") }</th>
+					</tr>
+				</thead>
+				<tbody id="event-rows"
+					data-watch-resource="events"
+					data-watch-tenant={ data.Tenant }
+					data-watch-object={ data.App.Name }>
+					for _, evt := range data.Events {
+						@EventRow(evt)
+					}
+				</tbody>
+			</table>
+			if len(data.Events) == 0 {
+				<div class="empty-state" id="event-empty-state">
+					<div class="empty-state-title">{ partial.Tc(ctx, "empty.events.title") }</div>
+					<p class="text-muted">{ partial.Tc(ctx, "empty.events.body") }</p>
+				</div>
+			}
 		</div>
-	} else {
-		<div class="card">
-			<div class="table-container">
-				<table>
-					<thead>
-						<tr>
-							<th>{ partial.Tc(ctx, "label.type") }</th>
-							<th>{ partial.Tc(ctx, "label.reason") }</th>
-							<th>{ partial.Tc(ctx, "label.message") }</th>
-							<th>{ partial.Tc(ctx, "label.source") }</th>
-							<th>{ partial.Tc(ctx, "label.count") }</th>
-							<th>{ partial.Tc(ctx, "label.lastSeen") }</th>
-						</tr>
-					</thead>
-					<tbody id="event-rows"
-						data-watch-resource="events"
-						data-watch-tenant={ data.Tenant }>
-						for _, evt := range data.Events {
-							@EventRow(evt)
-						}
-					</tbody>
-				</table>
-			</div>
-		</div>
-	}
+	</div>
 }
 
 // EventRow renders one row in the Events tab. Exported so the SSE
@@ -323,9 +330,11 @@ templ eventsTab(data view.AppDetailData) {
 // watch event and emit the rendered HTML as the row payload — the
 // client-side reducer replaces or inserts the element by its id.
 //
-// The id="event-row-{Name}" convention is how the SSE reducer in
-// static/ts/sse.ts looks up the target element; keep the prefix in
-// sync with watchTargetEvent in that file.
+// The id="event-row-{Name}" convention matches the rowIDPrefix
+// "event-row" in watchResourceConfig (internal/api/sse_watch.go).
+// The client-side reducer in static/ts/watch.ts reads rowIdPrefix
+// off the SSE message and looks up {rowIdPrefix}-{name} verbatim;
+// keep the three in sync.
 templ EventRow(evt k8s.Event) {
 	<tr id={ "event-row-" + evt.Name }>
 		<td>

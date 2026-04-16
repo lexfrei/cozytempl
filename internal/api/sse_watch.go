@@ -68,13 +68,29 @@ func NewWatchSSEHandler(proxy *k8s.WatchProxy, baseCfg *rest.Config, mode config
 // the renderRow field in watchResourceConfig.
 type rowRenderer func(obj *unstructured.Unstructured) (string, string, error)
 
+// objectFilter decides whether an incoming watch event is relevant
+// to the current subscription. It receives the raw watch object
+// plus the arg value the subscriber passed (typically the app name
+// from a ?object= query param). A nil filter means "accept
+// everything in the namespace", which is the right default for a
+// namespace-scoped page like the tenant detail view; pages that
+// care about a specific owner resource (app detail, events tab)
+// wire a filter so a reconcile storm on neighbour app X doesn't
+// spam their events tbody.
+type objectFilter func(obj *unstructured.Unstructured, arg string) bool
+
 // watchResource is one entry in the resource dispatch table. Keeping
 // this as a named type (rather than an anonymous struct in the map
 // literal) lets the row-renderer signature pick up a name for lint.
+//
+// filter is optional. When the subscriber did not pass ?object=
+// the handler skips the filter step entirely — an empty arg means
+// "no per-object scoping was requested".
 type watchResource struct {
 	gvr         schema.GroupVersionResource
 	rowIDPrefix string
 	renderRow   rowRenderer
+	filter      objectFilter
 }
 
 // watchResourceConfig maps a human-readable resource kind (the
@@ -90,14 +106,38 @@ var watchResourceConfig = map[string]watchResource{
 		gvr:         schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"},
 		rowIDPrefix: "event-row",
 		renderRow:   renderEventRow,
+		filter:      filterEventByInvolvedObject,
 	},
+}
+
+// filterEventByInvolvedObject mirrors the per-app filter the
+// initial Events tab render applies via ListForObject. Without
+// this, the live watch would inject neighbour-app events into the
+// detail page's tbody — the exact "misleading during an incident"
+// regression the page is supposed to prevent.
+func filterEventByInvolvedObject(obj *unstructured.Unstructured, appName string) bool {
+	objName, _, _ := unstructured.NestedString(obj.Object, "involvedObject", "name")
+
+	return k8s.NameDerivedFromRelease(objName, appName)
+}
+
+// streamRequest packs the validated per-request parameters in one
+// place so helpers signal refactors (and lint) don't amass long
+// argument lists. Pointer-to-struct arguments avoid gocritic's
+// hugeParam complaint on the watchResource copy.
+type streamRequest struct {
+	conf   *watchResource
+	tenant string
+	object string
 }
 
 // Stream serves GET /api/watch/{resource}?tenant={tenant}. The
 // resource path segment is one of watchResourceConfig's keys; the
-// tenant query param is the namespace to watch.
+// tenant query param is the namespace to watch. Optional ?object=
+// scopes the live filter to events/rows about a specific owner
+// (the app name on the detail page's Events tab).
 func (wsh *WatchSSEHandler) Stream(writer http.ResponseWriter, req *http.Request) {
-	usr, conf, tenant, ok := wsh.validateStreamRequest(writer, req)
+	usr, sreq, ok := wsh.validateStreamRequest(writer, req)
 	if !ok {
 		return
 	}
@@ -109,7 +149,7 @@ func (wsh *WatchSSEHandler) Stream(writer http.ResponseWriter, req *http.Request
 		return
 	}
 
-	userCfg, ok := wsh.authorize(writer, req, usr, conf, tenant)
+	userCfg, ok := wsh.authorize(writer, req, usr, sreq)
 	if !ok {
 		return
 	}
@@ -123,7 +163,7 @@ func (wsh *WatchSSEHandler) Stream(writer http.ResponseWriter, req *http.Request
 	_, _ = fmt.Fprint(writer, "retry: 5000\n:ok\n\n")
 
 	flusher.Flush()
-	wsh.pump(req, writer, flusher, userCfg, conf, tenant)
+	wsh.pump(req, writer, flusher, userCfg, sreq)
 }
 
 // validateStreamRequest handles the 400/401/404 path-and-query
@@ -131,12 +171,12 @@ func (wsh *WatchSSEHandler) Stream(writer http.ResponseWriter, req *http.Request
 // ok return doubles as "response already written; bail now".
 func (wsh *WatchSSEHandler) validateStreamRequest(
 	writer http.ResponseWriter, req *http.Request,
-) (*auth.UserContext, watchResource, string, bool) {
+) (*auth.UserContext, *streamRequest, bool) {
 	usr := auth.UserFromContext(req.Context())
 	if usr == nil {
 		Error(writer, http.StatusUnauthorized, "not authenticated")
 
-		return nil, watchResource{}, "", false
+		return nil, nil, false
 	}
 
 	resource := req.PathValue("resource")
@@ -145,48 +185,58 @@ func (wsh *WatchSSEHandler) validateStreamRequest(
 	if !known {
 		Error(writer, http.StatusNotFound, "unknown watch resource: "+resource)
 
-		return nil, watchResource{}, "", false
+		return nil, nil, false
 	}
 
 	tenant := req.URL.Query().Get("tenant")
 	if tenant == "" {
 		Error(writer, http.StatusBadRequest, "tenant parameter required")
 
-		return nil, watchResource{}, "", false
+		return nil, nil, false
 	}
 
-	return usr, conf, tenant, true
+	return usr, &streamRequest{
+		conf:   &conf,
+		tenant: tenant,
+		object: req.URL.Query().Get("object"),
+	}, true
 }
 
 // authorize builds the per-user rest.Config and runs an upfront
 // SelfSubjectAccessReview. On any failure it writes the HTTP error
 // and returns ok=false; the caller bails out without opening a
 // stream.
+//
+// Transport failures (apiserver unreachable, rest.Config timeout)
+// surface as 503, not 403 — an operator seeing 503 knows to check
+// apiserver health; a 403 would misdirect them toward RBAC. Only
+// an explicit apiserver deny or a clean allowed=false turns into
+// 403.
 func (wsh *WatchSSEHandler) authorize(
 	writer http.ResponseWriter, req *http.Request,
-	usr *auth.UserContext, conf watchResource, tenant string,
+	usr *auth.UserContext, sreq *streamRequest,
 ) (*rest.Config, bool) {
 	userCfg, err := k8s.BuildUserRESTConfig(wsh.baseCfg, usr, wsh.mode)
 	if err != nil {
 		wsh.log.Error("building user rest config for watch",
-			"resource", conf.gvr.Resource, "tenant", tenant, "error", err)
+			"resource", sreq.conf.gvr.Resource, "tenant", sreq.tenant, "error", err)
 		Error(writer, http.StatusInternalServerError, "building user client")
 
 		return nil, false
 	}
 
-	allowed, err := wsh.proxy.Authorize(req.Context(), userCfg, conf.gvr, tenant)
+	allowed, err := wsh.proxy.Authorize(req.Context(), userCfg, sreq.conf.gvr, sreq.tenant)
 	if err != nil {
 		wsh.log.Warn("watch authorization probe failed",
-			"resource", conf.gvr.Resource, "tenant", tenant, "user", usr.Username, "error", err)
-		Error(writer, http.StatusForbidden, "watch authorization failed")
+			"resource", sreq.conf.gvr.Resource, "tenant", sreq.tenant, "user", usr.Username, "error", err)
+		Error(writer, http.StatusServiceUnavailable, "watch authorization probe failed")
 
 		return nil, false
 	}
 
 	if !allowed {
 		wsh.log.Info("watch subscribe denied by RBAC",
-			"resource", conf.gvr.Resource, "tenant", tenant, "user", usr.Username)
+			"resource", sreq.conf.gvr.Resource, "tenant", sreq.tenant, "user", usr.Username)
 		Error(writer, http.StatusForbidden, "watch access denied")
 
 		return nil, false
@@ -202,16 +252,15 @@ func (wsh *WatchSSEHandler) pump(
 	writer http.ResponseWriter,
 	flusher http.Flusher,
 	userCfg *rest.Config,
-	conf watchResource,
-	tenant string,
+	sreq *streamRequest,
 ) {
 	streamCtx, cancel := context.WithDeadline(req.Context(), time.Now().Add(watchStreamMaxAge))
 	defer cancel()
 
-	w, err := wsh.proxy.Stream(streamCtx, userCfg, conf.gvr, tenant, "")
+	w, err := wsh.proxy.Stream(streamCtx, userCfg, sreq.conf.gvr, sreq.tenant)
 	if err != nil {
 		wsh.log.Warn("opening watch stream",
-			"resource", conf.gvr.Resource, "tenant", tenant, "error", err)
+			"resource", sreq.conf.gvr.Resource, "tenant", sreq.tenant, "error", err)
 
 		return
 	}
@@ -227,7 +276,7 @@ func (wsh *WatchSSEHandler) pump(
 				return
 			}
 
-			if !wsh.forwardEvent(writer, flusher, conf.rowIDPrefix, conf.renderRow, evt) {
+			if !wsh.forwardEvent(writer, flusher, sreq, evt) {
 				return
 			}
 		}
@@ -241,8 +290,7 @@ func (wsh *WatchSSEHandler) pump(
 func (wsh *WatchSSEHandler) forwardEvent(
 	writer http.ResponseWriter,
 	flusher http.Flusher,
-	rowIDPrefix string,
-	renderRow rowRenderer,
+	sreq *streamRequest,
 	evt watch.Event,
 ) bool {
 	operation := sseOpFromWatchType(evt.Type)
@@ -262,7 +310,16 @@ func (wsh *WatchSSEHandler) forwardEvent(
 		return true
 	}
 
-	name, html, err := renderRow(obj)
+	// Per-object filter — only applied when the subscriber passed
+	// ?object=. Events not matching the filter silently drop; the
+	// subscriber does not care about them, and logging each one
+	// would produce one log line per reconciliation on neighbour
+	// apps.
+	if sreq.object != "" && sreq.conf.filter != nil && !sreq.conf.filter(obj, sreq.object) {
+		return true
+	}
+
+	name, html, err := sreq.conf.renderRow(obj)
 	if err != nil {
 		wsh.log.Warn("rendering watch event row",
 			"name", obj.GetName(), "error", err)
@@ -274,7 +331,7 @@ func (wsh *WatchSSEHandler) forwardEvent(
 		Op:          operation,
 		Name:        name,
 		HTML:        html,
-		RowIDPrefix: rowIDPrefix,
+		RowIDPrefix: sreq.conf.rowIDPrefix,
 	})
 	if err != nil {
 		wsh.log.Error("marshalling watch SSE payload", "error", err)

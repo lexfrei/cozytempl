@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -72,7 +73,12 @@ func (sr *statusRecorder) WriteHeader(code int) {
 // useful.
 func withAccessLog(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, req *http.Request) {
-		if req.URL.Path == "/api/events" {
+		// SSE streams (shared-SA /api/events and user-credentialed
+		// /api/watch/*) run for up to an hour; emitting an access-log
+		// line at disconnect with duration=3600s poisons the latency
+		// view rather than informs.
+		if req.URL.Path == "/api/events" ||
+			strings.HasPrefix(req.URL.Path, "/api/watch/") {
 			next.ServeHTTP(writer, req)
 
 			return

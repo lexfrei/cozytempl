@@ -101,6 +101,16 @@ func (evs *EventService) ListForObject(
 	return dedupeByObjectReason(toSortedEvents(matched, 0), limit), nil
 }
 
+// NameDerivedFromRelease is the exported counterpart of the
+// internal helper used by ListForObject. Shared so the SSE watch
+// proxy (internal/api/sse_watch.go) can filter live events with
+// the same "is this event about my app?" rule the initial page
+// render already applies — keeping the live stream in sync with
+// the paginated tab instead of leaking cross-app events.
+func NameDerivedFromRelease(objName, release string) bool {
+	return nameDerivedFromRelease(objName, release)
+}
+
 // nameDerivedFromRelease reports whether objName looks like a
 // resource "belonging to" release: an exact match, or the release
 // embedded as a hyphen-delimited segment of the name. This covers:
