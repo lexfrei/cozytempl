@@ -119,7 +119,12 @@ type ResourceQuotaEntry struct {
 }
 
 // Event is a simplified view of a core/v1 Event rendered for the UI.
+//
+// Name is the Kubernetes resource name (metadata.name, e.g.
+// "myvm.1811ab4c012345") — opaque to the user but required by the
+// SSE watch proxy as the stable DOM row id. Populated by toEvent.
 type Event struct {
+	Name      string    `json:"name"`
 	Type      string    `json:"type"` // Normal / Warning
 	Reason    string    `json:"reason"`
 	Message   string    `json:"message"`

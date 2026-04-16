@@ -190,10 +190,20 @@ func toSortedEvents(items []unstructured.Unstructured, limit int) []Event {
 	return events
 }
 
+// EventFromUnstructured converts a raw core/v1 Event unstructured
+// object into the simplified Event shape the UI renders. Exported
+// so the SSE watch-proxy handler can reuse the same conversion the
+// paginated list path uses — keeping "live event row" and "refreshed
+// tab row" visually identical.
+func EventFromUnstructured(obj *unstructured.Unstructured) Event {
+	return toEvent(obj)
+}
+
 func toEvent(obj *unstructured.Unstructured) Event {
 	count, _, _ := unstructured.NestedInt64(obj.Object, "count")
 
 	return Event{
+		Name:      obj.GetName(),
 		Type:      nestedString(obj.Object, "type"),
 		Reason:    nestedString(obj.Object, "reason"),
 		Message:   nestedString(obj.Object, "message"),

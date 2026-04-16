@@ -305,28 +305,42 @@ templ eventsTab(data view.AppDetailData) {
 							<th>{ partial.Tc(ctx, "label.lastSeen") }</th>
 						</tr>
 					</thead>
-					<tbody>
+					<tbody id="event-rows"
+						data-watch-resource="events"
+						data-watch-tenant={ data.Tenant }>
 						for _, evt := range data.Events {
-							<tr>
-								<td>
-									if evt.Type == "Warning" {
-										<span class="badge badge-failed">{ evt.Type }</span>
-									} else {
-										<span class="badge badge-ready">{ evt.Type }</span>
-									}
-								</td>
-								<td class="text-mono text-sm">{ evt.Reason }</td>
-								<td class="text-sm">{ evt.Message }</td>
-								<td class="text-sm text-muted">{ evt.Source }</td>
-								<td class="text-sm">{ fmt.Sprint(evt.Count) }</td>
-								<td class="text-sm text-muted">{ formatTime(evt.LastSeen) }</td>
-							</tr>
+							@EventRow(evt)
 						}
 					</tbody>
 				</table>
 			</div>
 		</div>
 	}
+}
+
+// EventRow renders one row in the Events tab. Exported so the SSE
+// watch-proxy handler (internal/api/sse_watch.go) can call it per
+// watch event and emit the rendered HTML as the row payload — the
+// client-side reducer replaces or inserts the element by its id.
+//
+// The id="event-row-{Name}" convention is how the SSE reducer in
+// static/ts/sse.ts looks up the target element; keep the prefix in
+// sync with watchTargetEvent in that file.
+templ EventRow(evt k8s.Event) {
+	<tr id={ "event-row-" + evt.Name }>
+		<td>
+			if evt.Type == "Warning" {
+				<span class="badge badge-failed">{ evt.Type }</span>
+			} else {
+				<span class="badge badge-ready">{ evt.Type }</span>
+			}
+		</td>
+		<td class="text-mono text-sm">{ evt.Reason }</td>
+		<td class="text-sm">{ evt.Message }</td>
+		<td class="text-sm text-muted">{ evt.Source }</td>
+		<td class="text-sm">{ fmt.Sprint(evt.Count) }</td>
+		<td class="text-sm text-muted">{ formatTime(evt.LastSeen) }</td>
+	</tr>
 }
 
 // logsTab renders the pod selector + container selector + recent log

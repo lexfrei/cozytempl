@@ -37,6 +37,16 @@ import (
 // revocation can lower this.
 const sseMaxStreamAge = 60 * time.Minute
 
+// SSE operation strings shared between the shared-SA handler and
+// the per-user WatchSSEHandler (sse_watch.go). The client reducer
+// dispatches on these exact values — renaming either silently
+// breaks the live-update path until every browser tab refreshes.
+const (
+	sseOpAdded    = "added"
+	sseOpModified = "modified"
+	sseOpRemoved  = "removed"
+)
+
 // SSEHandler handles Server-Sent Events for real-time updates. It authorizes
 // each subscribe by doing a user-scoped list against the requested tenant
 // namespace — without this check any authenticated user could watch any
@@ -297,9 +307,9 @@ func (ssh *SSEHandler) buildMessage(ctx context.Context, tenant string, evt *k8s
 
 	switch evt.Type {
 	case k8s.WatchEventAdded, k8s.WatchEventModified:
-		operation := "added"
+		operation := sseOpAdded
 		if evt.Type == k8s.WatchEventModified {
-			operation = "modified"
+			operation = sseOpModified
 		}
 
 		html, err := renderAppRow(ctx, tenant, &evt.App)
@@ -319,8 +329,8 @@ func (ssh *SSEHandler) buildMessage(ctx context.Context, tenant string, evt *k8s
 
 	case k8s.WatchEventDeleted:
 		return &sseMessage{
-			Op:   "removed",
-			Type: "removed",
+			Op:   sseOpRemoved,
+			Type: sseOpRemoved,
 			Name: evt.App.Name,
 		}
 

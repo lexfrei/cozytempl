@@ -15,6 +15,7 @@ import { initReveal } from "./reveal";
 import { initThemeToggle } from "./theme";
 import { initCommandPalette } from "./palette";
 import { initOverviewFilter } from "./overview";
+import { initWatchSSE } from "./watch";
 
 declare global {
   interface Window {
@@ -242,6 +243,7 @@ function initAll(): void {
   initReveal();
   initCommandPalette();
   initOverviewFilter();
+  initWatchSSE();
   initSubmitOnChange();
   window.__cozytemplInitialized = true;
 }
