@@ -24,6 +24,8 @@ Running a single Go test: `go test ./internal/k8s/ -run TestNewUserClient_Passth
 
 **Build ordering is non-obvious.** `static/static.go` has `//go:embed css dist fonts`. `dist/` is gitignored and only exists after `make ts`, so `go build` / `golangci-lint` fail with `pattern dist: no matching files found` on a fresh clone or after `make clean` unless `ts` ran first. `build`/`lint`/`test` targets chain `generate` but NOT `ts` — run `make ts` yourself when hitting the embed error.
 
+`templ generate` can silently report `updates=0` even when a `.templ` file changed — its cache misses real edits in some flows. Force a regen with `rm internal/**/*_templ.go && templ generate` if compilation errors say a templ symbol's signature still has the old shape after you edited the source.
+
 ## Architecture
 
 ### The auth-mode seam
@@ -70,3 +72,10 @@ Release is triggered by pushing a `v*` tag. Three ghcr-specific quirks worth kno
 - Commits use Conventional Commits (`type(scope): description`). The release changelog regex matches only `feat|fix|security|refactor|docs|perf|build` — `ci/chore/style` commits are filtered out of release notes by design.
 - Branch protection on master: required checks `[Security Scan, Lint, Test, Lint Chart]`, `enforce_admins=true`. All changes go through PRs; direct pushes to master are rejected.
 - README.md deliberately contains no architecture diagrams or directory tree — both duplicate information that is authoritative in the source and rot as packages are renamed. Keep narrative docs narrative.
+
+## Operating environment (Cozystack platform contracts)
+
+cozytempl runs on top of Cozystack. Two platform-side contracts the demo / dev flow depends on, and that have bitten us when missing:
+
+- **`Tenant.spec.etcd: true` is required on the tenant whose name matches `_cluster.expose-ingress` (typically `root`).** That tenant chart materialises a Kamaji `DataStore` named after the tenant namespace (`tenant-root`). Without it, every `apps.cozystack.io/Kubernetes` Application install hangs waiting for `<release>-admin-kubeconfig`, because the Kamaji `vtenantcontrolplane` admission webhook rejects every `TenantControlPlane` with `tenant-root DataStore does not exist`. Symptom is identical to a chart-level race; the fix is one `kubectl patch tenant root --type=merge --patch '{"spec":{"etcd":true}}'`.
+- **The cozystack `ingress-nginx-system` chart uses `Service: LoadBalancer` for every tenant whose name doesn't match `_cluster.expose-ingress`.** Only the `expose-ingress` tenant gets `externalIPs` populated from `_cluster.expose-external-ips`. On platforms without a working LB provider (no MetalLB IPAddressPool, no equivalent), the non-owning tenant's install times out on the LB-IP wait. Either configure the LB pool or set `Tenant.spec.ingress: false` on the tenant — external traffic for its apps still terminates on the `expose-ingress` tenant's controller via `Ingress.spec.ingressClassName: tenant-root`.
